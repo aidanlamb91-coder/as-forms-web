@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0D0D0D" />
+  <title>AS Forms — Expenses</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- HOME -->
+    <section id="view-home" class="view">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">AS</span>
+          <div>
+            <h1>AS Forms</h1>
+            <p class="sub">Expense claims · local only</p>
+          </div>
+        </div>
+        <button type="button" class="btn ghost" id="btn-settings" title="Settings">⚙</button>
+      </header>
+
+      <div class="toolbar">
+        <h2>Claims</h2>
+        <button type="button" class="btn primary" id="btn-new-claim">+ New claim</button>
+      </div>
+
+      <div id="claim-list" class="card-list" aria-live="polite"></div>
+      <p id="claim-empty" class="empty hidden">No claims yet. Tap <strong>+ New claim</strong> to start.</p>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="home">← Back</button>
+        <h1>Settings</h1>
+      </header>
+      <form id="form-settings" class="panel">
+        <label>
+          Display name
+          <input type="text" id="settings-name" maxlength="80" autocomplete="name" />
+        </label>
+        <label>
+          Please Send to (Word form)
+          <input type="email" id="settings-send-to" maxlength="120" />
+        </label>
+        <p class="hint">Stored in this browser only. Nothing is emailed from this prototype.</p>
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+    </section>
+
+    <!-- CLAIM EDIT -->
+    <section id="view-claim" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="home">← Back</button>
+        <h1 id="claim-title">Claim</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-claim" title="Delete claim">🗑</button>
+      </header>
+
+      <form id="form-claim" class="panel">
+        <div class="grid-2">
+          <label>
+            Job number
+            <input type="text" id="claim-job" placeholder="P5503" pattern="P[0-9]+" required />
+          </label>
+          <label>
+            Display name
+            <input type="text" id="claim-name" maxlength="80" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Date from
+            <input type="date" id="claim-from" required />
+          </label>
+          <label>
+            Date to
+            <input type="date" id="claim-to" required />
+          </label>
+        </div>
+        <p class="hint">Job number must be <code>P</code> followed by digits (e.g. P5503).</p>
+        <button type="submit" class="btn primary">Save claim</button>
+      </form>
+
+      <div class="toolbar">
+        <h2>Line items <span id="line-count" class="badge">0</span></h2>
+        <button type="button" class="btn primary" id="btn-add-line">+ Line</button>
+      </div>
+      <div id="line-list" class="card-list"></div>
+      <p id="line-empty" class="empty hidden">No lines yet. Add a receipt line manually (OCR is stubbed).</p>
+
+      <div class="panel export-panel">
+        <h2>Export</h2>
+        <p class="hint">Downloads stay on your device. This app never emails or submits claims.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-export-zip">Download zip (JSON + receipts)</button>
+          <button type="button" class="btn secondary" id="btn-export-docx">Download filled Word form</button>
+        </div>
+        <p id="export-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- LINE EDIT -->
+    <section id="view-line" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" id="btn-line-back">← Back</button>
+        <h1 id="line-title">Line item</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-line" title="Delete line">🗑</button>
+      </header>
+
+      <form id="form-line" class="panel">
+        <div class="grid-2">
+          <label>
+            Date
+            <input type="date" id="line-date" required />
+          </label>
+          <label>
+            Job no
+            <input type="text" id="line-job" placeholder="P5503" pattern="P[0-9]+" />
+          </label>
+        </div>
+        <label>
+          Description
+          <input type="text" id="line-desc" maxlength="200" required />
+        </label>
+        <label>
+          Foreign currency (optional)
+          <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" />
+        </label>
+        <div class="grid-3">
+          <label>
+            £ Net
+            <input type="number" id="line-net" step="0.01" min="0" inputmode="decimal" />
+          </label>
+          <label>
+            £ VAT
+            <input type="number" id="line-vat" step="0.01" min="0" inputmode="decimal" />
+          </label>
+          <label>
+            £ Total
+            <input type="number" id="line-total" step="0.01" min="0" inputmode="decimal" />
+          </label>
+        </div>
+        <p class="hint">If Total is blank, Net + VAT is used on export.</p>
+
+        <fieldset class="receipt-box">
+          <legend>Receipt</legend>
+          <p class="hint stub">Manual entry only — OCR / “Extract later” not wired (zero-cost MVP).</p>
+          <input type="file" id="line-receipt" accept="image/*,application/pdf" />
+          <div id="receipt-preview" class="receipt-preview hidden"></div>
+          <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
+        </fieldset>
+
+        <button type="submit" class="btn primary">Save line</button>
+      </form>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="lib/jszip.min.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/docx-filler.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
