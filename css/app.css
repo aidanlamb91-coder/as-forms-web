@@ -234,6 +234,49 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #222; outline-off
   line-height: 1.15; text-align: center;
 }
 
+.days-banner .big.tally-tap {
+  display: inline-block;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 3rem;
+  font-weight: 800;
+  margin: 2px 0 0;
+  color: var(--brand);
+  line-height: 1.1;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+.days-banner.past-period .big.tally-tap { font-size: 2.35rem; }
+.days-banner .big.tally-tap:hover,
+.days-banner .big.tally-tap:focus-visible {
+  background: rgba(0, 102, 153, 0.08);
+  outline: none;
+}
+.tally-tile.tally-tap {
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.tally-tile.tally-tap:hover,
+.tally-tile.tally-tap:focus-visible {
+  border-color: var(--accent);
+  background: #eef6fb;
+  box-shadow: 0 0 0 2px rgba(0, 122, 180, 0.18);
+  outline: none;
+}
+.breakdown-body { max-height: 55dvh; overflow: auto; margin: 4px 0 8px; }
+.breakdown-month { margin: 0 0 12px; text-align: left; }
+.breakdown-month h3 {
+  margin: 0 0 4px; font-size: .9rem; color: var(--muted);
+  text-transform: none; letter-spacing: 0; font-weight: 700;
+}
+.breakdown-month ul {
+  margin: 0; padding-left: 1.1rem; font-size: .95rem; color: var(--ink);
+}
+.breakdown-month li { margin: 2px 0; }
+
 /* Settings list */
 .settings-list { list-style: none; padding: 0; margin: 0 0 14px; }
 .settings-list li { margin: 0; }
@@ -324,3 +367,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #222; outline-off
 }
 .ocr-suggest-title { margin: 0 0 4px; font-weight: 700; font-size: .95rem; }
 .ocr-suggest label { font-size: .85rem; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}

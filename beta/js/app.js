@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.4-web-beta — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.5-web-beta — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -638,12 +638,10 @@
       const blob = await AsExport.buildClaimZipBlob(claim);
       const filename = AsExport.safeName(claim.jobNo || 'claim') + '.zip';
       const email = AsExport.buildExpenseEmail(claim, filename);
-      const file = AsExport.blobToFile(blob, filename, 'application/zip');
-      const canShare = file ? AsExport.canShareFiles([file]) : false;
 
       // Auto-start download so the zip is in Downloads before they open mail.
       AsExport.downloadBlob(blob, filename);
-      if (status) status.textContent = 'Prepared ' + filename + ' — use Share or attach after Open mail app';
+      if (status) status.textContent = 'Prepared ' + filename + ' — download first, then Open mail app and attach';
 
       showEmailPreview({
         title: 'Send to Invoice',
@@ -652,23 +650,11 @@
         body: email.body,
         filename: filename,
         attachmentNote:
-          'Browsers cannot auto-attach files to mailto. Download or Share the zip, then attach it in your mail app if needed.',
-        canShareFiles: canShare,
+          'Browsers cannot auto-attach files to mailto. Download the zip first, then open your mail app and attach it yourself.',
         onDownload: () => {
           AsExport.downloadBlob(blob, filename);
           toast('Downloaded ' + filename);
         },
-        onShare: canShare
-          ? async () => {
-              const result = await AsExport.tryShare(
-                [file],
-                email.subject,
-                email.body,
-              );
-              if (result === 'shared') toast('Shared ' + filename);
-              else if (result === 'failed') toast('Share failed — download the zip instead');
-            }
-          : null,
         onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
       });
     } catch (e) {
@@ -1031,15 +1017,9 @@
       const blob = await AsExport.buildTimesheetOdtBlob(ts);
       const filename = AsTimesheetFiller.exportFileName(ts.year, ts.month);
       const email = AsExport.buildTimesheetEmail(ts, filename);
-      const file = AsExport.blobToFile(
-        blob,
-        filename,
-        'application/vnd.oasis.opendocument.text',
-      );
-      const canShare = file ? AsExport.canShareFiles([file]) : false;
 
       AsExport.downloadBlob(blob, filename);
-      if (status) status.textContent = 'Prepared ' + filename + ' — use Share or attach after Open mail app';
+      if (status) status.textContent = 'Prepared ' + filename + ' — download first, then Open mail app and attach';
 
       showEmailPreview({
         title: 'Send to Timesheets',
@@ -1048,23 +1028,11 @@
         body: email.body,
         filename: filename,
         attachmentNote:
-          'Browsers cannot auto-attach files to mailto. Download or Share the .odt, then attach it in your mail app if needed.',
-        canShareFiles: canShare,
+          'Browsers cannot auto-attach files to mailto. Download the .odt first, then open your mail app and attach it yourself.',
         onDownload: () => {
           AsExport.downloadBlob(blob, filename);
           toast('Downloaded ' + filename);
         },
-        onShare: canShare
-          ? async () => {
-              const result = await AsExport.tryShare(
-                [file],
-                email.subject,
-                email.body,
-              );
-              if (result === 'shared') toast('Shared ' + filename);
-              else if (result === 'failed') toast('Share failed — download the file instead');
-            }
-          : null,
         onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
       });
     } catch (e) {
@@ -1155,30 +1123,26 @@
   }
 
   // ——— Days worked ———
-  function daysTallyTiles(counts) {
+  let daysBreakdownTimesheets = [];
+
+  function daysTallyTiles(counts, startMarchYear) {
     const tiles = [
-      ['Holiday', counts.holiday],
-      ['Sick', counts.sick],
-      ['Office', counts.office],
-      ['Training', counts.training],
+      ['Holiday', 'holiday', counts.holiday],
+      ['Sick', 'sick', counts.sick],
+      ['Office', 'office', counts.office],
+      ['Training', 'training', counts.training],
     ];
     return (
       '<div class="tally-tiles" role="list">' +
       tiles
-        .map(function (pair) {
+        .map(function (row) {
           return (
-            '<div class="tally-tile" role="listitem" aria-label="' +
-            pair[0] +
-            ': ' +
-            pair[1] +
-            '">' +
-            '<span class="n" aria-hidden="true">' +
-            pair[1] +
-            '</span>' +
-            '<span class="lbl" aria-hidden="true">' +
-            pair[0] +
-            '</span>' +
-            '</div>'
+            '<button type="button" class="tally-tile tally-tap" role="listitem" ' +
+            'data-day-type="' + row[1] + '" data-period-year="' + startMarchYear + '" ' +
+            'aria-label="' + row[0] + ': ' + row[2] + '. Show breakdown">' +
+            '<span class="n" aria-hidden="true">' + row[2] + '</span>' +
+            '<span class="lbl" aria-hidden="true">' + row[0] + '</span>' +
+            '</button>'
           );
         })
         .join('') +
@@ -1189,30 +1153,101 @@
   function daysPeriodBanner(pt, opts) {
     opts = opts || {};
     const el = document.createElement('div');
+    const year = pt.period.startMarchYear;
     el.className = 'days-banner' + (opts.past ? ' past-period' : '');
     el.setAttribute('role', 'region');
     el.setAttribute(
       'aria-label',
       (opts.past ? 'Past period ' : 'Current period ') + pt.period.label
     );
+    el.dataset.periodYear = String(year);
     el.innerHTML =
       '<p class="period">' +
       escapeHtml(pt.period.label) +
       '</p>' +
       '<p class="label">Offshore days</p>' +
-      '<p class="big" aria-label="Offshore days: ' +
+      '<button type="button" class="big tally-tap" data-day-type="offshore" data-period-year="' +
+      year +
+      '" aria-label="Offshore days: ' +
       pt.counts.offshore +
-      '">' +
+      '. Show breakdown">' +
       pt.counts.offshore +
-      '</p>' +
-      daysTallyTiles(pt.counts);
+      '</button>' +
+      daysTallyTiles(pt.counts, year);
     return el;
+  }
+
+  function showDaysBreakdown(startMarchYear, countKey) {
+    const period = AsOffshoreDays.periodStartingMarch(startMarchYear);
+    const label = AsOffshoreDays.labelForType(countKey);
+    const grouped = AsOffshoreDays.breakdownGrouped(
+      daysBreakdownTimesheets,
+      startMarchYear,
+      countKey
+    );
+    const root = $('#modal-root');
+    let bodyHtml;
+    if (grouped.empty) {
+      bodyHtml = '<p class="empty" style="margin:8px 0">No days of this type in this period.</p>';
+    } else {
+      bodyHtml = grouped.months
+        .map(function (m) {
+          const lines = m.lines
+            .map(function (line) {
+              return '<li>' + escapeHtml(line) + '</li>';
+            })
+            .join('');
+          return (
+            '<div class="breakdown-month">' +
+            '<h3>' +
+            escapeHtml(m.label) +
+            '</h3>' +
+            '<ul>' +
+            lines +
+            '</ul>' +
+            '</div>'
+          );
+        })
+        .join('');
+    }
+    root.className = 'modal-backdrop';
+    root.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="days-breakdown-title">' +
+      '<h2 id="days-breakdown-title">' +
+      escapeHtml(label + ' — ' + period.label) +
+      '</h2>' +
+      '<div class="breakdown-body">' +
+      bodyHtml +
+      '</div>' +
+      '<div class="actions">' +
+      '<button type="button" class="btn ghost" id="modal-close">Close</button>' +
+      '</div></div>';
+    const close = () => {
+      root.className = 'hidden';
+      root.innerHTML = '';
+    };
+    $('#modal-close', root).onclick = close;
+    root.onclick = (e) => {
+      if (e.target === root) close();
+    };
+  }
+
+  function wireDaysBannerClicks(root) {
+    root.querySelectorAll('.tally-tap').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const year = Number(btn.getAttribute('data-period-year'));
+        const type = btn.getAttribute('data-day-type');
+        if (!year || !type) return;
+        showDaysBreakdown(year, type);
+      });
+    });
   }
 
   async function showDays() {
     setNav('days');
     const all = await AsStorage.listTimesheets();
     const completed = all.filter((t) => t.completed);
+    daysBreakdownTimesheets = completed;
     const totals = AsOffshoreDays.tallyFromTimesheets(completed);
     const box = $('#days-content');
     box.innerHTML = '';
@@ -1221,13 +1256,17 @@
       showView('days');
       return;
     }
-    box.appendChild(daysPeriodBanner(totals[0]));
+    const current = daysPeriodBanner(totals[0]);
+    box.appendChild(current);
+    wireDaysBannerClicks(current);
 
     if (totals.length > 1) {
       const past = document.createElement('div');
       past.innerHTML = '<h2 style="font-size:1rem;margin:8px 0">Past periods</h2>';
       totals.slice(1).forEach((pt) => {
-        past.appendChild(daysPeriodBanner(pt, { past: true }));
+        const banner = daysPeriodBanner(pt, { past: true });
+        past.appendChild(banner);
+        wireDaysBannerClicks(banner);
       });
       box.appendChild(past);
     }
@@ -1268,16 +1307,9 @@
   // ——— Email preview modal ———
   function showEmailPreview(opts) {
     const root = $('#modal-root');
-    const canShare = !!(opts.canShareFiles && opts.onShare);
-    // Ideal one-tap: Share as accent primary when file share is available.
-    const shareLabel = (opts.filename || '').toLowerCase().endsWith('.odt')
-      ? 'Share file…'
-      : 'Share zip…';
-    const shareBtnFinal = canShare
-      ? '<button type="button" class="btn accent" id="modal-share">' + shareLabel + '</button>'
-      : '';
-    const downloadClass = canShare ? 'btn primary' : 'btn accent';
+    const downloadClass = 'btn accent';
     const mailtoClass = 'btn secondary';
+    const isOdt = (opts.filename || '').toLowerCase().endsWith('.odt');
     root.className = 'modal-backdrop';
     root.innerHTML =
       '<div class="modal" role="dialog" aria-modal="true">' +
@@ -1288,20 +1320,16 @@
       '<div class="field"><div class="k">Attachment</div><div class="v">' + escapeHtml(opts.filename || '') +
       '<br><span style="color:#5c5c5c;font-size:.85em">' + escapeHtml(opts.attachmentNote || '') + '</span></div></div>' +
       '<div class="actions">' +
-      shareBtnFinal +
       '<button type="button" class="' + downloadClass + '" id="modal-download">Download ' +
-        ( (opts.filename || '').toLowerCase().endsWith('.odt') ? 'odt' : 'zip' ) +
+        (isOdt ? 'odt' : 'zip') +
       '</button>' +
-      '<button type="button" class="' + mailtoClass + '" id="modal-mailto">Open mail app (attach zip yourself)</button>' +
+      '<button type="button" class="' + mailtoClass + '" id="modal-mailto">Open mail app (attach ' +
+        (isOdt ? 'file' : 'zip') +
+      ' yourself)</button>' +
       '<button type="button" class="btn ghost" id="modal-close">Close</button>' +
       '</div></div>';
 
-    // Prefer "attach file yourself" wording for odt
     const mailtoBtn = $('#modal-mailto', root);
-    if ((opts.filename || '').toLowerCase().endsWith('.odt')) {
-      mailtoBtn.textContent = 'Open mail app (attach file yourself)';
-    }
-
     const close = () => {
       root.className = 'hidden';
       root.innerHTML = '';
@@ -1310,14 +1338,9 @@
     $('#modal-download', root).onclick = () => {
       if (opts.onDownload) opts.onDownload();
     };
-    if (canShare) {
-      $('#modal-share', root).onclick = async () => {
-        if (opts.onShare) await opts.onShare();
-      };
-    }
     mailtoBtn.onclick = () => {
       if (opts.onMailto) opts.onMailto();
-      // Keep modal open so they can still download/share if needed
+      // Keep modal open so they can still download if needed
     };
     root.onclick = (e) => {
       if (e.target === root) close();
