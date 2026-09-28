@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.10-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.11-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -602,23 +602,87 @@
     }
   }
 
-  async function sendToInvoice() {
+  async function prepareClaimForSend() {
     const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return null;
+    const s = AsStorage.getSettings();
+    const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+    if (!isValidJob(job)) {
+      toast('Job number must be P + digits');
+      const status = $('#export-status');
+      if (status) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before sending';
+      }
+      return null;
+    }
+    claim.jobNo = job;
+    claim.dateFrom = $('#claim-from').value || claim.dateFrom;
+    claim.dateTo = $('#claim-to').value || claim.dateTo;
+    claim.name = s.displayName;
+    claim.sendTo = s.expenseTo;
+    (claim.lines || []).forEach((l) => { l.jobNo = job; });
+    await AsStorage.putClaim(claim);
+    return claim;
+  }
+
+  async function sendToInvoice() {
+    const claim = await prepareClaimForSend();
     if (!claim) return;
-    const email = AsExport.buildExpenseEmail(claim, safeJobZip(claim));
-    showEmailPreview({
-      title: 'Send to Invoice',
-      to: email.to,
-      subject: email.subject,
-      body: email.body,
-      attachmentNote: 'Download the zip (Word form + numbered receipts) first, then attach in your mail app. Mailto cannot attach files.',
-      filename: email.filename,
-      onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
-    });
+    const status = $('#export-status');
+    if (status) {
+      status.classList.remove('error');
+      status.textContent = 'Building zip for send…';
+    }
+    try {
+      const blob = await AsExport.buildClaimZipBlob(claim);
+      const filename = AsExport.safeName(claim.jobNo || 'claim') + '.zip';
+      const email = AsExport.buildExpenseEmail(claim, filename);
+      const file = AsExport.blobToFile(blob, filename, 'application/zip');
+      const canShare = file ? AsExport.canShareFiles([file]) : false;
+
+      // Auto-start download so the zip is in Downloads before they open mail.
+      AsExport.downloadBlob(blob, filename);
+      if (status) status.textContent = 'Prepared ' + filename + ' — use Share or attach after Open mail app';
+
+      showEmailPreview({
+        title: 'Send to Invoice',
+        to: email.to,
+        subject: email.subject,
+        body: email.body,
+        filename: filename,
+        attachmentNote:
+          'Browsers cannot auto-attach files to mailto. Download or Share the zip, then attach it in your mail app if needed.',
+        canShareFiles: canShare,
+        onDownload: () => {
+          AsExport.downloadBlob(blob, filename);
+          toast('Downloaded ' + filename);
+        },
+        onShare: canShare
+          ? async () => {
+              const result = await AsExport.tryShare(
+                [file],
+                email.subject,
+                email.body,
+              );
+              if (result === 'shared') toast('Shared ' + filename);
+              else if (result === 'failed') toast('Share failed — download the zip instead');
+            }
+          : null,
+        onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
+      });
+    } catch (e) {
+      console.error(e);
+      if (status) {
+        status.classList.add('error');
+        status.textContent = e.message || String(e);
+      }
+      toast(e.message || 'Could not build zip');
+    }
   }
 
   function safeJobZip(claim) {
-    return String(claim.jobNo || 'claim').replace(/[^a-zA-Z0-9._-]+/g, '_') + '.zip';
+    return AsExport.safeName(claim.jobNo || 'claim') + '.zip';
   }
 
   // ——— Timesheets ———
@@ -958,16 +1022,59 @@
   async function sendToTimesheets() {
     const ts = await AsStorage.getTimesheet(state.tsId);
     if (!ts) return;
-    const email = AsExport.buildTimesheetEmail(ts);
-    showEmailPreview({
-      title: 'Send to Timesheets',
-      to: email.to,
-      subject: email.subject,
-      body: email.body,
-      attachmentNote: 'Download the .odt first, then attach in your mail app. Mailto cannot attach files.',
-      filename: email.filename,
-      onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
-    });
+    const status = $('#ts-export-status');
+    if (status) {
+      status.classList.remove('error');
+      status.textContent = 'Building timesheet.odt for send…';
+    }
+    try {
+      const blob = await AsExport.buildTimesheetOdtBlob(ts);
+      const filename = AsTimesheetFiller.exportFileName(ts.year, ts.month);
+      const email = AsExport.buildTimesheetEmail(ts, filename);
+      const file = AsExport.blobToFile(
+        blob,
+        filename,
+        'application/vnd.oasis.opendocument.text',
+      );
+      const canShare = file ? AsExport.canShareFiles([file]) : false;
+
+      AsExport.downloadBlob(blob, filename);
+      if (status) status.textContent = 'Prepared ' + filename + ' — use Share or attach after Open mail app';
+
+      showEmailPreview({
+        title: 'Send to Timesheets',
+        to: email.to,
+        subject: email.subject,
+        body: email.body,
+        filename: filename,
+        attachmentNote:
+          'Browsers cannot auto-attach files to mailto. Download or Share the .odt, then attach it in your mail app if needed.',
+        canShareFiles: canShare,
+        onDownload: () => {
+          AsExport.downloadBlob(blob, filename);
+          toast('Downloaded ' + filename);
+        },
+        onShare: canShare
+          ? async () => {
+              const result = await AsExport.tryShare(
+                [file],
+                email.subject,
+                email.body,
+              );
+              if (result === 'shared') toast('Shared ' + filename);
+              else if (result === 'failed') toast('Share failed — download the file instead');
+            }
+          : null,
+        onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
+      });
+    } catch (e) {
+      console.error(e);
+      if (status) {
+        status.classList.add('error');
+        status.textContent = e.message || String(e);
+      }
+      toast(e.message || 'Could not build timesheet');
+    }
   }
 
   async function importTimesheets(files) {
@@ -1139,6 +1246,16 @@
   // ——— Email preview modal ———
   function showEmailPreview(opts) {
     const root = $('#modal-root');
+    const canShare = !!(opts.canShareFiles && opts.onShare);
+    // Ideal one-tap: Share as accent primary when file share is available.
+    const shareLabel = (opts.filename || '').toLowerCase().endsWith('.odt')
+      ? 'Share file…'
+      : 'Share zip…';
+    const shareBtnFinal = canShare
+      ? '<button type="button" class="btn accent" id="modal-share">' + shareLabel + '</button>'
+      : '';
+    const downloadClass = canShare ? 'btn primary' : 'btn accent';
+    const mailtoClass = 'btn secondary';
     root.className = 'modal-backdrop';
     root.innerHTML =
       '<div class="modal" role="dialog" aria-modal="true">' +
@@ -1149,23 +1266,39 @@
       '<div class="field"><div class="k">Attachment</div><div class="v">' + escapeHtml(opts.filename || '') +
       '<br><span style="color:#5c5c5c;font-size:.85em">' + escapeHtml(opts.attachmentNote || '') + '</span></div></div>' +
       '<div class="actions">' +
-      '<button type="button" class="btn accent" id="modal-mailto">Open mail app (mailto)</button>' +
-      '<button type="button" class="btn secondary" id="modal-close">Close</button>' +
+      shareBtnFinal +
+      '<button type="button" class="' + downloadClass + '" id="modal-download">Download ' +
+        ( (opts.filename || '').toLowerCase().endsWith('.odt') ? 'odt' : 'zip' ) +
+      '</button>' +
+      '<button type="button" class="' + mailtoClass + '" id="modal-mailto">Open mail app (attach zip yourself)</button>' +
+      '<button type="button" class="btn ghost" id="modal-close">Close</button>' +
       '</div></div>';
-    $('#modal-close', root).onclick = () => {
+
+    // Prefer "attach file yourself" wording for odt
+    const mailtoBtn = $('#modal-mailto', root);
+    if ((opts.filename || '').toLowerCase().endsWith('.odt')) {
+      mailtoBtn.textContent = 'Open mail app (attach file yourself)';
+    }
+
+    const close = () => {
       root.className = 'hidden';
       root.innerHTML = '';
     };
-    $('#modal-mailto', root).onclick = () => {
-      opts.onMailto();
-      root.className = 'hidden';
-      root.innerHTML = '';
+    $('#modal-close', root).onclick = close;
+    $('#modal-download', root).onclick = () => {
+      if (opts.onDownload) opts.onDownload();
+    };
+    if (canShare) {
+      $('#modal-share', root).onclick = async () => {
+        if (opts.onShare) await opts.onShare();
+      };
+    }
+    mailtoBtn.onclick = () => {
+      if (opts.onMailto) opts.onMailto();
+      // Keep modal open so they can still download/share if needed
     };
     root.onclick = (e) => {
-      if (e.target === root) {
-        root.className = 'hidden';
-        root.innerHTML = '';
-      }
+      if (e.target === root) close();
     };
   }
 

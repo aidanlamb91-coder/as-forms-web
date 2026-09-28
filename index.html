@@ -107,10 +107,10 @@
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.2.10-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.2.11-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
         <p class="hint">Receipt reading (OCR) is <strong>beta</strong> and runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
-        <p class="hint stub">Optional: open Outlook / your mail app after downloading the attachment — this web build does not use Microsoft sign-in (no MSAL).</p>
+        <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). Use <strong>Share</strong> when your browser supports file share (best on Android Chrome), or <strong>Download</strong> then attach the file yourself in the mail app. No Microsoft sign-in (no MSAL), no paid APIs.</p>
       </div>
     </section>
 
@@ -200,7 +200,7 @@
       <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt photo or PDF to try on-device reading (beta).</p>
       <div class="panel export-panel">
         <h2>Export &amp; send</h2>
-        <p class="hint">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. Send opens a preview — attach the zip in your mail app.</p>
+        <p class="hint">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. <strong>Send to Invoice</strong> builds the zip, starts a download, and offers Share (when supported) or Open mail app — mailto cannot attach files; attach the downloaded zip yourself if needed.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-export-zip">Download zip</button>
           <button type="button" class="btn secondary" id="btn-export-docx">Download Word only</button>
@@ -309,6 +309,7 @@
       <p id="ts-entry-empty" class="empty hidden">No entries. Add date-range blocks (Office / Offshore / Holiday / …).</p>
       <div class="panel">
         <h2>Export &amp; send</h2>
+        <p class="hint"><strong>Send to Timesheets</strong> builds the .odt, starts a download, and offers Share (when supported) or Open mail app — mailto cannot attach files; attach the downloaded .odt yourself if needed.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-export-odt">Download timesheet.odt</button>
           <button type="button" class="btn accent" id="btn-send-timesheets">Send to Timesheets…</button>

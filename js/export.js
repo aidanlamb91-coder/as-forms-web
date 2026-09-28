@@ -167,14 +167,18 @@
     return name;
   }
 
-  async function exportTimesheetOdt(ts) {
+  async function buildTimesheetOdtBlob(ts) {
     const settings = AsStorage.getSettings();
-    const blob = await AsTimesheetFiller.fillTimesheet({
+    return AsTimesheetFiller.fillTimesheet({
       year: ts.year,
       month: ts.month,
       name: settings.displayName,
       entries: ts.entries || [],
     });
+  }
+
+  async function exportTimesheetOdt(ts) {
+    const blob = await buildTimesheetOdtBlob(ts);
     const name = AsTimesheetFiller.exportFileName(ts.year, ts.month);
     downloadBlob(blob, name);
     return name;
@@ -243,19 +247,43 @@
     }
   }
 
-  async function tryShare(files, title, text) {
-    if (!navigator.share) return false;
+  function blobToFile(blob, filename, mime) {
+    const type = mime || blob.type || 'application/octet-stream';
     try {
-      if (navigator.canShare && files && files.length) {
-        if (!navigator.canShare({ files })) return false;
-        await navigator.share({ files, title, text });
-        return true;
-      }
-      await navigator.share({ title, text });
-      return true;
-    } catch (e) {
-      if (e && e.name === 'AbortError') return true;
+      return new File([blob], filename, { type });
+    } catch (_) {
+      // Older browsers: File ctor may fail; share will be unavailable.
+      return null;
+    }
+  }
+
+  /** True when Web Share can hand off File objects (best on Android Chrome). */
+  function canShareFiles(files) {
+    if (!navigator.share || !navigator.canShare || !files || !files.length) return false;
+    try {
+      return !!navigator.canShare({ files });
+    } catch (_) {
       return false;
+    }
+  }
+
+  /**
+   * Share files when canShare({files}) works; otherwise title/text only.
+   * Returns: 'shared' | 'aborted' | 'unavailable' | 'failed'
+   */
+  async function tryShare(files, title, text) {
+    if (!navigator.share) return 'unavailable';
+    try {
+      if (files && files.length && canShareFiles(files)) {
+        const payload = { files, title: title || '', text: text || '' };
+        await navigator.share(payload);
+        return 'shared';
+      }
+      await navigator.share({ title: title || '', text: text || '' });
+      return 'shared';
+    } catch (e) {
+      if (e && e.name === 'AbortError') return 'aborted';
+      return 'failed';
     }
   }
 
@@ -405,14 +433,18 @@
     fillClaimDocxBlob,
     syncLinesJobFromClaim,
     exportFilledDocx,
+    buildTimesheetOdtBlob,
     exportTimesheetOdt,
     buildExpenseEmail,
     buildTimesheetEmail,
     openMailto,
+    blobToFile,
+    canShareFiles,
     tryShare,
     exportBackupZip,
     importBackupZip,
     claimFolderName,
     formatUkDate,
+    safeName,
   };
 })(window);

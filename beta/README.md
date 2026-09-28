@@ -1,10 +1,10 @@
-# AS Forms — Web (`0.3.2-web-beta`)
+# AS Forms — Web (`0.3.3-web-beta`)
 
 Free, **static**, browser-only port of AS Forms for Aidan Lamb / Andrews Survey.
 No paid APIs, no build step, no auto-send email.
 
-This folder is the **OCR beta** source (`0.3.2-web-beta`). Production GitHub Pages keeps
-stable **0.2.10-web** at the site root and serves this build under `/beta/`.
+This folder is the **OCR beta** source (`0.3.3-web-beta`). Production GitHub Pages keeps
+stable **0.2.11-web** at the site root and serves this build under `/beta/`.
 
 ## Open it
 
@@ -12,7 +12,7 @@ stable **0.2.10-web** at the site root and serves this build under `/beta/`.
 https://aidanlamb91-coder.github.io/as-forms-web/
 
 **OCR beta:**  
-https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.2-web-beta
+https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.3-web-beta
 
 **Local HTTP** (needed for Word/ODT template fetch):
 
@@ -33,7 +33,7 @@ Then open http://127.0.0.1:8765/
 
 ## What matches Android / prior web
 
-Expenses, Timesheets, Days worked, Settings — same as 0.2.10-web, plus optional receipt suggestions.
+Expenses, Timesheets, Days worked, Settings — same as 0.2.11-web, plus optional receipt suggestions.
 
 ## Files
 
@@ -53,3 +53,10 @@ Expenses, Timesheets, Days worked, Settings — same as 0.2.10-web, plus optiona
 ## Dist zip
 
 `/workspace/receipt-app-dist/as-forms-web.zip` — Pages layout: stable at zip root, OCR under `beta/`.
+
+## Send to Invoice / Timesheets (web)
+
+Browsers cannot attach files via `mailto:`. Send builds the zip/ODT, auto-downloads it, and offers:
+- **Share** (Web Share API with files) when `navigator.canShare({ files })` works — best on Android Chrome; limited on iOS Safari
+- **Download** always
+- **Open mail app (attach yourself)** — To/subject/body only
