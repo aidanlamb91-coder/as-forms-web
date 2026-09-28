@@ -1,18 +1,18 @@
-# AS Forms — Web (`0.3.7-web-beta`)
+# AS Forms — Web (`0.3.8-web-beta`)
 
 Free, **static**, browser-only port of AS Forms for Aidan Lamb / Andrews Survey.
 No paid APIs, no build step, no auto-send email.
 
-This folder is the **OCR beta** source (`0.3.7-web-beta`). Production GitHub Pages keeps
-stable **0.2.15-web** at the site root and serves this build under `/beta/`.
+This folder is the **OCR beta** source (`0.3.8-web-beta`). Production GitHub Pages keeps
+stable **0.2.16-web** at the site root and serves this build under `/beta/`.
 
 ## Open it
 
 **Stable:**  
-https://aidanlamb91-coder.github.io/as-forms-web/?v=0.2.15-web
+https://aidanlamb91-coder.github.io/as-forms-web/?v=0.2.16-web
 
 **OCR beta:**  
-https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.7-web-beta
+https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.8-web-beta
 
 **Local HTTP** (needed for Word/ODT template fetch):
 
@@ -43,9 +43,14 @@ Data still lives in the browser for speed; the folder (or zip) is the durable co
 - After attach: status “Reading receipt…”, then a confirm panel (Use these / Dismiss). Fields are only filled on **Use these**.
 - HEIC phone photos often need re-save as JPG/PNG.
 
+## Timesheet date entry (0.2.16 / 0.3.8)
+
+- Start/end day fields are **locked to the timesheet month** (e.g. Feb 2026 → 1–28; leap years correct). Typed values are capped; changing month/year clamps existing entries.
+- **Pick dates…** opens a month-grid range calendar (travel-booking style): tap start, tap end (order-independent). In-range days highlight. Constrained to the current timesheet month only. Typing start/end still works.
+
 ## What matches Android / prior web
 
-Expenses, Timesheets, Days worked, Settings — same as 0.2.15-web, plus optional receipt suggestions and data-folder sync.
+Expenses, Timesheets, Days worked, Settings — same as 0.2.16-web, plus optional receipt suggestions and data-folder sync.
 
 ## Files
 

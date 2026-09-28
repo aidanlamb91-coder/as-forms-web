@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0D0D0D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>AS Forms</title>
-  <link rel="stylesheet" href="css/app.css?v=0.2.15-web" />
+  <link rel="stylesheet" href="css/app.css?v=0.2.16-web" />
 </head>
 <body>
   <div id="app">
@@ -107,7 +107,7 @@
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.2.15-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.2.16-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
         <p class="hint">Receipt reading (OCR) is <strong>beta</strong> and runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
@@ -347,9 +347,27 @@
         <button type="button" class="btn danger ghost" id="btn-delete-entry" title="Delete">🗑</button>
       </header>
       <form id="form-ts-entry" class="panel">
-        <div class="grid-2">
-          <label>Start day <input type="number" id="entry-start" min="1" max="31" required /></label>
-          <label>End day <input type="number" id="entry-end" min="1" max="31" required /></label>
+        <p class="hint" id="entry-day-hint" style="margin-bottom:6px">Valid days for this timesheet month: 1–31</p>
+        <div class="entry-dates">
+          <div class="grid-2">
+            <label>Start day <input type="number" id="entry-start" min="1" max="31" inputmode="numeric" required /></label>
+            <label>End day <input type="number" id="entry-end" min="1" max="31" inputmode="numeric" required /></label>
+          </div>
+          <button type="button" class="btn secondary" id="btn-pick-dates" title="Pick a date range on the calendar">📅 Pick dates…</button>
+        </div>
+        <div id="entry-cal" class="entry-cal hidden" aria-label="Date range calendar" hidden>
+          <div class="entry-cal-head">
+            <strong id="entry-cal-title">Month</strong>
+            <span class="hint" id="entry-cal-status">Tap start, then end</span>
+          </div>
+          <div class="entry-cal-weekdays" aria-hidden="true">
+            <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+          </div>
+          <div class="entry-cal-grid" id="entry-cal-grid"></div>
+          <div class="entry-cal-actions">
+            <button type="button" class="btn ghost" id="btn-cal-clear">Clear</button>
+            <button type="button" class="btn primary" id="btn-cal-done">Done</button>
+          </div>
         </div>
         <label>
           Project (job)
@@ -378,17 +396,17 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=0.2.15-web"></script>
-  <script src="js/email-templates.js?v=0.2.15-web"></script>
-  <script src="js/offshore-days.js?v=0.2.15-web"></script>
-  <script src="js/storage.js?v=0.2.15-web"></script>
-  <script src="js/docx-filler.js?v=0.2.15-web"></script>
-  <script src="js/timesheet-filler.js?v=0.2.15-web"></script>
-  <script src="js/timesheet-reader.js?v=0.2.15-web"></script>
-  <script src="js/export.js?v=0.2.15-web"></script>
-  <script src="js/folder-sync.js?v=0.2.15-web"></script>
-  <script src="js/receipt-parse.js?v=0.2.15-web"></script>
-  <script src="js/receipt-ocr.js?v=0.2.15-web"></script>
-  <script src="js/app.js?v=0.2.15-web"></script>
+  <script src="lib/jszip.min.js?v=0.2.16-web"></script>
+  <script src="js/email-templates.js?v=0.2.16-web"></script>
+  <script src="js/offshore-days.js?v=0.2.16-web"></script>
+  <script src="js/storage.js?v=0.2.16-web"></script>
+  <script src="js/docx-filler.js?v=0.2.16-web"></script>
+  <script src="js/timesheet-filler.js?v=0.2.16-web"></script>
+  <script src="js/timesheet-reader.js?v=0.2.16-web"></script>
+  <script src="js/export.js?v=0.2.16-web"></script>
+  <script src="js/folder-sync.js?v=0.2.16-web"></script>
+  <script src="js/receipt-parse.js?v=0.2.16-web"></script>
+  <script src="js/receipt-ocr.js?v=0.2.16-web"></script>
+  <script src="js/app.js?v=0.2.16-web"></script>
 </body>
 </html>

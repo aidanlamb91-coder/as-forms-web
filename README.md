@@ -1,7 +1,9 @@
 # AS Forms Web (GitHub Pages)
 
-- **Stable** `0.2.15-web` (site root): https://aidanlamb91-coder.github.io/as-forms-web/?v=0.2.15-web
-- **OCR beta** `0.3.7-web-beta` (`/beta/`): https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.7-web-beta
+- **Stable** `0.2.16-web` (site root): https://aidanlamb91-coder.github.io/as-forms-web/?v=0.2.16-web
+- **OCR beta** `0.3.8-web-beta` (`/beta/`): https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.8-web-beta
+
+Timesheet entry: start/end days locked to the timesheet month (typed values capped); **Pick dates…** opens a month-grid range calendar (tap start, tap end; order-independent; in-range highlight). Constrained to the current timesheet month.
 
 Claim/export matches Android: claim-level job number; zip = filled ExpenseClaim_YYYY-MM-DD.docx + line-indexed receipts (no claim.json).
 Send to Invoice / Timesheets: builds zip/ODT, auto-downloads, then Open mail app — mailto cannot attach files; attach the downloaded file yourself.

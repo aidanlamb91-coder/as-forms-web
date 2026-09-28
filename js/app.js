@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.15-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.16-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -910,6 +910,245 @@
     return aStart <= bEnd && bStart <= aEnd;
   }
 
+  /** Live day-field state for the open timesheet month (1..lastDay). */
+  const entryDayUi = {
+    year: null,
+    month: null,
+    lastDay: 31,
+    calOpen: false,
+    pickAnchor: null, // first tap while choosing a range
+  };
+
+  function currentEntryLastDay() {
+    return entryDayUi.lastDay || 31;
+  }
+
+  function parseDayValue(raw, last) {
+    const digits = String(raw == null ? '' : raw).replace(/\D/g, '').slice(0, 2);
+    if (!digits) return null;
+    let n = Number(digits);
+    if (!Number.isFinite(n)) return null;
+    if (n < 1) n = 1;
+    if (n > last) n = last;
+    return n;
+  }
+
+  function setEntryDayInputs(start, end, last) {
+    const lastDay = last || currentEntryLastDay();
+    const sEl = $('#entry-start');
+    const eEl = $('#entry-end');
+    if (!sEl || !eEl) return;
+    let s = Math.max(1, Math.min(Number(start) || 1, lastDay));
+    let e = Math.max(1, Math.min(Number(end) || 1, lastDay));
+    if (e < s) e = s;
+    sEl.min = 1;
+    sEl.max = lastDay;
+    eEl.min = 1;
+    eEl.max = lastDay;
+    sEl.value = String(s);
+    eEl.value = String(e);
+    updateEntryDayHint(lastDay);
+    syncCalFromInputs();
+  }
+
+  function updateEntryDayHint(last) {
+    const hint = $('#entry-day-hint');
+    if (!hint) return;
+    const title = entryDayUi.year && entryDayUi.month
+      ? AsTimesheetFiller.displayTitle(entryDayUi.year, entryDayUi.month)
+      : 'this month';
+    hint.textContent = 'Valid days for ' + title + ': 1–' + last;
+  }
+
+  function clampEntryDayField(el) {
+    if (!el) return;
+    const last = currentEntryLastDay();
+    el.min = 1;
+    el.max = last;
+    const parsed = parseDayValue(el.value, last);
+    if (parsed == null) {
+      // Leave empty while typing; blur handler fills a default
+      return null;
+    }
+    if (String(parsed) !== String(el.value).trim()) {
+      el.value = String(parsed);
+    }
+    return parsed;
+  }
+
+  function onEntryDayInput(ev) {
+    const el = ev.target;
+    const last = currentEntryLastDay();
+    entryDayUi.pickAnchor = null;
+    // Cap while typing (e.g. 31 in February → 28) without fighting mid-edit of "2"
+    const raw = String(el.value || '');
+    const digits = raw.replace(/\D/g, '').slice(0, 2);
+    if (digits !== raw) el.value = digits;
+    if (!digits) {
+      syncCalFromInputs();
+      return;
+    }
+    const n = Number(digits);
+    if (Number.isFinite(n) && n > last) {
+      el.value = String(last);
+    }
+    // Keep end >= start when both set
+    const s = parseDayValue($('#entry-start').value, last);
+    const e = parseDayValue($('#entry-end').value, last);
+    if (s != null && e != null && e < s && el.id === 'entry-start') {
+      $('#entry-end').value = String(s);
+    }
+    syncCalFromInputs();
+  }
+
+  function onEntryDayBlur(ev) {
+    const el = ev.target;
+    const last = currentEntryLastDay();
+    let v = clampEntryDayField(el);
+    if (v == null) {
+      v = 1;
+      el.value = '1';
+    }
+    const sEl = $('#entry-start');
+    const eEl = $('#entry-end');
+    let s = parseDayValue(sEl.value, last) || 1;
+    let e = parseDayValue(eEl.value, last) || 1;
+    if (e < s) {
+      if (el.id === 'entry-end') {
+        e = s;
+        eEl.value = String(e);
+      } else {
+        s = e;
+        sEl.value = String(s);
+      }
+    }
+    syncCalFromInputs();
+  }
+
+  function readEntryRange() {
+    const last = currentEntryLastDay();
+    let s = parseDayValue($('#entry-start').value, last);
+    let e = parseDayValue($('#entry-end').value, last);
+    if (s == null) s = 1;
+    if (e == null) e = s;
+    if (e < s) {
+      const t = s; s = e; e = t;
+    }
+    return { start: s, end: e, last };
+  }
+
+  function setCalStatus(msg) {
+    const el = $('#entry-cal-status');
+    if (el) el.textContent = msg;
+  }
+
+  function syncCalFromInputs() {
+    if (!$('#entry-cal-grid') || !entryDayUi.calOpen) return;
+    paintCalGrid();
+  }
+
+  function paintCalGrid() {
+    const grid = $('#entry-cal-grid');
+    if (!grid || entryDayUi.year == null || entryDayUi.month == null) return;
+    const last = currentEntryLastDay();
+    const range = readEntryRange();
+    let start = range.start;
+    let end = range.end;
+    if (entryDayUi.pickAnchor != null) {
+      start = entryDayUi.pickAnchor;
+      end = entryDayUi.pickAnchor;
+      setCalStatus('Start ' + start + ' — tap end day');
+    } else if (start === end) {
+      setCalStatus('Day ' + start + ' selected — tap another day for a range');
+    } else {
+      setCalStatus('Days ' + start + '–' + end);
+    }
+
+    // Monday-first weekday index (0=Mon … 6=Sun)
+    const firstDow = (new Date(entryDayUi.year, entryDayUi.month - 1, 1).getDay() + 6) % 7;
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) {
+      cells.push('<button type="button" class="cal-day cal-pad" disabled tabindex="-1" aria-hidden="true"></button>');
+    }
+    for (let d = 1; d <= last; d++) {
+      const classes = ['cal-day'];
+      const inSel = entryDayUi.pickAnchor == null && d >= start && d <= end;
+      if (inSel) classes.push('in-range');
+      if (entryDayUi.pickAnchor == null && d === start) classes.push('range-start');
+      if (entryDayUi.pickAnchor == null && d === end) classes.push('range-end');
+      if (entryDayUi.pickAnchor != null && d === entryDayUi.pickAnchor) classes.push('pending', 'range-start');
+      cells.push(
+        '<button type="button" class="' + classes.join(' ') + '" data-day="' + d + '" aria-label="Day ' + d + '">' +
+        d +
+        '</button>'
+      );
+    }
+    grid.innerHTML = cells.join('');
+  }
+
+  function openEntryCalendar() {
+    const panel = $('#entry-cal');
+    if (!panel) return;
+    entryDayUi.calOpen = true;
+    entryDayUi.pickAnchor = null;
+    panel.hidden = false;
+    panel.classList.remove('hidden');
+    $('#entry-cal-title').textContent = AsTimesheetFiller.displayTitle(entryDayUi.year, entryDayUi.month);
+    paintCalGrid();
+    $('#btn-pick-dates').setAttribute('aria-expanded', 'true');
+  }
+
+  function closeEntryCalendar() {
+    const panel = $('#entry-cal');
+    if (!panel) return;
+    entryDayUi.calOpen = false;
+    entryDayUi.pickAnchor = null;
+    panel.hidden = true;
+    panel.classList.add('hidden');
+    $('#btn-pick-dates').setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleEntryCalendar() {
+    if (entryDayUi.calOpen) closeEntryCalendar();
+    else openEntryCalendar();
+  }
+
+  function onCalDayClick(ev) {
+    const btn = ev.target.closest('.cal-day[data-day]');
+    if (!btn || btn.disabled) return;
+    const day = Number(btn.getAttribute('data-day'));
+    if (!Number.isFinite(day)) return;
+    if (entryDayUi.pickAnchor == null) {
+      entryDayUi.pickAnchor = day;
+      paintCalGrid();
+      return;
+    }
+    let a = entryDayUi.pickAnchor;
+    let b = day;
+    if (b < a) { const t = a; a = b; b = t; }
+    entryDayUi.pickAnchor = null;
+    setEntryDayInputs(a, b, currentEntryLastDay());
+    paintCalGrid();
+  }
+
+  function clearEntryCalendarSelection() {
+    entryDayUi.pickAnchor = null;
+    setEntryDayInputs(1, 1, currentEntryLastDay());
+    paintCalGrid();
+    setCalStatus('Cleared — tap start, then end');
+  }
+
+  function prepareEntryDayUi(ts, startDay, endDay) {
+    const last = AsTimesheetFiller.daysInMonth(ts.year, ts.month);
+    entryDayUi.year = ts.year;
+    entryDayUi.month = ts.month;
+    entryDayUi.lastDay = last;
+    entryDayUi.pickAnchor = null;
+    setEntryDayInputs(startDay, endDay, last);
+    closeEntryCalendar();
+  }
+
+
   async function addEntry() {
     const ts = await AsStorage.getTimesheet(state.tsId);
     if (!ts || ts.completed) return;
@@ -949,12 +1188,8 @@
       return openTimesheet(state.tsId);
     }
     state.entryId = entryId;
-    const last = AsTimesheetFiller.daysInMonth(ts.year, ts.month);
-    $('#entry-title').textContent = 'Entry';
-    $('#entry-start').value = entry.startDay;
-    $('#entry-start').max = last;
-    $('#entry-end').value = entry.endDay;
-    $('#entry-end').max = last;
+    $('#entry-title').textContent = 'Entry — ' + AsTimesheetFiller.displayTitle(ts.year, ts.month);
+    prepareEntryDayUi(ts, entry.startDay, entry.endDay);
     $('#entry-job-digits').value = digitsOnly(entry.jobNumber);
     $('#entry-desc').value = entry.description || '';
     buildDayTypeRadios(entry.dayType || 'OFFICE');
@@ -1565,7 +1800,30 @@
     $('#btn-add-entry').addEventListener('click', addEntry);
     $('#form-ts-entry').addEventListener('submit', saveEntryForm);
     $('#btn-delete-entry').addEventListener('click', deleteEntry);
-    $('#btn-entry-back').addEventListener('click', () => openTimesheet(state.tsId));
+    $('#btn-entry-back').addEventListener('click', () => {
+      closeEntryCalendar();
+      openTimesheet(state.tsId);
+    });
+    $('#entry-start').addEventListener('input', onEntryDayInput);
+    $('#entry-end').addEventListener('input', onEntryDayInput);
+    $('#entry-start').addEventListener('blur', onEntryDayBlur);
+    $('#entry-end').addEventListener('blur', onEntryDayBlur);
+    $('#btn-pick-dates').addEventListener('click', toggleEntryCalendar);
+    $('#btn-pick-dates').setAttribute('aria-expanded', 'false');
+    $('#btn-pick-dates').setAttribute('aria-controls', 'entry-cal');
+    $('#entry-cal-grid').addEventListener('click', onCalDayClick);
+    $('#btn-cal-clear').addEventListener('click', clearEntryCalendarSelection);
+    $('#btn-cal-done').addEventListener('click', () => {
+      // Commit any pending single-tap as a one-day range
+      if (entryDayUi.pickAnchor != null) {
+        setEntryDayInputs(entryDayUi.pickAnchor, entryDayUi.pickAnchor, currentEntryLastDay());
+        entryDayUi.pickAnchor = null;
+      } else {
+        const r = readEntryRange();
+        setEntryDayInputs(r.start, r.end, r.last);
+      }
+      closeEntryCalendar();
+    });
     $('#btn-export-odt').addEventListener('click', doExportOdt);
     $('#btn-send-timesheets').addEventListener('click', sendToTimesheets);
     $('#btn-complete-ts').addEventListener('click', () => setTsCompleted(true));
