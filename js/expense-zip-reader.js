@@ -18,7 +18,7 @@
   })();
 
   const HEADER_DATE_RE = /(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\s+(\d{4})/i;
-  const NUMBERED_RECEIPT_RE = /^(\d{1,2})\.([A-Za-z0-9]+)$/;
+  const NUMBERED_RECEIPT_RE = /^(\d{1,2})(?:\.([12]))?\.([A-Za-z0-9]+)$/;
   const JOB_FROM_NAME_RE = /P\s*([0-9]{3,8})/i;
 
   function isSupportedFileName(name) {
@@ -197,14 +197,16 @@
       if (lineNum < 1 || lineNum > maxLines) continue;
       const bytes = entries[name];
       if (!bytes || !bytes.length) continue;
+      const part = m[2] ? Number(m[2]) : null;
       receipts.push({
         lineNumber: lineNum,
         fileName: name,
         bytes,
-        mime: mimeForExt(m[2]),
+        mime: mimeForExt(m[3]),
+        part,
       });
     }
-    receipts.sort((a, b) => a.lineNumber - b.lineNumber);
+    receipts.sort((a, b) => a.lineNumber - b.lineNumber || (a.part || 0) - (b.part || 0));
 
     const jobFromZipMatch = JOB_FROM_NAME_RE.exec(zipFileName || '');
     const jobFromZip = jobFromZipMatch ? 'P' + jobFromZipMatch[1] : '';

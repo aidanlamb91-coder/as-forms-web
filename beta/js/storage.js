@@ -1,6 +1,6 @@
 /**
- * IndexedDB + localStorage for AS Forms web 0.3.11-web-beta.
- * Claims, timesheets, receipts in IDB; settings in localStorage.
+ * IndexedDB + localStorage for AS Forms web 0.3.12-web.
+ * Claims, timesheets, receipts/statements in IDB; settings in localStorage.
  */
 (function (global) {
   const DB_NAME = 'as-forms-web';
@@ -10,7 +10,7 @@
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.3.11-web-beta';
+  const APP_VERSION = '0.3.12-web';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -30,6 +30,9 @@
       // Data-folder sync (File System Access API)
       folderAutoSync: true,
       folderHintSeen: false,
+      // Backup reminder (ms epoch); null/0 = never backed up
+      lastBackupAt: null,
+      backupReminderDismissedAt: null,
     };
   }
 
@@ -150,6 +153,7 @@
     if (claim && Array.isArray(claim.lines)) {
       for (const line of claim.lines) {
         if (line.receiptId) tx.objectStore(STORE_RECEIPTS).delete(line.receiptId);
+        if (line.statementId) tx.objectStore(STORE_RECEIPTS).delete(line.statementId);
       }
     }
     await txDone(tx);
@@ -315,6 +319,8 @@
       for (const l of lines) {
         let receiptId = null;
         let receiptMeta = null;
+        let statementId = null;
+        let statementMeta = null;
         if (l.receiptBackupPath && receiptBlobs[l.receiptBackupPath]) {
           const blob = receiptBlobs[l.receiptBackupPath];
           receiptMeta = await putReceipt(blob, {
@@ -322,6 +328,14 @@
             type: l.receiptMime || blob.type,
           });
           receiptId = receiptMeta.id;
+        }
+        if (l.statementBackupPath && receiptBlobs[l.statementBackupPath]) {
+          const blob = receiptBlobs[l.statementBackupPath];
+          statementMeta = await putReceipt(blob, {
+            name: l.statementDisplayName || 'statement',
+            type: l.statementMime || blob.type,
+          });
+          statementId = statementMeta.id;
         }
         const dateIso = l.date || (l.dateMillis
           ? new Date(l.dateMillis).toISOString().slice(0, 10)
@@ -337,6 +351,8 @@
           total: l.total,
           receiptId,
           receiptMeta,
+          statementId,
+          statementMeta,
         });
       }
 
@@ -386,9 +402,56 @@
     }
   }
 
+
+  function markBackupSuccess(at) {
+    return saveSettings({
+      lastBackupAt: at || Date.now(),
+      backupReminderDismissedAt: null,
+    });
+  }
+
+  function dismissBackupReminder(at) {
+    return saveSettings({ backupReminderDismissedAt: at || Date.now() });
+  }
+
+  function shouldShowBackupReminder() {
+    const s = getSettings();
+    const last = s.lastBackupAt || 0;
+    const now = Date.now();
+    const overdue = !last || (now - last) >= 28 * 24 * 60 * 60 * 1000;
+    if (!overdue) return false;
+    const dismissed = s.backupReminderDismissedAt || 0;
+    if (dismissed && dismissed >= last) return false;
+    return true;
+  }
+
+  /** Delete claim row but keep receipt blobs (for undo window). */
+  async function softDeleteClaim(id) {
+    const claim = await getClaim(id);
+    if (!claim) return null;
+    const db = await openDb();
+    const tx = db.transaction(STORE_CLAIMS, 'readwrite');
+    tx.objectStore(STORE_CLAIMS).delete(id);
+    await txDone(tx);
+    return claim;
+  }
+
+  async function purgeClaimReceipts(claim) {
+    if (!claim || !Array.isArray(claim.lines)) return;
+    for (const line of claim.lines) {
+      if (line.receiptId) await deleteReceipt(line.receiptId);
+      if (line.statementId) await deleteReceipt(line.statementId);
+    }
+  }
+
   global.AsStorage = {
     uid,
     APP_VERSION,
+    markBackupSuccess,
+    dismissBackupReminder,
+    shouldShowBackupReminder,
+    softDeleteClaim,
+    purgeClaimReceipts,
     getSettings,
     saveSettings,
     defaultSettings,

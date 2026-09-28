@@ -535,3 +535,24 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #222; outline-off
 .swipe-row.swiping-x {
   touch-action: none;
 }
+
+/* Backup reminder */
+.backup-banner {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+  margin: 8px 12px 0; padding: 10px 12px; border-radius: 12px;
+  background: #fff8e6; border: 1px solid #f0d48a; color: #5c4500;
+}
+.backup-banner.hidden { display: none !important; }
+.backup-banner-text { display: flex; flex-direction: column; gap: 2px; font-size: .9rem; }
+.backup-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.badge.warn {
+  background: #c62828; color: #fff; border-radius: 999px; padding: 0 6px;
+  font-size: .75rem; font-weight: 700; margin-left: 4px;
+}
+.toast.toast-undo {
+  display: flex; align-items: center; gap: 12px; border-radius: 12px; padding: 10px 14px;
+}
+.toast-undo-btn {
+  background: transparent; border: none; color: #8ec7ff; font-weight: 700;
+  cursor: pointer; text-transform: uppercase; letter-spacing: .02em;
+}

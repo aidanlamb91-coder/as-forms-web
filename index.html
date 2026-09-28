@@ -6,10 +6,20 @@
   <meta name="theme-color" content="#0D0D0D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>AS Forms</title>
-  <link rel="stylesheet" href="css/app.css?v=0.2.17-web" />
+  <link rel="stylesheet" href="css/app.css?v=0.3.12-web" />
 </head>
 <body>
   <div id="app">
+    <div id="backup-reminder" class="backup-banner hidden" role="status">
+      <div class="backup-banner-text">
+        <strong>No backup in 4 weeks</strong>
+        <span>Export a backup so you can restore if site data is cleared.</span>
+      </div>
+      <div class="backup-banner-actions">
+        <button type="button" class="btn primary" id="btn-backup-reminder-export">Export backup</button>
+        <button type="button" class="btn ghost" id="btn-backup-reminder-dismiss">Dismiss</button>
+      </div>
+    </div>
     <!-- EXPENSES LIST -->
     <section id="view-expenses" class="view">
       <header class="app-header">
@@ -107,13 +117,13 @@
       <ul class="settings-list">
         <li><button type="button" id="btn-goto-emails">Destination emails <span class="chev">›</span></button></li>
         <li><button type="button" id="btn-goto-templates">Email templates <span class="chev">›</span></button></li>
-        <li><button type="button" id="btn-goto-backup">Backup <span class="chev">›</span></button></li>
+        <li><button type="button" id="btn-goto-backup">Backup <span id="backup-settings-badge" class="badge warn hidden">!</span> <span class="chev">›</span></button></li>
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.2.17-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.3.12-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
-        <p class="hint">Receipt reading (OCR) is <strong>beta</strong> and runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
+        <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
       </div>
     </section>
@@ -218,7 +228,7 @@
         <button type="button" class="btn primary" id="btn-add-line">+ Line</button>
       </div>
       <div id="line-list" class="card-list"></div>
-      <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt photo or PDF to try on-device reading (beta).</p>
+      <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt (and optional bank statement for foreign claims).</p>
       <div class="panel export-panel">
         <h2>Export &amp; send</h2>
         <p class="hint">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. <strong>Send to Invoice</strong> builds the zip, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded zip yourself.</p>
@@ -255,7 +265,7 @@
         <p class="hint">If Total is blank, Net + VAT is used on export.</p>
         <fieldset class="receipt-box">
           <legend>Receipt</legend>
-          <p class="hint">Attach a photo or PDF. The app will try to read it <strong>on this device</strong> (beta) and suggest Date, merchant, and amounts — you confirm before anything is filled in.</p>
+          <p class="hint">Attach a photo or PDF. The app will try to read it <strong>on this device</strong> and suggest Date, merchant, and amounts — you confirm before anything is filled in.</p>
           <input type="file" id="line-receipt" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
           <div id="receipt-preview" class="receipt-preview hidden"></div>
           <div id="ocr-status" class="ocr-status hidden" role="status" aria-live="polite">
@@ -267,6 +277,7 @@
             <p class="hint" id="ocr-suggest-note">Check these, edit if needed, then tap Use these.</p>
             <label>Date <input type="date" id="ocr-date" /></label>
             <label>Description <input type="text" id="ocr-desc" maxlength="200" /></label>
+            <label>Foreign currency <input type="text" id="ocr-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
             <div class="grid-3">
               <label>£ Net <input type="number" id="ocr-net" step="0.01" min="0" inputmode="decimal" /></label>
               <label>£ VAT <input type="number" id="ocr-vat" step="0.01" min="0" inputmode="decimal" /></label>
@@ -282,6 +293,13 @@
             <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
             <button type="button" class="btn ghost hidden" id="btn-ocr-rescan-alone">Scan receipt again</button>
           </div>
+        </fieldset>
+        <fieldset class="receipt-box">
+          <legend>Bank statement (optional)</legend>
+          <p class="hint">For foreign claims: attach a statement screenshot or PDF. Export merges receipt + statement into one tall image when both are photos; otherwise the zip uses <code>1.1</code> / <code>1.2</code>. OCR runs only on the receipt.</p>
+          <input type="file" id="line-statement" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
+          <div id="statement-preview" class="receipt-preview hidden"></div>
+          <button type="button" class="btn ghost" id="btn-clear-statement">Remove statement</button>
         </fieldset>
         <button type="submit" class="btn primary">Save line</button>
       </form>
@@ -400,18 +418,19 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=0.2.17-web"></script>
-  <script src="js/email-templates.js?v=0.2.17-web"></script>
-  <script src="js/offshore-days.js?v=0.2.17-web"></script>
-  <script src="js/storage.js?v=0.2.17-web"></script>
-  <script src="js/docx-filler.js?v=0.2.17-web"></script>
-  <script src="js/timesheet-filler.js?v=0.2.17-web"></script>
-  <script src="js/timesheet-reader.js?v=0.2.17-web"></script>
-  <script src="js/expense-zip-reader.js?v=0.2.17-web"></script>
-  <script src="js/export.js?v=0.2.17-web"></script>
-  <script src="js/folder-sync.js?v=0.2.17-web"></script>
-  <script src="js/receipt-parse.js?v=0.2.17-web"></script>
-  <script src="js/receipt-ocr.js?v=0.2.17-web"></script>
-  <script src="js/app.js?v=0.2.17-web"></script>
+  <script src="lib/jszip.min.js?v=0.3.12-web"></script>
+  <script src="js/email-templates.js?v=0.3.12-web"></script>
+  <script src="js/offshore-days.js?v=0.3.12-web"></script>
+  <script src="js/storage.js?v=0.3.12-web"></script>
+  <script src="js/docx-filler.js?v=0.3.12-web"></script>
+  <script src="js/timesheet-filler.js?v=0.3.12-web"></script>
+  <script src="js/timesheet-reader.js?v=0.3.12-web"></script>
+  <script src="js/expense-zip-reader.js?v=0.3.12-web"></script>
+  <script src="js/image-merge.js?v=0.3.12-web"></script>
+  <script src="js/export.js?v=0.3.12-web"></script>
+  <script src="js/folder-sync.js?v=0.3.12-web"></script>
+  <script src="js/receipt-parse.js?v=0.3.12-web"></script>
+  <script src="js/receipt-ocr.js?v=0.3.12-web"></script>
+  <script src="js/app.js?v=0.3.12-web"></script>
 </body>
 </html>

@@ -127,7 +127,8 @@
   /**
    * Android ZipPackager parity: flat zip of filled ExpenseClaim_YYYY-MM-DD.docx
    * plus receipt files named by 1-based form line index (e.g. 1.jpg, 3.pdf).
-   * No claim.json. Lines without receipts skip that file; numbering is line index.
+   * When receipt + bank statement both present: merge to one tall JPEG when possible;
+   * else write N.1.ext (receipt) and N.2.ext (statement).
    */
   async function buildClaimZipBlob(claim) {
     if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
@@ -140,14 +141,40 @@
     zip.file(docxName, filledDocx);
 
     const lines = claim.lines || [];
+    const merge = global.AsImageMerge;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (!line.receiptId) continue;
-      const rcpt = await AsStorage.getReceipt(line.receiptId);
-      if (!rcpt || !rcpt.blob) continue;
-      const lineNumber = i + 1; // form line index (Android mapIndexed)
-      const ext = receiptExtension(rcpt.name || (line.receiptMeta && line.receiptMeta.name), rcpt.type);
-      zip.file(String(lineNumber) + ext, rcpt.blob);
+      const lineNumber = i + 1;
+      const rcpt = line.receiptId ? await AsStorage.getReceipt(line.receiptId) : null;
+      const stmt = line.statementId ? await AsStorage.getReceipt(line.statementId) : null;
+      const hasR = rcpt && rcpt.blob;
+      const hasS = stmt && stmt.blob;
+      if (!hasR && !hasS) continue;
+
+      if (hasR && hasS && merge) {
+        const rName = rcpt.name || (line.receiptMeta && line.receiptMeta.name) || '';
+        const sName = stmt.name || (line.statementMeta && line.statementMeta.name) || '';
+        const canMerge =
+          merge.isRasterMime(rcpt.type, rName) && merge.isRasterMime(stmt.type, sName);
+        let merged = null;
+        if (canMerge) merged = await merge.mergeVertical(rcpt.blob, stmt.blob);
+        if (merged) {
+          zip.file(String(lineNumber) + '.jpg', merged);
+          continue;
+        }
+        const extR = receiptExtension(rName, rcpt.type);
+        const extS = receiptExtension(sName, stmt.type);
+        zip.file(String(lineNumber) + '.1' + extR, rcpt.blob);
+        zip.file(String(lineNumber) + '.2' + extS, stmt.blob);
+        continue;
+      }
+      if (hasR) {
+        const ext = receiptExtension(rcpt.name || (line.receiptMeta && line.receiptMeta.name), rcpt.type);
+        zip.file(String(lineNumber) + ext, rcpt.blob);
+      } else if (hasS) {
+        const ext = receiptExtension(stmt.name || (line.statementMeta && line.statementMeta.name), stmt.type);
+        zip.file(String(lineNumber) + ext, stmt.blob);
+      }
     }
     return zip.generateAsync({ type: 'blob' });
   }
@@ -324,6 +351,13 @@
             : '.bin';
           receiptPath = 'receipts/' + c.id + '/line_' + line.id + ext;
         }
+        let statementPath = null;
+        if (line.statementId) {
+          const sext = line.statementMeta && line.statementMeta.name && line.statementMeta.name.includes('.')
+            ? line.statementMeta.name.slice(line.statementMeta.name.lastIndexOf('.'))
+            : '.bin';
+          statementPath = 'receipts/' + c.id + '/line_' + line.id + '_stmt' + sext;
+        }
         lineSnaps.push({
           id: line.id,
           claimId: c.id,
@@ -339,6 +373,9 @@
           receiptBackupPath: receiptPath,
           receiptDisplayName: line.receiptMeta ? line.receiptMeta.name : null,
           receiptMime: line.receiptMeta ? line.receiptMeta.type : null,
+          statementBackupPath: statementPath,
+          statementDisplayName: line.statementMeta ? line.statementMeta.name : null,
+          statementMime: line.statementMeta ? line.statementMeta.type : null,
         });
       });
     }
@@ -346,12 +383,19 @@
     const receiptEntries = [];
     for (const c of claims) {
       for (const line of c.lines || []) {
-        if (!line.receiptId) continue;
         const snap = lineSnaps.find((l) => l.id === line.id && l.claimId === c.id);
-        if (!snap || !snap.receiptBackupPath) continue;
-        const rcpt = await AsStorage.getReceipt(line.receiptId);
-        if (rcpt && rcpt.blob) {
-          receiptEntries.push({ path: snap.receiptBackupPath, blob: rcpt.blob });
+        if (!snap) continue;
+        if (line.receiptId && snap.receiptBackupPath) {
+          const rcpt = await AsStorage.getReceipt(line.receiptId);
+          if (rcpt && rcpt.blob) {
+            receiptEntries.push({ path: snap.receiptBackupPath, blob: rcpt.blob });
+          }
+        }
+        if (line.statementId && snap.statementBackupPath) {
+          const stmt = await AsStorage.getReceipt(line.statementId);
+          if (stmt && stmt.blob) {
+            receiptEntries.push({ path: snap.statementBackupPath, blob: stmt.blob });
+          }
         }
       }
     }
@@ -419,6 +463,7 @@
     const blob = await zip.generateAsync({ type: 'blob' });
     const name = 'as-forms-backup-' + new Date().toISOString().slice(0, 10) + '.zip';
     downloadBlob(blob, name);
+    if (AsStorage.markBackupSuccess) AsStorage.markBackupSuccess();
     return name;
   }
 

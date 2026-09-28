@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.17-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.12-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -24,16 +24,66 @@
     entryId: null,
     pendingReceipt: null,
     clearReceipt: false,
+    pendingStatement: null,
+    clearStatement: false,
     ocrToken: 0,
     lastOcrParsed: null,
+    pendingUndo: null,
+    backupBannerDismissedSession: false,
   };
 
   function toast(msg) {
     const el = $('#toast');
+    el.innerHTML = '';
     el.textContent = msg;
-    el.classList.remove('hidden');
+    el.classList.remove('hidden', 'toast-undo');
     clearTimeout(toast._t);
+    if (state.pendingUndo && state.pendingUndo._timer) {
+      /* leave undo timer alone when showing plain toast over it */
+    }
     toast._t = setTimeout(() => el.classList.add('hidden'), 2400);
+  }
+
+  function toastUndo(msg, onUndo, ms) {
+    const el = $('#toast');
+    const ttl = ms || 6500;
+    el.innerHTML = '';
+    el.classList.add('toast-undo');
+    el.classList.remove('hidden');
+    const span = document.createElement('span');
+    span.textContent = msg;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-undo-btn';
+    btn.textContent = 'Undo';
+    el.appendChild(span);
+    el.appendChild(btn);
+    clearTimeout(toast._t);
+    if (state.pendingUndo && state.pendingUndo._timer) {
+      clearTimeout(state.pendingUndo._timer);
+    }
+    let undone = false;
+    const finish = () => {
+      el.classList.add('hidden');
+      el.classList.remove('toast-undo');
+      el.innerHTML = '';
+    };
+    const timer = setTimeout(async () => {
+      if (!undone && state.pendingUndo && state.pendingUndo.onExpire) {
+        try { await state.pendingUndo.onExpire(); } catch (e) { console.error(e); }
+      }
+      state.pendingUndo = null;
+      finish();
+    }, ttl);
+    state.pendingUndo = { onUndo, onExpire: null, _timer: timer };
+    btn.addEventListener('click', async () => {
+      if (undone) return;
+      undone = true;
+      clearTimeout(timer);
+      state.pendingUndo = null;
+      finish();
+      try { await onUndo(); } catch (e) { console.error(e); toast('Undo failed'); }
+    });
   }
 
   // Quiet toasts from background folder sync (never blocks main actions)
@@ -41,11 +91,172 @@
     toast(msg);
   };
 
+
+  function updateBackupBanner() {
+    const banner = $('#backup-reminder');
+    const badge = $('#backup-settings-badge');
+    const show = AsStorage.shouldShowBackupReminder() && !state.backupBannerDismissedSession;
+    if (banner) banner.classList.toggle('hidden', !show);
+    if (badge) badge.classList.toggle('hidden', !AsStorage.shouldShowBackupReminder());
+  }
+
   function scheduleFolderSync() {
     try {
       if (globalThis.AsFolderSync) AsFolderSync.scheduleSync();
     } catch (_) {}
   }
+
+
+  /**
+   * Touch/pointer swipe on list rows.
+   * Slide right (or long-press then slide right) → delete (red).
+   * Slide left → complete (green) when onComplete provided (main Active lists only).
+   */
+  function wrapSwipeRow(frontEl, opts) {
+    const row = document.createElement('div');
+    row.className = 'swipe-row';
+    const bgDel = document.createElement('div');
+    bgDel.className = 'swipe-bg delete';
+    bgDel.textContent = 'Delete';
+    row.appendChild(bgDel);
+    if (opts.onComplete) {
+      const bgOk = document.createElement('div');
+      bgOk.className = 'swipe-bg complete';
+      bgOk.textContent = 'Completed';
+      row.appendChild(bgOk);
+    }
+    frontEl.classList.add('swipe-front');
+    row.appendChild(frontEl);
+
+    const THRESH = 96;
+    const LONG_PRESS_MS = 380;
+    let startX = 0, startY = 0, dx = 0, dy = 0;
+    let tracking = false, axis = null, longPressed = false, lpTimer = null;
+    let pointerId = null;
+    let suppressClick = false;
+
+    function setOffset(x) {
+      dx = x;
+      frontEl.style.transform = x ? 'translateX(' + x + 'px)' : '';
+      row.classList.toggle('show-delete', x > 8);
+      row.classList.toggle('show-complete', x < -8 && !!opts.onComplete);
+    }
+
+    function reset() {
+      row.classList.remove('dragging', 'swiping-x');
+      setOffset(0);
+      axis = null;
+      tracking = false;
+      longPressed = false;
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    }
+
+    async function commit() {
+      const canComplete = !!opts.onComplete;
+      const delThresh = longPressed ? THRESH * 0.55 : THRESH;
+      const right = dx >= delThresh;
+      const left = canComplete && dx <= -THRESH;
+      if (!right && !left) {
+        reset();
+        return;
+      }
+      suppressClick = true;
+      const action = right ? 'delete' : 'complete';
+      const target = action === 'delete' ? (row.clientWidth || 280) : -(row.clientWidth || 280);
+      row.classList.remove('dragging');
+      setOffset(target);
+      try {
+        if (action === 'delete') {
+          if (opts.confirmDelete) {
+            const msg = opts.deleteConfirm || 'Delete this item?';
+            if (!confirm(msg)) {
+              reset();
+              suppressClick = false;
+              return;
+            }
+          }
+          await opts.onDelete();
+        } else {
+          await opts.onComplete();
+        }
+      } catch (e) {
+        console.error(e);
+        toast('Action failed');
+        reset();
+      }
+      // Row may be removed by refresh; if still present, reset
+      if (row.isConnected) reset();
+    }
+
+    frontEl.addEventListener('click', (ev) => {
+      if (suppressClick) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        suppressClick = false;
+      }
+    }, true);
+
+    frontEl.addEventListener('pointerdown', (ev) => {
+      if (ev.button != null && ev.button !== 0) return;
+      pointerId = ev.pointerId;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      dx = 0; dy = 0;
+      tracking = true;
+      axis = null;
+      longPressed = false;
+      row.classList.add('dragging');
+      try { frontEl.setPointerCapture(pointerId); } catch (_) {}
+      lpTimer = setTimeout(() => {
+        if (tracking && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+          longPressed = true;
+          if (navigator.vibrate) try { navigator.vibrate(12); } catch (_) {}
+        }
+      }, LONG_PRESS_MS);
+    });
+
+    frontEl.addEventListener('pointermove', (ev) => {
+      if (!tracking || ev.pointerId !== pointerId) return;
+      const mx = ev.clientX - startX;
+      const my = ev.clientY - startY;
+      dy = my;
+      if (!axis) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        if (Math.abs(mx) > Math.abs(my) * 1.15) {
+          axis = 'x';
+          row.classList.add('swiping-x');
+          if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+        } else {
+          axis = 'y';
+          // vertical scroll — abandon swipe
+          reset();
+          try { frontEl.releasePointerCapture(pointerId); } catch (_) {}
+          return;
+        }
+      }
+      if (axis !== 'x') return;
+      ev.preventDefault();
+      let x = mx;
+      if (!opts.onComplete && x < 0) x = Math.max(x, -24); // slight rubber-band only
+      if (x > 0) x = Math.min(x, row.clientWidth * 0.85);
+      if (x < 0) x = Math.max(x, -row.clientWidth * 0.85);
+      setOffset(x);
+    });
+
+    function endPointer(ev) {
+      if (!tracking || (ev && ev.pointerId !== pointerId)) return;
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+      if (axis === 'x') commit();
+      else reset();
+      pointerId = null;
+    }
+
+    frontEl.addEventListener('pointerup', endPointer);
+    frontEl.addEventListener('pointercancel', endPointer);
+
+    return row;
+  }
+
 
   function escapeHtml(s) {
     return String(s)
@@ -179,7 +390,26 @@
       ' · ' + (c.lines || []).length + ' line(s)</p>' +
       '<p class="money">' + money(claimTotal(c)) + '</p>';
     btn.addEventListener('click', () => openClaim(c.id));
-    return btn;
+    const canComplete = !c.completed;
+    return wrapSwipeRow(btn, {
+      deleteConfirm: 'Delete this claim and its receipts from this browser?',
+      onDelete: async () => {
+        await AsStorage.deleteClaim(c.id);
+        toast('Claim deleted');
+        scheduleFolderSync();
+        await refreshClaimList();
+      },
+      onComplete: canComplete ? async () => {
+        const claim = await AsStorage.getClaim(c.id);
+        if (!claim) return;
+        claim.completed = true;
+        claim.completedAt = Date.now();
+        await AsStorage.putClaim(claim);
+        toast('Marked complete');
+        scheduleFolderSync();
+        await refreshClaimList();
+      } : null,
+    });
   }
 
   async function createClaim() {
@@ -246,7 +476,33 @@
         '<p class="meta">' + escapeHtml(line.date || '') + receiptNote + '</p>' +
         '<p class="money">' + money(lineTotal(line)) + '</p>';
       btn.addEventListener('click', () => openLine(line.id));
-      list.appendChild(btn);
+      list.appendChild(wrapSwipeRow(btn, {
+        onDelete: async () => {
+          const claim = await AsStorage.getClaim(state.claimId);
+          if (!claim) return;
+          const victim = (claim.lines || []).find((l) => l.id === line.id);
+          const snapLine = victim ? JSON.parse(JSON.stringify(victim)) : null;
+          claim.lines = (claim.lines || []).filter((l) => l.id !== line.id);
+          await AsStorage.putClaim(claim);
+          scheduleFolderSync();
+          await openClaim(claim.id);
+          toastUndo('Line deleted', async () => {
+            const c2 = await AsStorage.getClaim(state.claimId);
+            if (!c2 || !snapLine) return;
+            c2.lines = c2.lines || [];
+            c2.lines.push(snapLine);
+            await AsStorage.putClaim(c2);
+            scheduleFolderSync();
+            await openClaim(c2.id);
+          });
+          if (state.pendingUndo) {
+            state.pendingUndo.onExpire = async () => {
+              if (snapLine && snapLine.receiptId) await AsStorage.deleteReceipt(snapLine.receiptId);
+              if (snapLine && snapLine.statementId) await AsStorage.deleteReceipt(snapLine.statementId);
+            };
+          }
+        },
+      }));
     });
   }
 
@@ -311,6 +567,8 @@
       total: null,
       receiptId: null,
       receiptMeta: null,
+      statementId: null,
+      statementMeta: null,
     };
     claim.lines = claim.lines || [];
     claim.lines.push(line);
@@ -351,12 +609,15 @@
     if (!sg) return;
     $('#ocr-date').value = parsed.date || '';
     $('#ocr-desc').value = parsed.description || '';
+    const fxEl = $('#ocr-fx');
+    if (fxEl) fxEl.value = parsed.foreignCurrency || '';
     $('#ocr-net').value = parsed.net != null ? parsed.net : '';
     $('#ocr-vat').value = parsed.vat != null ? parsed.vat : '';
     $('#ocr-total').value = parsed.total != null ? parsed.total : '';
     const bits = [];
     if (parsed.date) bits.push('date');
     if (parsed.description) bits.push('merchant');
+    if (parsed.foreignCurrency) bits.push('foreign');
     if (parsed.total != null) bits.push('total');
     if (parsed.net != null) bits.push('net');
     if (parsed.vat != null) bits.push('VAT');
@@ -372,12 +633,18 @@
   function applyOcrSuggestions() {
     const date = $('#ocr-date').value;
     const desc = $('#ocr-desc').value.trim();
+    const fxEl = $('#ocr-fx');
+    const fx = fxEl ? fxEl.value.trim() : '';
     const net = numOrNull($('#ocr-net').value);
     const vat = numOrNull($('#ocr-vat').value);
     const total = numOrNull($('#ocr-total').value);
 
     if (date) $('#line-date').value = date;
     if (desc) $('#line-desc').value = desc;
+    if (fx) {
+      const lineFx = $('#line-fx');
+      if (lineFx) lineFx.value = fx;
+    }
     if (net != null) {
       $('#line-net').value = net;
     }
@@ -466,6 +733,7 @@
     $('#line-total').dataset.touched = line.total != null ? '1' : '';
     $('#line-receipt').value = '';
     await renderReceiptPreview(line);
+    await renderStatementPreview(line);
     showView('line');
   }
 
@@ -502,6 +770,39 @@
     }
   }
 
+
+  async function renderStatementPreview(line) {
+    const box = $('#statement-preview');
+    if (!box) return;
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    const clearBtn = $('#btn-clear-statement');
+    if (clearBtn) clearBtn.classList.add('hidden');
+    let blob = null;
+    let meta = null;
+    if (state.pendingStatement) {
+      blob = state.pendingStatement.blob;
+      meta = state.pendingStatement;
+    } else if (!state.clearStatement && line && line.statementId) {
+      const row = await AsStorage.getReceipt(line.statementId);
+      if (row) { blob = row.blob; meta = row; }
+    }
+    if (!blob) return;
+    box.classList.remove('hidden');
+    if (clearBtn) clearBtn.classList.remove('hidden');
+    if ((meta.type || '').startsWith('image/')) {
+      const img = document.createElement('img');
+      img.alt = 'Bank statement preview';
+      img.src = URL.createObjectURL(blob);
+      box.appendChild(img);
+    } else {
+      const chip = document.createElement('div');
+      chip.className = 'pdf-chip';
+      chip.textContent = '📎 ' + (meta.name || 'statement.pdf');
+      box.appendChild(chip);
+    }
+  }
+
   async function saveLineForm(ev) {
     ev.preventDefault();
     const claim = await AsStorage.getClaim(state.claimId);
@@ -532,11 +833,27 @@
       line.receiptId = meta.id;
       line.receiptMeta = meta;
     }
+    if (state.clearStatement && line.statementId) {
+      await AsStorage.deleteReceipt(line.statementId);
+      line.statementId = null;
+      line.statementMeta = null;
+    }
+    if (state.pendingStatement) {
+      if (line.statementId) await AsStorage.deleteReceipt(line.statementId);
+      const meta = await AsStorage.putReceipt(state.pendingStatement.blob, {
+        name: state.pendingStatement.name,
+        type: state.pendingStatement.type,
+      });
+      line.statementId = meta.id;
+      line.statementMeta = meta;
+    }
     claim.lines[idx] = line;
     (claim.lines || []).forEach((l) => { l.jobNo = claim.jobNo || ''; });
     await AsStorage.putClaim(claim);
     state.pendingReceipt = null;
     state.clearReceipt = false;
+    state.pendingStatement = null;
+    state.clearStatement = false;
     toast('Line saved');
     scheduleFolderSync();
     await openClaim(claim.id);
@@ -549,6 +866,7 @@
     if (!claim) return;
     const line = (claim.lines || []).find((l) => l.id === state.lineId);
     if (line && line.receiptId) await AsStorage.deleteReceipt(line.receiptId);
+    if (line && line.statementId) await AsStorage.deleteReceipt(line.statementId);
     claim.lines = (claim.lines || []).filter((l) => l.id !== state.lineId);
     await AsStorage.putClaim(claim);
     toast('Line deleted');
@@ -769,7 +1087,30 @@
       ((t.entries || []).length === 1 ? 'y' : 'ies') +
       (t.completed ? ' · completed' : '') + '</p>';
     btn.addEventListener('click', () => openTimesheet(t.id));
-    return btn;
+    const canComplete = !t.completed;
+    return wrapSwipeRow(btn, {
+      onDelete: async () => {
+        const snap = await AsStorage.getTimesheet(t.id);
+        await AsStorage.deleteTimesheet(t.id);
+        scheduleFolderSync();
+        await refreshTsList();
+        toastUndo('Timesheet deleted', async () => {
+          if (snap) await AsStorage.putTimesheet(snap);
+          scheduleFolderSync();
+          await refreshTsList();
+        });
+      },
+      onComplete: canComplete ? async () => {
+        const ts = await AsStorage.getTimesheet(t.id);
+        if (!ts) return;
+        ts.completed = true;
+        ts.completedAt = Date.now();
+        await AsStorage.putTimesheet(ts);
+        toast('Marked complete');
+        scheduleFolderSync();
+        await refreshTsList();
+      } : null,
+    });
   }
 
   function openNewTimesheet() {
@@ -855,7 +1196,31 @@
         }
         openEntry(e.id);
       });
-      list.appendChild(btn);
+      if (ts.completed) {
+        list.appendChild(btn);
+        return;
+      }
+      list.appendChild(wrapSwipeRow(btn, {
+        onDelete: async () => {
+          const cur = await AsStorage.getTimesheet(state.tsId);
+          if (!cur || cur.completed) return;
+          const victim = (cur.entries || []).find((x) => x.id === e.id);
+          const snap = victim ? JSON.parse(JSON.stringify(victim)) : null;
+          cur.entries = (cur.entries || []).filter((x) => x.id !== e.id);
+          await AsStorage.putTimesheet(cur);
+          scheduleFolderSync();
+          await openTimesheet(cur.id);
+          toastUndo('Entry deleted', async () => {
+            const t2 = await AsStorage.getTimesheet(state.tsId);
+            if (!t2 || !snap) return;
+            t2.entries = t2.entries || [];
+            t2.entries.push(snap);
+            await AsStorage.putTimesheet(t2);
+            scheduleFolderSync();
+            await openTimesheet(t2.id);
+          });
+        },
+      }));
     });
   }
 
@@ -1149,16 +1514,41 @@
   }
 
 
+  async function defaultsFromPreviousTimesheet(ts) {
+    const all = await AsStorage.listTimesheets();
+    const curKey = ts.year * 12 + ts.month;
+    const prior = all
+      .filter((x) => x.id !== ts.id && (x.year * 12 + x.month) < curKey)
+      .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))[0]
+      || all
+        .filter((x) => x.id !== ts.id)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+    if (!prior || !(prior.entries || []).length) {
+      return { jobNumber: '', description: '', dayType: 'OFFICE' };
+    }
+    const entries = prior.entries;
+    const offshore = entries.filter((e) => e.dayType === 'OFFSHORE' && e.jobNumber);
+    const source = offshore[0]
+      || entries.find((e) => e.jobNumber)
+      || entries[0];
+    return {
+      jobNumber: source.jobNumber || '',
+      description: source.description || '',
+      dayType: source.dayType || 'OFFICE',
+    };
+  }
+
   async function addEntry() {
     const ts = await AsStorage.getTimesheet(state.tsId);
     if (!ts || ts.completed) return;
+    const defaults = await defaultsFromPreviousTimesheet(ts);
     const entry = {
       id: AsStorage.uid('tse'),
       startDay: 1,
       endDay: 1,
-      jobNumber: '',
-      description: '',
-      dayType: 'OFFICE',
+      jobNumber: defaults.jobNumber || '',
+      description: defaults.description || '',
+      dayType: defaults.dayType || 'OFFICE',
     };
     ts.entries = ts.entries || [];
     ts.entries.push(entry);
@@ -1391,33 +1781,56 @@
         if (line.receiptId) {
           try { await AsStorage.deleteReceipt(line.receiptId); } catch (_) {}
         }
+        if (line.statementId) {
+          try { await AsStorage.deleteReceipt(line.statementId); } catch (_) {}
+        }
       }
     }
 
-    const receiptsByLine = {};
-    for (const r of parsed.receipts || []) receiptsByLine[r.lineNumber] = r;
+    if (existing && Array.isArray(existing.lines)) {
+      /* statement cleanup already covered if we extend loop below */
+    }
+    const receiptsGrouped = {};
+    for (const r of parsed.receipts || []) {
+      (receiptsGrouped[r.lineNumber] || (receiptsGrouped[r.lineNumber] = [])).push(r);
+    }
     const linesByNum = {};
     for (const l of parsed.lines || []) linesByNum[l.lineNumber] = l;
     const lineNums = Array.from(new Set([
       ...(parsed.lines || []).map((l) => l.lineNumber),
-      ...Object.keys(receiptsByLine).map(Number),
+      ...Object.keys(receiptsGrouped).map(Number),
     ])).filter((n) => n >= 1).sort((a, b) => a - b);
 
     const webLines = [];
     for (const num of lineNums) {
       const pl = linesByNum[num];
-      const receipt = receiptsByLine[num];
+      const parts = receiptsGrouped[num] || [];
+      const receiptPart = parts.find((r) => r.part == null || r.part === 1)
+        || parts.find((r) => r.part !== 2);
+      const statementPart = parts.find((r) => r.part === 2);
       let receiptId = null;
       let receiptMeta = null;
-      if (receipt && receipt.bytes && receipt.bytes.length) {
-        const blob = new Blob([receipt.bytes], {
-          type: receipt.mime || 'application/octet-stream',
+      let statementId = null;
+      let statementMeta = null;
+      if (receiptPart && receiptPart.bytes && receiptPart.bytes.length) {
+        const blob = new Blob([receiptPart.bytes], {
+          type: receiptPart.mime || 'application/octet-stream',
         });
         receiptMeta = await AsStorage.putReceipt(blob, {
-          name: receipt.fileName,
-          type: receipt.mime || blob.type,
+          name: receiptPart.fileName,
+          type: receiptPart.mime || blob.type,
         });
         receiptId = receiptMeta.id;
+      }
+      if (statementPart && statementPart.bytes && statementPart.bytes.length) {
+        const blob = new Blob([statementPart.bytes], {
+          type: statementPart.mime || 'application/octet-stream',
+        });
+        statementMeta = await AsStorage.putReceipt(blob, {
+          name: statementPart.fileName,
+          type: statementPart.mime || blob.type,
+        });
+        statementId = statementMeta.id;
       }
       webLines.push({
         id: AsStorage.uid('line'),
@@ -1430,6 +1843,8 @@
         total: pl ? pl.total : null,
         receiptId,
         receiptMeta,
+        statementId,
+        statementMeta,
       });
     }
 
@@ -1783,6 +2198,7 @@
 
   function showBackup() {
     $('#backup-status').textContent = '';
+    updateBackupBanner();
     showView('backup');
     refreshBackupFolderUi();
     const s = AsStorage.getSettings();
@@ -1923,7 +2339,31 @@
       const alone = $('#btn-ocr-rescan-alone');
       if (alone) alone.classList.remove('hidden');
     });
-    $('#btn-ocr-apply').addEventListener('click', (ev) => {
+    
+    const stmtInput = $('#line-statement');
+    if (stmtInput) {
+      stmtInput.addEventListener('change', async (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        state.pendingStatement = { blob: file, name: file.name, type: file.type };
+        state.clearStatement = false;
+        const claim = await AsStorage.getClaim(state.claimId);
+        const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
+        await renderStatementPreview(line);
+      });
+    }
+    const btnClearStmt = $('#btn-clear-statement');
+    if (btnClearStmt) {
+      btnClearStmt.addEventListener('click', async () => {
+        state.pendingStatement = null;
+        state.clearStatement = true;
+        if (stmtInput) stmtInput.value = '';
+        const claim = await AsStorage.getClaim(state.claimId);
+        const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
+        await renderStatementPreview(line);
+      });
+    }
+$('#btn-ocr-apply').addEventListener('click', (ev) => {
       ev.preventDefault();
       applyOcrSuggestions();
     });
@@ -2061,7 +2501,19 @@
       scheduleFolderSync();
       showSettings();
     });
-    $('#btn-backup-export').addEventListener('click', async () => {
+    const remExport = $('#btn-backup-reminder-export');
+    if (remExport) remExport.addEventListener('click', () => {
+      state.backupBannerDismissedSession = true;
+      updateBackupBanner();
+      showBackup();
+    });
+    const remDismiss = $('#btn-backup-reminder-dismiss');
+    if (remDismiss) remDismiss.addEventListener('click', () => {
+      AsStorage.dismissBackupReminder();
+      state.backupBannerDismissedSession = true;
+      updateBackupBanner();
+    });
+    $('#btn-backup-export').addEventListener('click, async () => {
       const st = $('#backup-status');
       st.classList.remove('error');
       st.textContent = 'Building backup…';
@@ -2107,6 +2559,8 @@
         await refreshBackupFolderUi();
         st.textContent = 'Syncing…';
         const result = await AsFolderSync.syncNow();
+        AsStorage.markBackupSuccess();
+        updateBackupBanner();
         st.textContent = 'Synced to ' + result.folderName;
         toast('Synced to folder');
       } catch (e) {
@@ -2125,6 +2579,8 @@
       st.textContent = 'Syncing…';
       try {
         const result = await AsFolderSync.syncNow();
+        AsStorage.markBackupSuccess();
+        updateBackupBanner();
         st.textContent = 'Synced to ' + result.folderName +
           ' (' + result.claimCount + ' claims, ' + result.timesheetCount + ' timesheets)';
         toast('Synced to folder');
