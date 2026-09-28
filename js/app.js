@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.16-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.17-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1308,7 +1308,185 @@
     }
   }
 
-  async function importTimesheets(files) {
+  // ——— Expense zip Import… (Android ExpenseZipReader parity) ———
+  async function importExpenseZips(files) {
+    if (!files || !files.length) return;
+    if (!globalThis.AsExpenseZipReader) {
+      toast('Expense zip reader not loaded');
+      return;
+    }
+    let imported = 0;
+    let skipped = 0;
+    let replaced = 0;
+    const failMessages = [];
+    let replaceAll = null; // true / false / null
+
+    const list = Array.from(files).filter((f) => AsExpenseZipReader.isSupportedFileName(f.name));
+    if (!list.length) {
+      toast('No .zip files selected');
+      return;
+    }
+
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      try {
+        toast('Importing ' + file.name + ' (' + (i + 1) + '/' + list.length + ')…');
+        const buf = await file.arrayBuffer();
+        const parsed = await AsExpenseZipReader.parse(buf, file.name);
+        const job = normalizeJob(parsed.jobNumber);
+        let existing = null;
+        if (job) {
+          existing = await AsStorage.findClaimByJobAndDates(job, parsed.dateFrom, parsed.dateTo);
+        }
+        if (existing) {
+          let action = replaceAll;
+          if (action === null) {
+            const choice = await promptExpenseConflict({
+              job: job || '(no job)',
+              dateFrom: parsed.dateFrom,
+              dateTo: parsed.dateTo,
+              fileName: file.name,
+              showBatch: i < list.length - 1,
+            });
+            if (choice === 'skip-all') { replaceAll = false; action = false; }
+            else if (choice === 'replace-all') { replaceAll = true; action = true; }
+            else if (choice === 'skip') action = false;
+            else if (choice === 'replace') action = true;
+            else { skipped++; continue; }
+          }
+          if (!action) { skipped++; continue; }
+          replaced++;
+        }
+        await applyExpenseImport(parsed, existing);
+        imported++;
+      } catch (e) {
+        console.error(e);
+        const msg = (e && e.message) || String(e);
+        failMessages.push(file.name + ': ' + msg);
+        toast('Import failed: ' + msg);
+      }
+    }
+
+    let summary = 'Imported ' + imported;
+    if (replaced) summary += ', replaced ' + replaced;
+    if (skipped) summary += ', skipped ' + skipped;
+    if (failMessages.length) summary += ', failed ' + failMessages.length;
+    toast(summary);
+    scheduleFolderSync();
+    state.expenseChip = 'completed';
+    $$('[data-expense-chip]').forEach((b) =>
+      b.classList.toggle('on', b.getAttribute('data-expense-chip') === 'completed')
+    );
+    await showExpenses();
+  }
+
+  async function applyExpenseImport(parsed, existing) {
+    const settings = AsStorage.getSettings();
+    const now = Date.now();
+    const job = normalizeJob(parsed.jobNumber);
+    const claimId = existing ? existing.id : AsStorage.uid('claim');
+
+    if (existing && Array.isArray(existing.lines)) {
+      for (const line of existing.lines) {
+        if (line.receiptId) {
+          try { await AsStorage.deleteReceipt(line.receiptId); } catch (_) {}
+        }
+      }
+    }
+
+    const receiptsByLine = {};
+    for (const r of parsed.receipts || []) receiptsByLine[r.lineNumber] = r;
+    const linesByNum = {};
+    for (const l of parsed.lines || []) linesByNum[l.lineNumber] = l;
+    const lineNums = Array.from(new Set([
+      ...(parsed.lines || []).map((l) => l.lineNumber),
+      ...Object.keys(receiptsByLine).map(Number),
+    ])).filter((n) => n >= 1).sort((a, b) => a - b);
+
+    const webLines = [];
+    for (const num of lineNums) {
+      const pl = linesByNum[num];
+      const receipt = receiptsByLine[num];
+      let receiptId = null;
+      let receiptMeta = null;
+      if (receipt && receipt.bytes && receipt.bytes.length) {
+        const blob = new Blob([receipt.bytes], {
+          type: receipt.mime || 'application/octet-stream',
+        });
+        receiptMeta = await AsStorage.putReceipt(blob, {
+          name: receipt.fileName,
+          type: receipt.mime || blob.type,
+        });
+        receiptId = receiptMeta.id;
+      }
+      webLines.push({
+        id: AsStorage.uid('line'),
+        date: (pl && pl.date) || '',
+        jobNo: job || (pl && pl.jobNo) || '',
+        description: (pl && pl.description) || '',
+        foreignCurrency: (pl && pl.foreignCurrency) || '',
+        net: pl ? pl.net : null,
+        vat: pl ? pl.vat : null,
+        total: pl ? pl.total : null,
+        receiptId,
+        receiptMeta,
+      });
+    }
+
+    await AsStorage.putClaim({
+      id: claimId,
+      jobNo: job,
+      name: parsed.name || settings.displayName || '',
+      sendTo: parsed.sendTo || settings.expenseTo || settings.sendTo || '',
+      dateFrom: parsed.dateFrom,
+      dateTo: parsed.dateTo,
+      completed: true,
+      completedAt: now,
+      lines: webLines,
+      createdAt: existing ? (existing.createdAt || now) : now,
+      updatedAt: now,
+    });
+    return claimId;
+  }
+
+  function promptExpenseConflict(opts) {
+    return new Promise((resolve) => {
+      const root = $('#modal-root');
+      const close = (value) => {
+        root.className = 'hidden';
+        root.innerHTML = '';
+        resolve(value);
+      };
+      const job = opts.job || '(no job)';
+      const range = (opts.dateFrom || '') + ' → ' + (opts.dateTo || '');
+      root.className = 'modal-backdrop';
+      root.innerHTML =
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="expense-conflict-title">' +
+        '<h2 id="expense-conflict-title">Claim already exists</h2>' +
+        '<p>' + escapeHtml(job) + ' (' + escapeHtml(range) + ') already exists ' +
+        '(from ' + escapeHtml(opts.fileName || 'zip') + '). ' +
+        'Skip this file or replace the existing claim?</p>' +
+        (opts.showBatch
+          ? '<p class="hint">More conflicts may follow — you can Skip all or Replace all.</p>'
+          : '') +
+        '<div class="actions">' +
+        '<button type="button" class="btn primary" data-choice="replace">Replace</button>' +
+        (opts.showBatch
+          ? '<button type="button" class="btn secondary" data-choice="replace-all">Replace all</button>' +
+            '<button type="button" class="btn secondary" data-choice="skip-all">Skip all</button>'
+          : '') +
+        '<button type="button" class="btn ghost" data-choice="skip">Skip</button>' +
+        '</div></div>';
+      root.querySelectorAll('[data-choice]').forEach((btn) => {
+        btn.onclick = () => close(btn.getAttribute('data-choice'));
+      });
+      root.onclick = (ev) => {
+        if (ev.target === root) close('skip');
+      };
+    });
+  }
+
+    async function importTimesheets(files) {
     if (!files || !files.length) return;
     let imported = 0;
     let skipped = 0;
@@ -1697,6 +1875,12 @@
     });
 
     $('#btn-new-claim').addEventListener('click', createClaim);
+    $('#btn-import-claims').addEventListener('click', () => $('#claim-import-files').click());
+    $('#claim-import-files').addEventListener('change', async (ev) => {
+      const files = ev.target.files;
+      await importExpenseZips(files);
+      ev.target.value = '';
+    });
     $('#form-claim').addEventListener('submit', saveClaimForm);
     $('#btn-delete-claim').addEventListener('click', deleteClaim);
     $('#btn-add-line').addEventListener('click', addLine);

@@ -54,16 +54,27 @@
   function childElements(parent, localName) {
     const out = [];
     for (let c = parent.firstChild; c; c = c.nextSibling) {
-      if (c.nodeType === 1 && c.localName === localName) out.push(c);
+      if (c.nodeType !== 1) continue;
+      // Browsers: localName is "tr". Some DOM shims set localName to "w:tr".
+      const raw = c.localName || c.tagName || '';
+      const local = raw.includes(':') ? raw.slice(raw.lastIndexOf(':') + 1) : raw;
+      if (local === localName) out.push(c);
     }
     return out;
   }
 
   function cellText(cell) {
-    const texts = cell.getElementsByTagNameNS(W_NS, 't');
+    let texts = cell.getElementsByTagNameNS(W_NS, 't');
+    if (!texts.length) texts = cell.getElementsByTagName('w:t');
     let s = '';
     for (let i = 0; i < texts.length; i++) s += texts[i].textContent || '';
     return s;
+  }
+
+  function getTables(doc) {
+    let tables = doc.getElementsByTagNameNS(W_NS, 'tbl');
+    if (!tables.length) tables = doc.getElementsByTagName('w:tbl');
+    return tables;
   }
 
   function setCellText(cell, text) {
@@ -199,7 +210,7 @@
       throw new Error('Failed to parse document.xml');
     }
 
-    const tables = doc.getElementsByTagNameNS(W_NS, 'tbl');
+    const tables = getTables(doc);
     if (tables.length < 2) throw new Error('Expected at least 2 tables');
     fillHeaderTable(tables[0], claim);
     fillLinesTable(tables[1], claim);
@@ -211,12 +222,72 @@
     });
   }
 
+  /**
+   * Parse a filled expense .docx (Android DocxFiller.extractSummary parity).
+   * @param {ArrayBuffer|Uint8Array|Blob} docxBytes
+   * @returns {Promise<{sendTo,name,dateFrom,dateTo,lines:string[][],totalNet,totalVat,totalTotal}>}
+   */
+  async function extractSummary(docxBytes) {
+    if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
+    const zip = await JSZip.loadAsync(docxBytes);
+    const xmlFile = zip.file('word/document.xml');
+    if (!xmlFile) throw new Error('word/document.xml missing');
+    const xmlStr = await xmlFile.async('string');
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlStr, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) {
+      throw new Error('Failed to parse document.xml');
+    }
+    const tables = getTables(doc);
+    if (tables.length < 2) throw new Error('Expected at least 2 tables');
+
+    const headerRows = childElements(tables[0], 'tr');
+    if (headerRows.length < 3) throw new Error('Header table needs >= 3 rows');
+    const sendTo = cellText(childElements(headerRows[0], 'tc')[1]).trim();
+    const name = cellText(childElements(headerRows[1], 'tc')[1]).trim();
+    const dateCells = childElements(headerRows[2], 'tc');
+    const dateFrom = cellText(dateCells[1]).trim();
+    const dateTo = cellText(dateCells[3]).trim();
+
+    const lineRows = childElements(tables[1], 'tr');
+    const extractedLines = [];
+    for (let i = 1; i <= MAX_LINES; i++) {
+      if (i >= lineRows.length) break;
+      const cells = childElements(lineRows[i], 'tc');
+      const vals = [];
+      for (let c = 0; c < 8; c++) {
+        vals.push(cells[c] ? cellText(cells[c]).trim() : '');
+      }
+      if (vals.slice(1).some((v) => v)) extractedLines.push(vals);
+    }
+
+    let totalNet = '', totalVat = '', totalTotal = '';
+    if (lineRows.length > MAX_LINES + 1) {
+      const totalsCells = childElements(lineRows[MAX_LINES + 1], 'tc');
+      totalNet = totalsCells[1] ? cellText(totalsCells[1]).trim() : '';
+      totalVat = totalsCells[2] ? cellText(totalsCells[2]).trim() : '';
+      totalTotal = totalsCells[3] ? cellText(totalsCells[3]).trim() : '';
+    }
+
+    return {
+      sendTo,
+      name,
+      dateFrom,
+      dateTo,
+      lines: extractedLines,
+      totalNet,
+      totalVat,
+      totalTotal,
+    };
+  }
+
   global.AsDocxFiller = {
     fillExpenseClaim,
+    extractSummary,
     formatHeaderDate,
     formatLineDate,
     formatMoney,
     MAX_LINES,
     TEMPLATE_URL,
   };
-})(window);
+})(typeof window !== 'undefined' ? window : globalThis);

@@ -1,5 +1,5 @@
 /**
- * IndexedDB + localStorage for AS Forms web 0.2.16-web.
+ * IndexedDB + localStorage for AS Forms web 0.2.17-web.
  * Claims, timesheets, receipts in IDB; settings in localStorage.
  */
 (function (global) {
@@ -10,7 +10,7 @@
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.2.16-web';
+  const APP_VERSION = '0.2.17-web';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -191,6 +191,19 @@
   async function findTimesheetByYearMonth(year, month, excludeId) {
     const all = await listTimesheets();
     return all.find((t) => t.year === year && t.month === month && t.id !== excludeId) || null;
+  }
+
+  /** Match Android findByJobAndDates — job + dateFrom + dateTo (ISO). */
+  async function findClaimByJobAndDates(jobNo, dateFrom, dateTo, excludeId) {
+    const job = String(jobNo || '').trim();
+    if (!job) return null;
+    const all = await listClaims();
+    return all.find((c) =>
+      c.jobNo === job &&
+      c.dateFrom === dateFrom &&
+      c.dateTo === dateTo &&
+      c.id !== excludeId
+    ) || null;
   }
 
   // ——— Receipts ———
@@ -383,6 +396,7 @@
     getClaim,
     putClaim,
     deleteClaim,
+    findClaimByJobAndDates,
     listTimesheets,
     getTimesheet,
     putTimesheet,
