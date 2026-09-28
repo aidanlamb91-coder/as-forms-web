@@ -1,9 +1,9 @@
-# AS Forms — Web (`0.3.10-web-beta`)
+# AS Forms — Web (`0.3.11-web-beta`)
 
 Free, **static**, browser-only port of AS Forms for Aidan Lamb / Andrews Survey.
 No paid APIs, no build step, no auto-send email.
 
-This folder is the **OCR beta** source (`0.3.10-web-beta`). Production GitHub Pages keeps
+This folder is the **OCR beta** source (`0.3.11-web-beta`). Production GitHub Pages keeps
 stable **0.2.17-web** at the site root and serves this build under `/beta/`.
 
 ## Open it
@@ -12,7 +12,7 @@ stable **0.2.17-web** at the site root and serves this build under `/beta/`.
 https://aidanlamb91-coder.github.io/as-forms-web/?v=0.2.17-web
 
 **OCR beta:**  
-https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.10-web-beta
+https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.11-web-beta
 
 **Local HTTP** (needed for Word/ODT template fetch):
 
@@ -22,6 +22,16 @@ python3 -m http.server 8765
 ```
 
 Then open http://127.0.0.1:8765/
+
+
+## Swipe gestures (0.3.11+)
+
+On claim / timesheet list rows and expense line / timesheet entry lists:
+
+- **Slide right** (or long-press then slide right): **Delete** — red background; confirms before removing.
+- **Active claims / timesheets lists only — slide left**: **Completed** — green background; marks complete.
+
+Pointer + touch. Does not affect OCR, foreign currency, import, or folder sync.
 
 ### Data folder sync (Chrome / Edge desktop)
 

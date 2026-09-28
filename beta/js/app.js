@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.10-web-beta — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.11-web-beta — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -46,6 +46,156 @@
       if (globalThis.AsFolderSync) AsFolderSync.scheduleSync();
     } catch (_) {}
   }
+
+
+  /**
+   * Touch/pointer swipe on list rows.
+   * Slide right (or long-press then slide right) → delete (red).
+   * Slide left → complete (green) when onComplete provided (main Active lists only).
+   */
+  function wrapSwipeRow(frontEl, opts) {
+    const row = document.createElement('div');
+    row.className = 'swipe-row';
+    const bgDel = document.createElement('div');
+    bgDel.className = 'swipe-bg delete';
+    bgDel.textContent = 'Delete';
+    row.appendChild(bgDel);
+    if (opts.onComplete) {
+      const bgOk = document.createElement('div');
+      bgOk.className = 'swipe-bg complete';
+      bgOk.textContent = 'Completed';
+      row.appendChild(bgOk);
+    }
+    frontEl.classList.add('swipe-front');
+    row.appendChild(frontEl);
+
+    const THRESH = 96;
+    const LONG_PRESS_MS = 380;
+    let startX = 0, startY = 0, dx = 0, dy = 0;
+    let tracking = false, axis = null, longPressed = false, lpTimer = null;
+    let pointerId = null;
+    let suppressClick = false;
+
+    function setOffset(x) {
+      dx = x;
+      frontEl.style.transform = x ? 'translateX(' + x + 'px)' : '';
+      row.classList.toggle('show-delete', x > 8);
+      row.classList.toggle('show-complete', x < -8 && !!opts.onComplete);
+    }
+
+    function reset() {
+      row.classList.remove('dragging', 'swiping-x');
+      setOffset(0);
+      axis = null;
+      tracking = false;
+      longPressed = false;
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    }
+
+    async function commit() {
+      const canComplete = !!opts.onComplete;
+      const delThresh = longPressed ? THRESH * 0.55 : THRESH;
+      const right = dx >= delThresh;
+      const left = canComplete && dx <= -THRESH;
+      if (!right && !left) {
+        reset();
+        return;
+      }
+      suppressClick = true;
+      const action = right ? 'delete' : 'complete';
+      const target = action === 'delete' ? (row.clientWidth || 280) : -(row.clientWidth || 280);
+      row.classList.remove('dragging');
+      setOffset(target);
+      try {
+        if (action === 'delete') {
+          const msg = opts.deleteConfirm || 'Delete this item?';
+          if (!confirm(msg)) {
+            reset();
+            suppressClick = false;
+            return;
+          }
+          await opts.onDelete();
+        } else {
+          await opts.onComplete();
+        }
+      } catch (e) {
+        console.error(e);
+        toast('Action failed');
+        reset();
+      }
+      // Row may be removed by refresh; if still present, reset
+      if (row.isConnected) reset();
+    }
+
+    frontEl.addEventListener('click', (ev) => {
+      if (suppressClick) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        suppressClick = false;
+      }
+    }, true);
+
+    frontEl.addEventListener('pointerdown', (ev) => {
+      if (ev.button != null && ev.button !== 0) return;
+      pointerId = ev.pointerId;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      dx = 0; dy = 0;
+      tracking = true;
+      axis = null;
+      longPressed = false;
+      row.classList.add('dragging');
+      try { frontEl.setPointerCapture(pointerId); } catch (_) {}
+      lpTimer = setTimeout(() => {
+        if (tracking && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+          longPressed = true;
+          if (navigator.vibrate) try { navigator.vibrate(12); } catch (_) {}
+        }
+      }, LONG_PRESS_MS);
+    });
+
+    frontEl.addEventListener('pointermove', (ev) => {
+      if (!tracking || ev.pointerId !== pointerId) return;
+      const mx = ev.clientX - startX;
+      const my = ev.clientY - startY;
+      dy = my;
+      if (!axis) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        if (Math.abs(mx) > Math.abs(my) * 1.15) {
+          axis = 'x';
+          row.classList.add('swiping-x');
+          if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+        } else {
+          axis = 'y';
+          // vertical scroll — abandon swipe
+          reset();
+          try { frontEl.releasePointerCapture(pointerId); } catch (_) {}
+          return;
+        }
+      }
+      if (axis !== 'x') return;
+      ev.preventDefault();
+      let x = mx;
+      if (!opts.onComplete && x < 0) x = Math.max(x, -24); // slight rubber-band only
+      if (x > 0) x = Math.min(x, row.clientWidth * 0.85);
+      if (x < 0) x = Math.max(x, -row.clientWidth * 0.85);
+      setOffset(x);
+    });
+
+    function endPointer(ev) {
+      if (!tracking || (ev && ev.pointerId !== pointerId)) return;
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+      if (axis === 'x') commit();
+      else reset();
+      pointerId = null;
+    }
+
+    frontEl.addEventListener('pointerup', endPointer);
+    frontEl.addEventListener('pointercancel', endPointer);
+
+    return row;
+  }
+
 
   function escapeHtml(s) {
     return String(s)
@@ -179,7 +329,26 @@
       ' · ' + (c.lines || []).length + ' line(s)</p>' +
       '<p class="money">' + money(claimTotal(c)) + '</p>';
     btn.addEventListener('click', () => openClaim(c.id));
-    return btn;
+    const canComplete = !c.completed;
+    return wrapSwipeRow(btn, {
+      deleteConfirm: 'Delete this claim and its receipts from this browser?',
+      onDelete: async () => {
+        await AsStorage.deleteClaim(c.id);
+        toast('Claim deleted');
+        scheduleFolderSync();
+        await refreshClaimList();
+      },
+      onComplete: canComplete ? async () => {
+        const claim = await AsStorage.getClaim(c.id);
+        if (!claim) return;
+        claim.completed = true;
+        claim.completedAt = Date.now();
+        await AsStorage.putClaim(claim);
+        toast('Marked complete');
+        scheduleFolderSync();
+        await refreshClaimList();
+      } : null,
+    });
   }
 
   async function createClaim() {
@@ -246,7 +415,20 @@
         '<p class="meta">' + escapeHtml(line.date || '') + receiptNote + '</p>' +
         '<p class="money">' + money(lineTotal(line)) + '</p>';
       btn.addEventListener('click', () => openLine(line.id));
-      list.appendChild(btn);
+      list.appendChild(wrapSwipeRow(btn, {
+        deleteConfirm: 'Delete this line item?',
+        onDelete: async () => {
+          const claim = await AsStorage.getClaim(state.claimId);
+          if (!claim) return;
+          const victim = (claim.lines || []).find((l) => l.id === line.id);
+          if (victim && victim.receiptId) await AsStorage.deleteReceipt(victim.receiptId);
+          claim.lines = (claim.lines || []).filter((l) => l.id !== line.id);
+          await AsStorage.putClaim(claim);
+          toast('Line deleted');
+          scheduleFolderSync();
+          await openClaim(claim.id);
+        },
+      }));
     });
   }
 
@@ -778,7 +960,26 @@
       ((t.entries || []).length === 1 ? 'y' : 'ies') +
       (t.completed ? ' · completed' : '') + '</p>';
     btn.addEventListener('click', () => openTimesheet(t.id));
-    return btn;
+    const canComplete = !t.completed;
+    return wrapSwipeRow(btn, {
+      deleteConfirm: 'Delete this timesheet?',
+      onDelete: async () => {
+        await AsStorage.deleteTimesheet(t.id);
+        toast('Deleted');
+        scheduleFolderSync();
+        await refreshTsList();
+      },
+      onComplete: canComplete ? async () => {
+        const ts = await AsStorage.getTimesheet(t.id);
+        if (!ts) return;
+        ts.completed = true;
+        ts.completedAt = Date.now();
+        await AsStorage.putTimesheet(ts);
+        toast('Marked complete');
+        scheduleFolderSync();
+        await refreshTsList();
+      } : null,
+    });
   }
 
   function openNewTimesheet() {
@@ -864,7 +1065,22 @@
         }
         openEntry(e.id);
       });
-      list.appendChild(btn);
+      if (ts.completed) {
+        list.appendChild(btn);
+        return;
+      }
+      list.appendChild(wrapSwipeRow(btn, {
+        deleteConfirm: 'Delete this entry?',
+        onDelete: async () => {
+          const cur = await AsStorage.getTimesheet(state.tsId);
+          if (!cur || cur.completed) return;
+          cur.entries = (cur.entries || []).filter((x) => x.id !== e.id);
+          await AsStorage.putTimesheet(cur);
+          toast('Entry deleted');
+          scheduleFolderSync();
+          await openTimesheet(cur.id);
+        },
+      }));
     });
   }
 

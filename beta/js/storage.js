@@ -1,5 +1,5 @@
 /**
- * IndexedDB + localStorage for AS Forms web 0.3.10-web-beta.
+ * IndexedDB + localStorage for AS Forms web 0.3.11-web-beta.
  * Claims, timesheets, receipts in IDB; settings in localStorage.
  */
 (function (global) {
@@ -10,7 +10,7 @@
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.3.10-web-beta';
+  const APP_VERSION = '0.3.11-web-beta';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0D0D0D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>AS Forms</title>
-  <link rel="stylesheet" href="css/app.css?v=0.3.10-web-beta" />
+  <link rel="stylesheet" href="css/app.css?v=0.3.11-web-beta" />
 </head>
 <body>
   <div id="app">
@@ -111,7 +111,7 @@
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.3.10-web-beta</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.3.11-web-beta</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
         <p class="hint">Receipt reading (OCR) is <strong>beta</strong> and runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
@@ -203,7 +203,7 @@
           Job number
           <div class="job-prefix">
             <span class="pfx">P</span>
-            <input type="text" id="claim-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="5503" required />
+            <input type="text" id="claim-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="" required />
           </div>
         </label>
         <div class="grid-2">
@@ -378,7 +378,7 @@
           Project (job)
           <div class="job-prefix">
             <span class="pfx">P</span>
-            <input type="text" id="entry-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="5503" />
+            <input type="text" id="entry-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="" />
           </div>
         </label>
         <label>Description <input type="text" id="entry-desc" maxlength="200" /></label>
@@ -401,18 +401,18 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=0.3.10-web-beta"></script>
-  <script src="js/email-templates.js?v=0.3.10-web-beta"></script>
-  <script src="js/offshore-days.js?v=0.3.10-web-beta"></script>
-  <script src="js/storage.js?v=0.3.10-web-beta"></script>
-  <script src="js/docx-filler.js?v=0.3.10-web-beta"></script>
-  <script src="js/timesheet-filler.js?v=0.3.10-web-beta"></script>
-  <script src="js/timesheet-reader.js?v=0.3.10-web-beta"></script>
-  <script src="js/expense-zip-reader.js?v=0.3.10-web-beta"></script>
-  <script src="js/export.js?v=0.3.10-web-beta"></script>
-  <script src="js/folder-sync.js?v=0.3.10-web-beta"></script>
-  <script src="js/receipt-parse.js?v=0.3.10-web-beta"></script>
-  <script src="js/receipt-ocr.js?v=0.3.10-web-beta"></script>
-  <script src="js/app.js?v=0.3.10-web-beta"></script>
+  <script src="lib/jszip.min.js?v=0.3.11-web-beta"></script>
+  <script src="js/email-templates.js?v=0.3.11-web-beta"></script>
+  <script src="js/offshore-days.js?v=0.3.11-web-beta"></script>
+  <script src="js/storage.js?v=0.3.11-web-beta"></script>
+  <script src="js/docx-filler.js?v=0.3.11-web-beta"></script>
+  <script src="js/timesheet-filler.js?v=0.3.11-web-beta"></script>
+  <script src="js/timesheet-reader.js?v=0.3.11-web-beta"></script>
+  <script src="js/expense-zip-reader.js?v=0.3.11-web-beta"></script>
+  <script src="js/export.js?v=0.3.11-web-beta"></script>
+  <script src="js/folder-sync.js?v=0.3.11-web-beta"></script>
+  <script src="js/receipt-parse.js?v=0.3.11-web-beta"></script>
+  <script src="js/receipt-ocr.js?v=0.3.11-web-beta"></script>
+  <script src="js/app.js?v=0.3.11-web-beta"></script>
 </body>
 </html>
