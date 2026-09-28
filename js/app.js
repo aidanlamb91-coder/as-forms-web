@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.14-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.15-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -34,6 +34,17 @@
     el.classList.remove('hidden');
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.add('hidden'), 2400);
+  }
+
+  // Quiet toasts from background folder sync (never blocks main actions)
+  globalThis.__asFolderSyncToast = function (msg) {
+    toast(msg);
+  };
+
+  function scheduleFolderSync() {
+    try {
+      if (globalThis.AsFolderSync) AsFolderSync.scheduleSync();
+    } catch (_) {}
   }
 
   function escapeHtml(s) {
@@ -188,6 +199,7 @@
     };
     await AsStorage.putClaim(claim);
     toast('Claim created');
+    scheduleFolderSync();
     await openClaim(claim.id);
   }
 
@@ -258,6 +270,7 @@
     await AsStorage.putClaim(claim);
     $('#claim-title').textContent = claim.jobNo;
     toast('Claim saved');
+    scheduleFolderSync();
   }
 
   async function deleteClaim() {
@@ -265,6 +278,7 @@
     if (!confirm('Delete this claim and its receipts from this browser?')) return;
     await AsStorage.deleteClaim(state.claimId);
     toast('Claim deleted');
+    scheduleFolderSync();
     await showExpenses();
   }
 
@@ -275,6 +289,7 @@
     claim.completedAt = completed ? Date.now() : null;
     await AsStorage.putClaim(claim);
     toast(completed ? 'Marked complete' : 'Reopened');
+    scheduleFolderSync();
     await openClaim(claim.id);
   }
 
@@ -523,6 +538,7 @@
     state.pendingReceipt = null;
     state.clearReceipt = false;
     toast('Line saved');
+    scheduleFolderSync();
     await openClaim(claim.id);
   }
 
@@ -536,6 +552,7 @@
     claim.lines = (claim.lines || []).filter((l) => l.id !== state.lineId);
     await AsStorage.putClaim(claim);
     toast('Line deleted');
+    scheduleFolderSync();
     await openClaim(claim.id);
   }
 
@@ -564,6 +581,7 @@
       const name = await AsExport.exportClaimZip(claim);
       status.textContent = 'Downloaded ' + name + ' (Word form + numbered receipts)';
       toast('Zip downloaded');
+      scheduleFolderSync();
     } catch (e) {
       console.error(e);
       status.classList.add('error');
@@ -595,6 +613,7 @@
       const name = await AsExport.exportFilledDocx(claim);
       status.textContent = 'Downloaded ' + name;
       toast('Word form downloaded');
+      scheduleFolderSync();
     } catch (e) {
       console.error(e);
       status.classList.add('error');
@@ -654,6 +673,7 @@
         onDownload: () => {
           AsExport.downloadBlob(blob, filename);
           toast('Downloaded ' + filename);
+          scheduleFolderSync();
         },
         onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
       });
@@ -778,6 +798,7 @@
     };
     await AsStorage.putTimesheet(ts);
     toast('Timesheet created');
+    scheduleFolderSync();
     await openTimesheet(ts.id);
   }
 
@@ -861,6 +882,7 @@
     await AsStorage.putTimesheet(ts);
     if (clamped) toast('Some entry days were clamped to month length');
     else toast('Saved');
+    scheduleFolderSync();
     await openTimesheet(ts.id);
   }
 
@@ -869,6 +891,7 @@
     if (!confirm('Delete this timesheet?')) return;
     await AsStorage.deleteTimesheet(state.tsId);
     toast('Deleted');
+    scheduleFolderSync();
     await showTimesheets();
   }
 
@@ -879,6 +902,7 @@
     ts.completedAt = completed ? Date.now() : null;
     await AsStorage.putTimesheet(ts);
     toast(completed ? 'Marked complete' : 'Reopened');
+    scheduleFolderSync();
     await openTimesheet(ts.id);
   }
 
@@ -975,6 +999,7 @@
     entry.dayType = dayType;
     await AsStorage.putTimesheet(ts);
     toast('Entry saved');
+    scheduleFolderSync();
     await openTimesheet(ts.id);
   }
 
@@ -986,6 +1011,7 @@
     ts.entries = (ts.entries || []).filter((e) => e.id !== state.entryId);
     await AsStorage.putTimesheet(ts);
     toast('Entry deleted');
+    scheduleFolderSync();
     await openTimesheet(ts.id);
   }
 
@@ -998,6 +1024,7 @@
       const name = await AsExport.exportTimesheetOdt(ts);
       status.textContent = 'Downloaded ' + name;
       toast('ODT downloaded');
+      scheduleFolderSync();
     } catch (e) {
       console.error(e);
       status.classList.add('error');
@@ -1032,6 +1059,7 @@
         onDownload: () => {
           AsExport.downloadBlob(blob, filename);
           toast('Downloaded ' + filename);
+          scheduleFolderSync();
         },
         onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
       });
@@ -1100,6 +1128,7 @@
       }
     }
     toast('Imported ' + imported + (replaced ? ', replaced ' + replaced : '') + (skipped ? ', skipped ' + skipped : ''));
+    scheduleFolderSync();
     state.tsChip = 'completed';
     $$('[data-ts-chip]').forEach((b) => b.classList.toggle('on', b.getAttribute('data-ts-chip') === 'completed'));
     await showTimesheets();
@@ -1299,9 +1328,53 @@
     showView('templates');
   }
 
+  async function refreshBackupFolderUi() {
+    const supported = globalThis.AsFolderSync && AsFolderSync.isSupported();
+    const hint = $('#folder-support-hint');
+    const connected = $('#folder-connected');
+    const choose = $('#btn-folder-choose');
+    const syncBtn = $('#btn-folder-sync');
+    const restore = $('#btn-folder-restore');
+    const disconnect = $('#btn-folder-disconnect');
+    const autoRow = $('#folder-autosync-row');
+    const autoChk = $('#chk-folder-autosync');
+    if (!supported) {
+      hint.hidden = false;
+      hint.textContent = AsFolderSync.supportHint();
+      choose.disabled = true;
+      syncBtn.disabled = true;
+      restore.disabled = true;
+      disconnect.disabled = true;
+      autoChk.disabled = true;
+      connected.textContent = 'Folder sync unavailable in this browser.';
+      return;
+    }
+    hint.hidden = true;
+    choose.disabled = false;
+    restore.disabled = false;
+    autoChk.disabled = false;
+    const name = await AsFolderSync.folderName();
+    const s = AsStorage.getSettings();
+    autoChk.checked = s.folderAutoSync !== false;
+    if (name) {
+      connected.textContent = 'Connected folder: ' + name;
+      syncBtn.disabled = false;
+      disconnect.disabled = false;
+    } else {
+      connected.textContent = 'No data folder connected.';
+      syncBtn.disabled = true;
+      disconnect.disabled = true;
+    }
+  }
+
   function showBackup() {
     $('#backup-status').textContent = '';
     showView('backup');
+    refreshBackupFolderUi();
+    const s = AsStorage.getSettings();
+    if (!s.folderHintSeen) {
+      AsStorage.saveSettings({ folderHintSeen: true });
+    }
   }
 
   // ——— Email preview modal ———
@@ -1509,6 +1582,7 @@
         displayName: $('#settings-name').value.trim() || AsEmailTemplates.DEFAULT_NAME,
       });
       toast('Name saved');
+      scheduleFolderSync();
       updateListHeaders();
     });
     $('#btn-goto-emails').addEventListener('click', showEmails);
@@ -1528,6 +1602,7 @@
       }
       AsStorage.saveSettings({ expenseTo, timesheetTo, sendTo: expenseTo });
       toast('Emails saved');
+      scheduleFolderSync();
       updateListHeaders();
       showSettings();
     });
@@ -1540,6 +1615,7 @@
         timesheetBody: $('#tpl-timesheet-body').value,
       });
       toast('Templates saved');
+      scheduleFolderSync();
       showSettings();
     });
     $('#btn-backup-export').addEventListener('click', async () => {
@@ -1569,11 +1645,86 @@
         st.textContent = 'Import complete';
         toast('Backup imported');
         updateListHeaders();
+        scheduleFolderSync();
       } catch (e) {
         console.error(e);
         st.classList.add('error');
         st.textContent = e.message || String(e);
       }
+    });
+
+    $('#btn-folder-choose').addEventListener('click', async () => {
+      const st = $('#backup-status');
+      st.classList.remove('error');
+      try {
+        const handle = await AsFolderSync.chooseFolder();
+        AsStorage.saveSettings({ folderAutoSync: true });
+        st.textContent = 'Connected: ' + handle.name;
+        toast('Data folder connected');
+        await refreshBackupFolderUi();
+        st.textContent = 'Syncing…';
+        const result = await AsFolderSync.syncNow();
+        st.textContent = 'Synced to ' + result.folderName;
+        toast('Synced to folder');
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          st.textContent = '';
+          return;
+        }
+        console.error(e);
+        st.classList.add('error');
+        st.textContent = e.message || String(e);
+      }
+    });
+    $('#btn-folder-sync').addEventListener('click', async () => {
+      const st = $('#backup-status');
+      st.classList.remove('error');
+      st.textContent = 'Syncing…';
+      try {
+        const result = await AsFolderSync.syncNow();
+        st.textContent = 'Synced to ' + result.folderName +
+          ' (' + result.claimCount + ' claims, ' + result.timesheetCount + ' timesheets)';
+        toast('Synced to folder');
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          st.textContent = '';
+          return;
+        }
+        console.error(e);
+        st.classList.add('error');
+        st.textContent = e.message || String(e);
+      }
+    });
+    $('#btn-folder-restore').addEventListener('click', async () => {
+      if (!confirm('Replace all data in this browser with the folder contents?')) return;
+      const st = $('#backup-status');
+      st.classList.remove('error');
+      st.textContent = 'Restoring from folder…';
+      try {
+        const result = await AsFolderSync.restoreFromFolder({ forcePick: true });
+        st.textContent = 'Restored from ' + result.folderName;
+        toast('Restored from folder');
+        updateListHeaders();
+        await refreshBackupFolderUi();
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          st.textContent = '';
+          return;
+        }
+        console.error(e);
+        st.classList.add('error');
+        st.textContent = e.message || String(e);
+      }
+    });
+    $('#btn-folder-disconnect').addEventListener('click', async () => {
+      await AsFolderSync.disconnectFolder();
+      $('#backup-status').textContent = 'Disconnected (files on disk were not deleted)';
+      toast('Folder disconnected');
+      await refreshBackupFolderUi();
+    });
+    $('#chk-folder-autosync').addEventListener('change', (ev) => {
+      AsStorage.saveSettings({ folderAutoSync: !!ev.target.checked });
+      toast(ev.target.checked ? 'Auto-sync on' : 'Auto-sync off');
     });
   }
 

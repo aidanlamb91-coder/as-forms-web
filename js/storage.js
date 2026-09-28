@@ -1,15 +1,17 @@
 /**
- * IndexedDB + localStorage for AS Forms web 0.2.14-web.
+ * IndexedDB + localStorage for AS Forms web 0.2.15-web.
  * Claims, timesheets, receipts in IDB; settings in localStorage.
  */
 (function (global) {
   const DB_NAME = 'as-forms-web';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const STORE_CLAIMS = 'claims';
   const STORE_TIMESHEETS = 'timesheets';
   const STORE_RECEIPTS = 'receipts';
+  const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.2.14-web';
+  const APP_VERSION = '0.2.15-web';
+  const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
 
@@ -25,6 +27,9 @@
       timesheetBody: e ? e.DEFAULT_TIMESHEET_BODY : '',
       // legacy alias
       sendTo: e ? e.EXPENSE_TO : 'invoice@andrewssurvey.com',
+      // Data-folder sync (File System Access API)
+      folderAutoSync: true,
+      folderHintSeen: false,
     };
   }
 
@@ -44,6 +49,9 @@
         }
         if (!db.objectStoreNames.contains(STORE_TIMESHEETS)) {
           db.createObjectStore(STORE_TIMESHEETS, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_META)) {
+          db.createObjectStore(STORE_META, { keyPath: 'key' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -216,6 +224,45 @@
     await txDone(tx);
   }
 
+
+  // ——— Meta (directory handles, etc.) ———
+  async function getMeta(key) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_META, 'readonly');
+      const req = tx.objectStore(STORE_META).get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function setMeta(key, value) {
+    const db = await openDb();
+    const tx = db.transaction(STORE_META, 'readwrite');
+    tx.objectStore(STORE_META).put({ key, value });
+    await txDone(tx);
+  }
+
+  async function deleteMeta(key) {
+    const db = await openDb();
+    const tx = db.transaction(STORE_META, 'readwrite');
+    tx.objectStore(STORE_META).delete(key);
+    await txDone(tx);
+  }
+
+  async function getDataFolderHandle() {
+    return getMeta(META_FOLDER_HANDLE);
+  }
+
+  async function setDataFolderHandle(handle) {
+    if (!handle) {
+      await deleteMeta(META_FOLDER_HANDLE);
+      return null;
+    }
+    await setMeta(META_FOLDER_HANDLE, handle);
+    return handle;
+  }
+
   async function clearAllData() {
     const db = await openDb();
     const tx = db.transaction([STORE_CLAIMS, STORE_TIMESHEETS, STORE_RECEIPTS], 'readwrite');
@@ -347,5 +394,10 @@
     clearAllData,
     importBackup,
     openDb,
+    getMeta,
+    setMeta,
+    deleteMeta,
+    getDataFolderHandle,
+    setDataFolderHandle,
   };
 })(window);

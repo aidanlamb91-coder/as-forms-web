@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0D0D0D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>AS Forms</title>
-  <link rel="stylesheet" href="css/app.css?v=0.2.14-web" />
+  <link rel="stylesheet" href="css/app.css?v=0.2.15-web" />
 </head>
 <body>
   <div id="app">
@@ -107,7 +107,7 @@
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.2.14-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.2.15-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
         <p class="hint">Receipt reading (OCR) is <strong>beta</strong> and runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
@@ -159,7 +159,24 @@
         <h1>Backup</h1>
       </header>
       <div class="panel">
-        <p class="hint">Export a zip with all claims, timesheets, settings, and receipt files. Import replaces everything in this browser.</p>
+        <p class="hint">Data still lives in this browser for speed. A data folder (Chrome/Edge) or backup zip is your durable copy if site data is cleared.</p>
+
+        <h2 class="section-title">Data folder</h2>
+        <p class="hint" id="folder-support-hint" hidden></p>
+        <p class="hint" id="folder-connected">No data folder connected.</p>
+        <div class="btn-row" id="folder-controls">
+          <button type="button" class="btn primary" id="btn-folder-choose">Choose data folder…</button>
+          <button type="button" class="btn secondary" id="btn-folder-sync" disabled>Sync now</button>
+          <button type="button" class="btn secondary" id="btn-folder-restore">Restore from folder…</button>
+          <button type="button" class="btn ghost" id="btn-folder-disconnect" disabled>Disconnect folder</button>
+        </div>
+        <label class="check-row" id="folder-autosync-row">
+          <input type="checkbox" id="chk-folder-autosync" />
+          <span>Auto-sync after saves and exports (when a folder is connected)</span>
+        </label>
+
+        <h2 class="section-title">Backup zip</h2>
+        <p class="hint">Works in every browser. Export a zip with all claims, timesheets, settings, and receipt files. Import replaces everything in this browser.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-backup-export">Export backup zip</button>
           <button type="button" class="btn secondary" id="btn-backup-import">Import backup…</button>
@@ -361,16 +378,17 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=0.2.14-web"></script>
-  <script src="js/email-templates.js?v=0.2.14-web"></script>
-  <script src="js/offshore-days.js?v=0.2.14-web"></script>
-  <script src="js/storage.js?v=0.2.14-web"></script>
-  <script src="js/docx-filler.js?v=0.2.14-web"></script>
-  <script src="js/timesheet-filler.js?v=0.2.14-web"></script>
-  <script src="js/timesheet-reader.js?v=0.2.14-web"></script>
-  <script src="js/export.js?v=0.2.14-web"></script>
-  <script src="js/receipt-parse.js?v=0.2.14-web"></script>
-  <script src="js/receipt-ocr.js?v=0.2.14-web"></script>
-  <script src="js/app.js?v=0.2.14-web"></script>
+  <script src="lib/jszip.min.js?v=0.2.15-web"></script>
+  <script src="js/email-templates.js?v=0.2.15-web"></script>
+  <script src="js/offshore-days.js?v=0.2.15-web"></script>
+  <script src="js/storage.js?v=0.2.15-web"></script>
+  <script src="js/docx-filler.js?v=0.2.15-web"></script>
+  <script src="js/timesheet-filler.js?v=0.2.15-web"></script>
+  <script src="js/timesheet-reader.js?v=0.2.15-web"></script>
+  <script src="js/export.js?v=0.2.15-web"></script>
+  <script src="js/folder-sync.js?v=0.2.15-web"></script>
+  <script src="js/receipt-parse.js?v=0.2.15-web"></script>
+  <script src="js/receipt-ocr.js?v=0.2.15-web"></script>
+  <script src="js/app.js?v=0.2.15-web"></script>
 </body>
 </html>

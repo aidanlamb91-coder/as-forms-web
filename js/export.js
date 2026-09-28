@@ -287,13 +287,14 @@
     }
   }
 
-  /** Full backup zip compatible with Android schema (web-adapted ids as strings). */
-  async function exportBackupZip() {
-    if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
+  /**
+   * Build the portable backup package shared by zip download and folder sync.
+   * Returns { snapshot, receiptEntries: [{ path, blob }] }.
+   */
+  async function buildBackupPackage() {
     const s = AsStorage.getSettings();
     const claims = await AsStorage.listClaims();
     const timesheets = await AsStorage.listTimesheets();
-    const zip = new JSZip();
 
     const claimSnaps = [];
     const lineSnaps = [];
@@ -339,19 +340,19 @@
           receiptDisplayName: line.receiptMeta ? line.receiptMeta.name : null,
           receiptMime: line.receiptMeta ? line.receiptMeta.type : null,
         });
-        if (line.receiptId && receiptPath) {
-          // defer blob fetch
-        }
       });
     }
 
+    const receiptEntries = [];
     for (const c of claims) {
       for (const line of c.lines || []) {
         if (!line.receiptId) continue;
         const snap = lineSnaps.find((l) => l.id === line.id && l.claimId === c.id);
         if (!snap || !snap.receiptBackupPath) continue;
         const rcpt = await AsStorage.getReceipt(line.receiptId);
-        if (rcpt && rcpt.blob) zip.file(snap.receiptBackupPath, rcpt.blob);
+        if (rcpt && rcpt.blob) {
+          receiptEntries.push({ path: snap.receiptBackupPath, blob: rcpt.blob });
+        }
       }
     }
 
@@ -383,7 +384,7 @@
       }
     }
 
-    const manifest = {
+    const snapshot = {
       schemaVersion: 1,
       exportedAtMillis: Date.now(),
       appVersionName: AsStorage.APP_VERSION,
@@ -403,11 +404,29 @@
       timesheets: tsSnaps,
       timesheetEntries: entrySnaps,
     };
-    zip.file('as-forms-backup.json', JSON.stringify(manifest, null, 2));
+    return { snapshot, receiptEntries, claims, timesheets };
+  }
+
+  /** Full backup zip compatible with Android schema (web-adapted ids as strings). */
+  async function exportBackupZip() {
+    if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
+    const { snapshot, receiptEntries } = await buildBackupPackage();
+    const zip = new JSZip();
+    for (const entr of receiptEntries) {
+      zip.file(entr.path, entr.blob);
+    }
+    zip.file('as-forms-backup.json', JSON.stringify(snapshot, null, 2));
     const blob = await zip.generateAsync({ type: 'blob' });
     const name = 'as-forms-backup-' + new Date().toISOString().slice(0, 10) + '.zip';
     downloadBlob(blob, name);
     return name;
+  }
+
+  async function importBackupParts(snapshot, receiptBlobs) {
+    if (!snapshot || snapshot.schemaVersion !== 1) {
+      throw new Error('Unsupported backup schemaVersion ' + (snapshot && snapshot.schemaVersion));
+    }
+    await AsStorage.importBackup(snapshot, receiptBlobs || {});
   }
 
   async function importBackupZip(file) {
@@ -415,15 +434,12 @@
     const manifestFile = zip.file('as-forms-backup.json');
     if (!manifestFile) throw new Error('Backup missing as-forms-backup.json');
     const snapshot = JSON.parse(await manifestFile.async('string'));
-    if (snapshot.schemaVersion !== 1) {
-      throw new Error('Unsupported backup schemaVersion ' + snapshot.schemaVersion);
-    }
     const receiptBlobs = {};
     const paths = Object.keys(zip.files).filter((n) => n.startsWith('receipts/') && !zip.files[n].dir);
     for (const p of paths) {
       receiptBlobs[p] = await zip.files[p].async('blob');
     }
-    await AsStorage.importBackup(snapshot, receiptBlobs);
+    await importBackupParts(snapshot, receiptBlobs);
   }
 
   global.AsExport = {
@@ -441,7 +457,9 @@
     blobToFile,
     canShareFiles,
     tryShare,
+    buildBackupPackage,
     exportBackupZip,
+    importBackupParts,
     importBackupZip,
     claimFolderName,
     formatUkDate,
