@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.12-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.13-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -716,15 +716,14 @@
     state.clearReceipt = false;
     state.ocrToken++;
     hideOcrUi();
+    $$('[data-help-target]').forEach((btn) => {
+      const help = $('#' + btn.getAttribute('data-help-target'));
+      if (help) help.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    });
     if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
     $('#line-title').textContent = line.description || 'Line item';
     $('#line-date').value = line.date || '';
-    const claimJobHint = $('#line-claim-job-hint');
-    if (claimJobHint) {
-      claimJobHint.textContent = claim.jobNo
-        ? ('Uses claim job ' + claim.jobNo + ' on every line (same as Android).')
-        : 'Set the claim job number first — it applies to every line.';
-    }
     $('#line-desc').value = line.description || '';
     $('#line-fx').value = line.foreignCurrency || '';
     $('#line-net').value = line.net != null ? line.net : '';
@@ -2278,6 +2277,15 @@
           b.classList.toggle('on', b === btn)
         );
         refreshTsList();
+      });
+    });
+
+    $$('[data-help-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const help = $('#' + btn.getAttribute('data-help-target'));
+        if (!help) return;
+        const isHidden = help.classList.toggle('hidden');
+        btn.setAttribute('aria-expanded', String(!isHidden));
       });
     });
 

@@ -1,5 +1,5 @@
-# AS Forms web — `/beta/`
+# AS Forms — Web beta mirror (`0.3.13-web`)
 
-Mirrors stable **0.3.12-web** (OCR promoted to site root). Prefer:
+This directory mirrors the stable Pages root build.
 
-https://aidanlamb91-coder.github.io/as-forms-web/?v=0.3.12-web
+- https://aidanlamb91-coder.github.io/as-forms-web/?v=0.3.13-web
