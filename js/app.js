@@ -2513,12 +2513,13 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       state.backupBannerDismissedSession = true;
       updateBackupBanner();
     });
-    $('#btn-backup-export').addEventListener('click, async () => {
+    $('#btn-backup-export').addEventListener('click', async () => {
       const st = $('#backup-status');
       st.classList.remove('error');
       st.textContent = 'Building backup…';
       try {
         const name = await AsExport.exportBackupZip();
+        updateBackupBanner();
         st.textContent = 'Downloaded ' + name;
         toast('Backup exported');
       } catch (e) {
