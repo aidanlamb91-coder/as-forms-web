@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.9-web-beta — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.10-web-beta — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -351,12 +351,15 @@
     if (!sg) return;
     $('#ocr-date').value = parsed.date || '';
     $('#ocr-desc').value = parsed.description || '';
+    const fxEl = $('#ocr-fx');
+    if (fxEl) fxEl.value = parsed.foreignCurrency || '';
     $('#ocr-net').value = parsed.net != null ? parsed.net : '';
     $('#ocr-vat').value = parsed.vat != null ? parsed.vat : '';
     $('#ocr-total').value = parsed.total != null ? parsed.total : '';
     const bits = [];
     if (parsed.date) bits.push('date');
     if (parsed.description) bits.push('merchant');
+    if (parsed.foreignCurrency) bits.push('foreign');
     if (parsed.total != null) bits.push('total');
     if (parsed.net != null) bits.push('net');
     if (parsed.vat != null) bits.push('VAT');
@@ -372,12 +375,18 @@
   function applyOcrSuggestions() {
     const date = $('#ocr-date').value;
     const desc = $('#ocr-desc').value.trim();
+    const fxEl = $('#ocr-fx');
+    const fx = fxEl ? fxEl.value.trim() : '';
     const net = numOrNull($('#ocr-net').value);
     const vat = numOrNull($('#ocr-vat').value);
     const total = numOrNull($('#ocr-total').value);
 
     if (date) $('#line-date').value = date;
     if (desc) $('#line-desc').value = desc;
+    if (fx) {
+      const lineFx = $('#line-fx');
+      if (lineFx) lineFx.value = fx;
+    }
     if (net != null) {
       $('#line-net').value = net;
     }
