@@ -4,99 +4,210 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0D0D0D" />
-  <title>AS Forms — Expenses</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>AS Forms</title>
   <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
   <div id="app">
-    <!-- HOME -->
-    <section id="view-home" class="view">
-      <header class="topbar">
+    <!-- EXPENSES LIST -->
+    <section id="view-expenses" class="view">
+      <header class="app-header">
         <div class="brand">
-          <span class="brand-mark">AS</span>
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
           <div>
             <h1>AS Forms</h1>
-            <p class="sub">Expense claims · local only</p>
+            <p class="sub" id="expenses-header-sub">Expenses</p>
           </div>
         </div>
-        <button type="button" class="btn ghost" id="btn-settings" title="Settings">⚙</button>
       </header>
-
-      <div class="toolbar">
-        <h2>Claims</h2>
-        <button type="button" class="btn primary" id="btn-new-claim">+ New claim</button>
+      <div class="chips" role="tablist">
+        <button type="button" class="chip on" data-expense-chip="active">Active</button>
+        <button type="button" class="chip" data-expense-chip="completed">Completed</button>
       </div>
-
+      <div class="toolbar">
+        <h2>Expense claims</h2>
+        <button type="button" class="btn primary" id="btn-new-claim">+ New</button>
+      </div>
       <div id="claim-list" class="card-list" aria-live="polite"></div>
-      <p id="claim-empty" class="empty hidden">No claims yet. Tap <strong>+ New claim</strong> to start.</p>
+      <p id="claim-empty" class="empty hidden">No claims yet. Tap <strong>+ New</strong> to start.</p>
+    </section>
+
+    <!-- TIMESHEETS LIST -->
+    <section id="view-timesheets" class="view hidden">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>AS Forms</h1>
+            <p class="sub" id="timesheets-header-sub">Timesheets</p>
+          </div>
+        </div>
+      </header>
+      <div class="chips" role="tablist">
+        <button type="button" class="chip on" data-ts-chip="active">Active</button>
+        <button type="button" class="chip" data-ts-chip="completed">Completed</button>
+      </div>
+      <div class="toolbar">
+        <h2>Timesheets</h2>
+        <div class="btn-row inline">
+          <button type="button" class="btn secondary" id="btn-import-ts">Import…</button>
+          <button type="button" class="btn primary" id="btn-new-ts">+ New</button>
+        </div>
+      </div>
+      <input type="file" id="ts-import-files" accept=".odt,.docx,application/vnd.oasis.opendocument.text,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden />
+      <div id="ts-list" class="card-list" aria-live="polite"></div>
+      <p id="ts-empty" class="empty hidden">No timesheets yet. Tap <strong>+ New</strong> and pick a month.</p>
+    </section>
+
+    <!-- DAYS WORKED -->
+    <section id="view-days" class="view hidden">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>Days worked</h1>
+            <p class="sub">From completed timesheets</p>
+          </div>
+        </div>
+      </header>
+      <div id="days-content"></div>
     </section>
 
     <!-- SETTINGS -->
     <section id="view-settings" class="view hidden">
-      <header class="topbar">
-        <button type="button" class="btn ghost" data-back="home">← Back</button>
-        <h1>Settings</h1>
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>Settings</h1>
+            <p class="sub">Local browser only</p>
+          </div>
+        </div>
       </header>
-      <form id="form-settings" class="panel">
+      <form id="form-settings-name" class="panel">
         <label>
           Display name
           <input type="text" id="settings-name" maxlength="80" autocomplete="name" />
         </label>
+        <button type="submit" class="btn primary">Save name</button>
+      </form>
+      <ul class="settings-list">
+        <li><button type="button" id="btn-goto-emails">Destination emails <span class="chev">›</span></button></li>
+        <li><button type="button" id="btn-goto-templates">Email templates <span class="chev">›</span></button></li>
+        <li><button type="button" id="btn-goto-backup">Backup <span class="chev">›</span></button></li>
+      </ul>
+      <div class="panel">
+        <h2>About</h2>
+        <p class="hint" id="about-version">AS Forms <strong>0.2.9-web</strong></p>
+        <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
+        <p class="hint stub">Optional: open Outlook / your mail app after downloading the attachment — this web build does not use Microsoft sign-in (no MSAL).</p>
+      </div>
+    </section>
+
+    <!-- DESTINATION EMAILS -->
+    <section id="view-emails" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <h1>Destination emails</h1>
+      </header>
+      <form id="form-emails" class="panel">
         <label>
-          Please Send to (Word form)
-          <input type="email" id="settings-send-to" maxlength="120" />
+          Expense / Invoice
+          <input type="email" id="settings-expense-to" maxlength="120" />
         </label>
-        <p class="hint">Stored in this browser only. Nothing is emailed from this prototype.</p>
+        <label>
+          Timesheets
+          <input type="email" id="settings-timesheet-to" maxlength="120" />
+        </label>
+        <p class="hint">Used in list headers, Word “Please Send to”, and Send preview To:.</p>
         <button type="submit" class="btn primary">Save</button>
       </form>
+    </section>
+
+    <!-- EMAIL TEMPLATES -->
+    <section id="view-templates" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <h1>Email templates</h1>
+      </header>
+      <form id="form-templates" class="panel">
+        <h3>Expense / Invoice</h3>
+        <label>Subject <input type="text" id="tpl-expense-subject" /></label>
+        <label>Body <textarea id="tpl-expense-body"></textarea></label>
+        <h3>Timesheet</h3>
+        <label>Subject <input type="text" id="tpl-timesheet-subject" /></label>
+        <label>Body <textarea id="tpl-timesheet-body"></textarea></label>
+        <p class="hint" id="tpl-help"></p>
+        <button type="submit" class="btn primary">Save templates</button>
+      </form>
+    </section>
+
+    <!-- BACKUP -->
+    <section id="view-backup" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <h1>Backup</h1>
+      </header>
+      <div class="panel">
+        <p class="hint">Export a zip with all claims, timesheets, settings, and receipt files. Import replaces everything in this browser.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-backup-export">Export backup zip</button>
+          <button type="button" class="btn secondary" id="btn-backup-import">Import backup…</button>
+        </div>
+        <input type="file" id="backup-import-file" accept=".zip,application/zip" hidden />
+        <p id="backup-status" class="status" role="status"></p>
+      </div>
     </section>
 
     <!-- CLAIM EDIT -->
     <section id="view-claim" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="home">← Back</button>
+        <button type="button" class="btn ghost" data-back="expenses">← Back</button>
         <h1 id="claim-title">Claim</h1>
         <button type="button" class="btn danger ghost" id="btn-delete-claim" title="Delete claim">🗑</button>
       </header>
-
+      <p class="hint-line" id="claim-route-header"></p>
       <form id="form-claim" class="panel">
+        <label>
+          Job number
+          <div class="job-prefix">
+            <span class="pfx">P</span>
+            <input type="text" id="claim-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="5503" required />
+          </div>
+        </label>
         <div class="grid-2">
-          <label>
-            Job number
-            <input type="text" id="claim-job" placeholder="P5503" pattern="P[0-9]+" required />
-          </label>
-          <label>
-            Display name
-            <input type="text" id="claim-name" maxlength="80" />
-          </label>
+          <label>Date from <input type="date" id="claim-from" required /></label>
+          <label>Date to <input type="date" id="claim-to" required /></label>
         </div>
-        <div class="grid-2">
-          <label>
-            Date from
-            <input type="date" id="claim-from" required />
-          </label>
-          <label>
-            Date to
-            <input type="date" id="claim-to" required />
-          </label>
-        </div>
-        <p class="hint">Job number must be <code>P</code> followed by digits (e.g. P5503).</p>
+        <p class="hint">Name and destination come from Settings. Job is <code>P</code> + digits.</p>
         <button type="submit" class="btn primary">Save claim</button>
       </form>
-
       <div class="toolbar">
         <h2>Line items <span id="line-count" class="badge">0</span></h2>
         <button type="button" class="btn primary" id="btn-add-line">+ Line</button>
       </div>
       <div id="line-list" class="card-list"></div>
       <p id="line-empty" class="empty hidden">No lines yet. Add a receipt line manually (OCR is stubbed).</p>
-
       <div class="panel export-panel">
-        <h2>Export</h2>
-        <p class="hint">Downloads stay on your device. This app never emails or submits claims.</p>
+        <h2>Export &amp; send</h2>
+        <p class="hint">Downloads stay on your device. Send opens a preview, then mailto / share (attachment is separate).</p>
         <div class="btn-row">
-          <button type="button" class="btn primary" id="btn-export-zip">Download zip (JSON + receipts)</button>
-          <button type="button" class="btn secondary" id="btn-export-docx">Download filled Word form</button>
+          <button type="button" class="btn primary" id="btn-export-zip">Download zip</button>
+          <button type="button" class="btn secondary" id="btn-export-docx">Download Word form</button>
+          <button type="button" class="btn accent" id="btn-send-invoice">Send to Invoice…</button>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button type="button" class="btn secondary" id="btn-complete-claim">Mark complete</button>
+          <button type="button" class="btn ghost" id="btn-reopen-claim">Reopen</button>
         </div>
         <p id="export-status" class="status" role="status"></p>
       </div>
@@ -109,60 +220,137 @@
         <h1 id="line-title">Line item</h1>
         <button type="button" class="btn danger ghost" id="btn-delete-line" title="Delete line">🗑</button>
       </header>
-
       <form id="form-line" class="panel">
         <div class="grid-2">
-          <label>
-            Date
-            <input type="date" id="line-date" required />
-          </label>
+          <label>Date <input type="date" id="line-date" required /></label>
           <label>
             Job no
-            <input type="text" id="line-job" placeholder="P5503" pattern="P[0-9]+" />
+            <div class="job-prefix">
+              <span class="pfx">P</span>
+              <input type="text" id="line-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="5503" />
+            </div>
           </label>
         </div>
-        <label>
-          Description
-          <input type="text" id="line-desc" maxlength="200" required />
-        </label>
-        <label>
-          Foreign currency (optional)
-          <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" />
-        </label>
+        <label>Description <input type="text" id="line-desc" maxlength="200" required /></label>
+        <label>Foreign currency (optional) <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
         <div class="grid-3">
-          <label>
-            £ Net
-            <input type="number" id="line-net" step="0.01" min="0" inputmode="decimal" />
-          </label>
-          <label>
-            £ VAT
-            <input type="number" id="line-vat" step="0.01" min="0" inputmode="decimal" />
-          </label>
-          <label>
-            £ Total
-            <input type="number" id="line-total" step="0.01" min="0" inputmode="decimal" />
-          </label>
+          <label>£ Net <input type="number" id="line-net" step="0.01" min="0" inputmode="decimal" /></label>
+          <label>£ VAT <input type="number" id="line-vat" step="0.01" min="0" inputmode="decimal" /></label>
+          <label>£ Total <input type="number" id="line-total" step="0.01" min="0" inputmode="decimal" /></label>
         </div>
         <p class="hint">If Total is blank, Net + VAT is used on export.</p>
-
         <fieldset class="receipt-box">
           <legend>Receipt</legend>
-          <p class="hint stub">Manual entry only — OCR / “Extract later” not wired (zero-cost MVP).</p>
+          <p class="hint stub">Manual entry only — OCR not wired (zero-cost).</p>
           <input type="file" id="line-receipt" accept="image/*,application/pdf" />
           <div id="receipt-preview" class="receipt-preview hidden"></div>
           <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
         </fieldset>
-
         <button type="submit" class="btn primary">Save line</button>
+      </form>
+    </section>
+
+    <!-- NEW TIMESHEET DIALOG (as view) -->
+    <section id="view-ts-new" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="timesheets">← Back</button>
+        <h1>New timesheet</h1>
+      </header>
+      <form id="form-ts-new" class="panel">
+        <div class="grid-2">
+          <label>Month
+            <select id="ts-new-month"></select>
+          </label>
+          <label>Year
+            <select id="ts-new-year"></select>
+          </label>
+        </div>
+        <p class="hint">One timesheet per calendar month.</p>
+        <button type="submit" class="btn primary">Create</button>
+      </form>
+    </section>
+
+    <!-- TIMESHEET EDIT -->
+    <section id="view-ts-edit" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="timesheets">← Back</button>
+        <h1 id="ts-title">Timesheet</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-ts" title="Delete">🗑</button>
+      </header>
+      <p class="hint-line" id="ts-route-header"></p>
+      <form id="form-ts-meta" class="panel">
+        <div class="grid-2">
+          <label>Month <select id="ts-edit-month"></select></label>
+          <label>Year <select id="ts-edit-year"></select></label>
+        </div>
+        <button type="submit" class="btn primary">Save month/year</button>
+      </form>
+      <div class="toolbar">
+        <h2>Entries <span id="ts-entry-count" class="badge">0</span></h2>
+        <button type="button" class="btn primary" id="btn-add-entry">+ Entry</button>
+      </div>
+      <div id="ts-entry-list" class="card-list"></div>
+      <p id="ts-entry-empty" class="empty hidden">No entries. Add date-range blocks (Office / Offshore / Holiday / …).</p>
+      <div class="panel">
+        <h2>Export &amp; send</h2>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-export-odt">Download timesheet.odt</button>
+          <button type="button" class="btn accent" id="btn-send-timesheets">Send to Timesheets…</button>
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button type="button" class="btn secondary" id="btn-complete-ts">Mark complete</button>
+          <button type="button" class="btn ghost" id="btn-reopen-ts">Reopen</button>
+        </div>
+        <p id="ts-export-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- ENTRY EDIT -->
+    <section id="view-ts-entry" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" id="btn-entry-back">← Back</button>
+        <h1 id="entry-title">Entry</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-entry" title="Delete">🗑</button>
+      </header>
+      <form id="form-ts-entry" class="panel">
+        <div class="grid-2">
+          <label>Start day <input type="number" id="entry-start" min="1" max="31" required /></label>
+          <label>End day <input type="number" id="entry-end" min="1" max="31" required /></label>
+        </div>
+        <label>
+          Project (job)
+          <div class="job-prefix">
+            <span class="pfx">P</span>
+            <input type="text" id="entry-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="5503" />
+          </div>
+        </label>
+        <label>Description <input type="text" id="entry-desc" maxlength="200" /></label>
+        <p class="hint" style="margin-bottom:6px">Day type (one only)</p>
+        <div class="day-type-grid" id="entry-day-types"></div>
+        <button type="submit" class="btn primary">Save entry</button>
       </form>
     </section>
   </div>
 
+  <nav class="bottom-nav" aria-label="Main">
+    <div class="inner">
+      <button type="button" class="on" data-nav="expenses"><span class="ico">£</span>Expenses</button>
+      <button type="button" data-nav="timesheets"><span class="ico">⏱</span>Timesheets</button>
+      <button type="button" data-nav="days"><span class="ico">📅</span>Days worked</button>
+      <button type="button" data-nav="settings"><span class="ico">⚙</span>Settings</button>
+    </div>
+  </nav>
+
+  <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
   <script src="lib/jszip.min.js"></script>
+  <script src="js/email-templates.js"></script>
+  <script src="js/offshore-days.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/docx-filler.js"></script>
+  <script src="js/timesheet-filler.js"></script>
+  <script src="js/timesheet-reader.js"></script>
   <script src="js/export.js"></script>
   <script src="js/app.js"></script>
 </body>

@@ -195,7 +195,7 @@
     const xmlStr = await zip.file('word/document.xml').async('string');
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlStr, 'application/xml');
-    if (doc.querySelector('parsererror')) {
+    if (doc.getElementsByTagName('parsererror').length) {
       throw new Error('Failed to parse document.xml');
     }
 

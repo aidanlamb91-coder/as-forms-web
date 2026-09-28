@@ -1,5 +1,7 @@
-# AS Forms (web prototype)
+# AS Forms (web)
 
-Free browser prototype for expense claims. Open the GitHub Pages site on your phone or computer.
+Static browser build of **AS Forms 0.2.9-web**.
 
-Data stays in your browser only. Nothing is emailed or submitted automatically.
+Live: https://aidanlamb91-coder.github.io/as-forms-web/
+
+Source tree: `receipt-app/web/` in the main project. Data stays in your browser (IndexedDB). No auto-send email.
