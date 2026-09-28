@@ -1340,7 +1340,8 @@
     const autoChk = $('#chk-folder-autosync');
     if (!supported) {
       hint.hidden = false;
-      hint.textContent = AsFolderSync.supportHint();
+      hint.textContent = (globalThis.AsFolderSync && AsFolderSync.supportHint())
+        || 'Folder sync needs Chrome or Edge on desktop. Use Export/Import backup zip on this browser.';
       choose.disabled = true;
       syncBtn.disabled = true;
       restore.disabled = true;
