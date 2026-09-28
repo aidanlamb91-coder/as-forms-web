@@ -1,7 +1,6 @@
-# AS Forms (web)
+# AS Forms Web (GitHub Pages)
 
-Static browser build of **AS Forms 0.2.9-web**.
+- **Stable** `0.2.9-web` (site root): https://aidanlamb91-coder.github.io/as-forms-web/
+- **OCR beta** `0.3.0-web-beta` (`/beta/`): https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.0-web-beta
 
-Live: https://aidanlamb91-coder.github.io/as-forms-web/
-
-Source tree: `receipt-app/web/` in the main project. Data stays in your browser (IndexedDB). No auto-send email.
+Receipt OCR runs on-device (Tesseract.js); receipts are not uploaded to a paid OCR API.
