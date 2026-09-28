@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.11-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.12-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1155,6 +1155,60 @@
   }
 
   // ——— Days worked ———
+  function daysTallyTiles(counts) {
+    const tiles = [
+      ['Holiday', counts.holiday],
+      ['Sick', counts.sick],
+      ['Office', counts.office],
+      ['Training', counts.training],
+    ];
+    return (
+      '<div class="tally-tiles" role="list">' +
+      tiles
+        .map(function (pair) {
+          return (
+            '<div class="tally-tile" role="listitem" aria-label="' +
+            pair[0] +
+            ': ' +
+            pair[1] +
+            '">' +
+            '<span class="n" aria-hidden="true">' +
+            pair[1] +
+            '</span>' +
+            '<span class="lbl" aria-hidden="true">' +
+            pair[0] +
+            '</span>' +
+            '</div>'
+          );
+        })
+        .join('') +
+      '</div>'
+    );
+  }
+
+  function daysPeriodBanner(pt, opts) {
+    opts = opts || {};
+    const el = document.createElement('div');
+    el.className = 'days-banner' + (opts.past ? ' past-period' : '');
+    el.setAttribute('role', 'region');
+    el.setAttribute(
+      'aria-label',
+      (opts.past ? 'Past period ' : 'Current period ') + pt.period.label
+    );
+    el.innerHTML =
+      '<p class="period">' +
+      escapeHtml(pt.period.label) +
+      '</p>' +
+      '<p class="label">Offshore days</p>' +
+      '<p class="big" aria-label="Offshore days: ' +
+      pt.counts.offshore +
+      '">' +
+      pt.counts.offshore +
+      '</p>' +
+      daysTallyTiles(pt.counts);
+    return el;
+  }
+
   async function showDays() {
     setNav('days');
     const all = await AsStorage.listTimesheets();
@@ -1167,45 +1221,13 @@
       showView('days');
       return;
     }
-    const current = totals[0];
-    const hero = document.createElement('div');
-    hero.className = 'offshore-hero';
-    hero.innerHTML =
-      '<p class="label">Offshore days</p>' +
-      '<p class="big">' + current.counts.offshore + '</p>' +
-      '<p class="period">' + escapeHtml(current.period.label) + '</p>';
-    box.appendChild(hero);
-
-    const secondary = document.createElement('div');
-    secondary.className = 'panel';
-    secondary.innerHTML = '<h2>Also this period</h2>';
-    [
-      ['Holiday', current.counts.holiday],
-      ['Sick', current.counts.sick],
-      ['Office', current.counts.office],
-      ['Training', current.counts.training],
-    ].forEach(([label, n]) => {
-      const row = document.createElement('div');
-      row.className = 'tally-row';
-      row.innerHTML = '<span>' + label + '</span><span class="n">' + n + '</span>';
-      secondary.appendChild(row);
-    });
-    box.appendChild(secondary);
+    box.appendChild(daysPeriodBanner(totals[0]));
 
     if (totals.length > 1) {
       const past = document.createElement('div');
       past.innerHTML = '<h2 style="font-size:1rem;margin:8px 0">Past periods</h2>';
       totals.slice(1).forEach((pt) => {
-        const block = document.createElement('div');
-        block.className = 'past-period panel';
-        block.innerHTML =
-          '<h3>' + escapeHtml(pt.period.label) + '</h3>' +
-          '<div class="tally-row"><span>Offshore</span><span class="n">' + pt.counts.offshore + '</span></div>' +
-          '<div class="tally-row"><span>Holiday</span><span class="n">' + pt.counts.holiday + '</span></div>' +
-          '<div class="tally-row"><span>Sick</span><span class="n">' + pt.counts.sick + '</span></div>' +
-          '<div class="tally-row"><span>Office</span><span class="n">' + pt.counts.office + '</span></div>' +
-          '<div class="tally-row"><span>Training</span><span class="n">' + pt.counts.training + '</span></div>';
-        past.appendChild(block);
+        past.appendChild(daysPeriodBanner(pt, { past: true }));
       });
       box.appendChild(past);
     }
