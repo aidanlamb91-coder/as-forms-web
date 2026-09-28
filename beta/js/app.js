@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.0-web-beta — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.1-web-beta — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);

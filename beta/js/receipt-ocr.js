@@ -1,14 +1,36 @@
 /**
  * Browser-only receipt OCR for AS Forms web beta.
- * Lazy-loads Tesseract.js + pdf.js from pinned jsDelivr CDN (no paid APIs;
+ * Uses vendored Tesseract.js + pdf.js under vendor/ (no CDN language download;
  * receipt bytes never leave the device for OCR).
  */
 (function (global) {
   const TESSERACT_VER = '5.1.1';
   const PDFJS_VER = '3.11.174';
-  const TESSERACT_SRC = 'https://cdn.jsdelivr.net/npm/tesseract.js@' + TESSERACT_VER + '/dist/tesseract.min.js';
-  const PDFJS_SRC = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + PDFJS_VER + '/build/pdf.min.js';
-  const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + PDFJS_VER + '/build/pdf.worker.min.js';
+  /** Hard ceiling for first worker create + recognize (ms). */
+  const OCR_TIMEOUT_MS = 120000;
+
+  /** Directory of the current page (…/beta/), stable with or without index.html / ?v=. */
+  function pageDirHref() {
+    try {
+      return new URL('.', global.location.href).href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function vendorUrl(rel) {
+    return new URL(rel, pageDirHref()).href;
+  }
+
+  const TESSERACT_SRC = function () { return vendorUrl('vendor/tesseract/tesseract.min.js'); };
+  const PDFJS_SRC = function () { return vendorUrl('vendor/pdfjs/pdf.min.js'); };
+  const PDFJS_WORKER = function () { return vendorUrl('vendor/pdfjs/pdf.worker.min.js'); };
+  const WORKER_PATH = function () { return vendorUrl('vendor/tesseract/worker.min.js'); };
+  /** Directory: tesseract picks simd-lstm vs lstm .wasm.js via feature detect. */
+  const CORE_PATH = function () { return vendorUrl('vendor/tesseract'); };
+  /** Directory containing eng.traineddata.gz */
+  const LANG_PATH = function () { return vendorUrl('vendor/tesseract'); };
+
   const MAX_PDF_PAGES = 2;
   const MIN_PDF_TEXT_CHARS = 40;
 
@@ -39,17 +61,36 @@
     });
   }
 
+  function withTimeout(promise, ms, onTimeout) {
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        try {
+          if (onTimeout) onTimeout();
+        } catch (_) { /* ignore */ }
+        const err = new Error(
+          'Receipt reading timed out. Check your connection or try again / Cancel.'
+        );
+        err.code = 'TIMEOUT';
+        reject(err);
+      }, ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer != null) clearTimeout(timer);
+    });
+  }
+
   async function ensureLibs(onProgress) {
     if (global.Tesseract && global.pdfjsLib) return;
     if (!loadPromise) {
       loadPromise = (async () => {
         if (onProgress) onProgress('Loading reader…');
         const jobs = [];
-        if (!global.Tesseract) jobs.push(loadScript(TESSERACT_SRC));
-        if (!global.pdfjsLib) jobs.push(loadScript(PDFJS_SRC));
+        if (!global.Tesseract) jobs.push(loadScript(TESSERACT_SRC()));
+        if (!global.pdfjsLib) jobs.push(loadScript(PDFJS_SRC()));
         await Promise.all(jobs);
         if (global.pdfjsLib) {
-          global.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+          global.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER();
         }
       })().catch((e) => {
         loadPromise = null;
@@ -65,15 +106,18 @@
     workerPromise = (async () => {
       if (onProgress) onProgress('Preparing on-device reader (first time may take a moment)…');
       const worker = await global.Tesseract.createWorker('eng', 1, {
-        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@' + TESSERACT_VER + '/dist/worker.min.js',
-        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core.wasm.js',
-        langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0',
+        workerPath: WORKER_PATH(),
+        corePath: CORE_PATH(),
+        langPath: LANG_PATH(),
+        // eng.traineddata.gz is vendored; still gzip-compressed
+        gzip: true,
         logger: (m) => {
           if (!onProgress || !m) return;
           if (m.status === 'recognizing text' && m.progress != null) {
             onProgress('Reading receipt… ' + Math.round(m.progress * 100) + '%');
           } else if (m.status === 'loading language traineddata') {
-            onProgress('Downloading language data (once)…');
+            const pct = m.progress != null ? ' ' + Math.round(m.progress * 100) + '%' : '';
+            onProgress('Downloading language data… this should take under a minute' + pct);
           } else if (m.status === 'initializing api' || m.status === 'loading tesseract core') {
             onProgress('Starting on-device reader…');
           }
@@ -260,36 +304,48 @@
       throw err;
     }
 
-    let text = '';
-    let source = 'unknown';
+    const work = (async () => {
+      let text = '';
+      let source = 'unknown';
 
-    if (isPdf(blob, name)) {
-      source = 'pdf';
-      text = await ocrPdf(blob, onProgress);
-    } else if (isImage(blob, name) || (blob.type || '').startsWith('image/')) {
-      source = 'image';
-      if (onProgress) onProgress('Preparing image…');
-      let imgBlob = blob;
-      try {
-        imgBlob = await preprocessImageBlob(blob);
-      } catch (_) {
-        imgBlob = blob;
+      if (isPdf(blob, name)) {
+        source = 'pdf';
+        text = await ocrPdf(blob, onProgress);
+      } else if (isImage(blob, name) || (blob.type || '').startsWith('image/')) {
+        source = 'image';
+        if (onProgress) onProgress('Preparing image…');
+        let imgBlob = blob;
+        try {
+          imgBlob = await preprocessImageBlob(blob);
+        } catch (_) {
+          imgBlob = blob;
+        }
+        throwIfCancelled();
+        text = await ocrImageSource(imgBlob, onProgress);
+      } else {
+        const err = new Error('Please attach a JPG, PNG, WebP image or a PDF receipt.');
+        err.code = 'UNSUPPORTED';
+        throw err;
       }
+
       throwIfCancelled();
-      text = await ocrImageSource(imgBlob, onProgress);
-    } else {
-      const err = new Error('Please attach a JPG, PNG, WebP image or a PDF receipt.');
-      err.code = 'UNSUPPORTED';
-      throw err;
-    }
+      const parse = global.AsReceiptParse;
+      const parsed = parse
+        ? parse.parseReceiptText(text)
+        : { date: null, description: null, total: null, net: null, vat: null, jobNo: null, rawLength: (text || '').length };
 
-    throwIfCancelled();
-    const parse = global.AsReceiptParse;
-    const parsed = parse
-      ? parse.parseReceiptText(text)
-      : { date: null, description: null, total: null, net: null, vat: null, jobNo: null, rawLength: (text || '').length };
+      return { text, parsed, source };
+    })();
 
-    return { text, parsed, source };
+    // Swallow late rejection if timeout/cancel already won the race
+    work.catch(() => {});
+
+    return withTimeout(work, OCR_TIMEOUT_MS, () => {
+      // Abort hung worker/download so UI can recover
+      cancel();
+      // Allow a fresh attempt after timeout
+      resetCancel();
+    });
   }
 
   global.AsReceiptOcr = {
@@ -300,6 +356,13 @@
     isImage,
     isHeic,
     MAX_PDF_PAGES,
-    CDN: { TESSERACT_SRC, PDFJS_SRC, TESSERACT_VER, PDFJS_VER },
+    OCR_TIMEOUT_MS,
+    CDN: {
+      TESSERACT_VER,
+      PDFJS_VER,
+      vendored: true,
+      tesseract: 'vendor/tesseract/',
+      pdfjs: 'vendor/pdfjs/',
+    },
   };
 })(typeof window !== 'undefined' ? window : globalThis);
