@@ -277,3 +277,19 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #222; outline-off
 .job-prefix input {
   border-radius: 0 8px 8px 0;
 }
+
+/* OCR beta */
+.ocr-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  background: #eef6ff; border: 1px solid #c5dbf5; font-size: .9rem;
+}
+.ocr-status.ocr-error {
+  background: #fff5f5; border-color: #f0c2c2; color: #7a1f1f;
+}
+.ocr-suggest {
+  margin-top: 10px; padding: 12px; border-radius: 10px;
+  background: #f4faf4; border: 1px solid #c5e0c5;
+}
+.ocr-suggest-title { margin: 0 0 4px; font-weight: 700; font-size: .95rem; }
+.ocr-suggest label { font-size: .85rem; }

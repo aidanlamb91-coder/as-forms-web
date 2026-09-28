@@ -107,8 +107,9 @@
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.2.9-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.2.10-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
+        <p class="hint">Receipt reading (OCR) is <strong>beta</strong> and runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
         <p class="hint stub">Optional: open Outlook / your mail app after downloading the attachment — this web build does not use Microsoft sign-in (no MSAL).</p>
       </div>
     </section>
@@ -188,7 +189,7 @@
           <label>Date from <input type="date" id="claim-from" required /></label>
           <label>Date to <input type="date" id="claim-to" required /></label>
         </div>
-        <p class="hint">Name and destination come from Settings. Job is <code>P</code> + digits.</p>
+        <p class="hint">Name and destination come from Settings. Job is <code>P</code> + digits and applies to <strong>every line</strong> (not per-line).</p>
         <button type="submit" class="btn primary">Save claim</button>
       </form>
       <div class="toolbar">
@@ -196,13 +197,13 @@
         <button type="button" class="btn primary" id="btn-add-line">+ Line</button>
       </div>
       <div id="line-list" class="card-list"></div>
-      <p id="line-empty" class="empty hidden">No lines yet. Add a receipt line manually (OCR is stubbed).</p>
+      <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt photo or PDF to try on-device reading (beta).</p>
       <div class="panel export-panel">
         <h2>Export &amp; send</h2>
-        <p class="hint">Downloads stay on your device. Send opens a preview, then mailto / share (attachment is separate).</p>
+        <p class="hint">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. Send opens a preview — attach the zip in your mail app.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-export-zip">Download zip</button>
-          <button type="button" class="btn secondary" id="btn-export-docx">Download Word form</button>
+          <button type="button" class="btn secondary" id="btn-export-docx">Download Word only</button>
           <button type="button" class="btn accent" id="btn-send-invoice">Send to Invoice…</button>
         </div>
         <div class="btn-row" style="margin-top:8px">
@@ -221,16 +222,8 @@
         <button type="button" class="btn danger ghost" id="btn-delete-line" title="Delete line">🗑</button>
       </header>
       <form id="form-line" class="panel">
-        <div class="grid-2">
-          <label>Date <input type="date" id="line-date" required /></label>
-          <label>
-            Job no
-            <div class="job-prefix">
-              <span class="pfx">P</span>
-              <input type="text" id="line-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="5503" />
-            </div>
-          </label>
-        </div>
+        <label>Date <input type="date" id="line-date" required /></label>
+        <p class="hint" id="line-claim-job-hint">Job number is set on the claim and applied to every line.</p>
         <label>Description <input type="text" id="line-desc" maxlength="200" required /></label>
         <label>Foreign currency (optional) <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
         <div class="grid-3">
@@ -241,10 +234,33 @@
         <p class="hint">If Total is blank, Net + VAT is used on export.</p>
         <fieldset class="receipt-box">
           <legend>Receipt</legend>
-          <p class="hint stub">Manual entry only — OCR not wired (zero-cost).</p>
-          <input type="file" id="line-receipt" accept="image/*,application/pdf" />
+          <p class="hint">Attach a photo or PDF. The app will try to read it <strong>on this device</strong> (beta) and suggest Date, merchant, and amounts — you confirm before anything is filled in.</p>
+          <input type="file" id="line-receipt" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
           <div id="receipt-preview" class="receipt-preview hidden"></div>
-          <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
+          <div id="ocr-status" class="ocr-status hidden" role="status" aria-live="polite">
+            <span id="ocr-status-text">Reading receipt…</span>
+            <button type="button" class="btn ghost" id="btn-ocr-cancel">Cancel</button>
+          </div>
+          <div id="ocr-suggest" class="ocr-suggest hidden">
+            <p class="ocr-suggest-title">Suggested from receipt</p>
+            <p class="hint" id="ocr-suggest-note">Check these, edit if needed, then tap Use these.</p>
+            <label>Date <input type="date" id="ocr-date" /></label>
+            <label>Description <input type="text" id="ocr-desc" maxlength="200" /></label>
+            <div class="grid-3">
+              <label>£ Net <input type="number" id="ocr-net" step="0.01" min="0" inputmode="decimal" /></label>
+              <label>£ VAT <input type="number" id="ocr-vat" step="0.01" min="0" inputmode="decimal" /></label>
+              <label>£ Total <input type="number" id="ocr-total" step="0.01" min="0" inputmode="decimal" /></label>
+            </div>
+            <div class="btn-row" style="margin-top:8px">
+              <button type="button" class="btn primary" id="btn-ocr-apply">Use these</button>
+              <button type="button" class="btn secondary" id="btn-ocr-dismiss">Dismiss</button>
+              <button type="button" class="btn ghost" id="btn-ocr-rescan">Scan again</button>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:8px">
+            <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
+            <button type="button" class="btn ghost hidden" id="btn-ocr-rescan-alone">Scan receipt again</button>
+          </div>
         </fieldset>
         <button type="submit" class="btn primary">Save line</button>
       </form>
@@ -352,6 +368,8 @@
   <script src="js/timesheet-filler.js"></script>
   <script src="js/timesheet-reader.js"></script>
   <script src="js/export.js"></script>
+  <script src="js/receipt-parse.js"></script>
+  <script src="js/receipt-ocr.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

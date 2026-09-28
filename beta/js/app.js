@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.1-web-beta — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.2-web-beta — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -231,8 +231,7 @@
       const receiptNote = line.receiptId ? ' · receipt' : '';
       btn.innerHTML =
         '<p class="title">' + escapeHtml(line.description || 'Line') + '</p>' +
-        '<p class="meta">' + escapeHtml(line.date || '') + ' · ' +
-        escapeHtml(line.jobNo || '') + receiptNote + '</p>' +
+        '<p class="meta">' + escapeHtml(line.date || '') + receiptNote + '</p>' +
         '<p class="money">' + money(lineTotal(line)) + '</p>';
       btn.addEventListener('click', () => openLine(line.id));
       list.appendChild(btn);
@@ -254,6 +253,8 @@
     claim.sendTo = s.expenseTo;
     claim.dateFrom = $('#claim-from').value;
     claim.dateTo = $('#claim-to').value;
+    // Android updateClaimJobNumber: every line JOB NO follows claim
+    (claim.lines || []).forEach((line) => { line.jobNo = job; });
     await AsStorage.putClaim(claim);
     $('#claim-title').textContent = claim.jobNo;
     toast('Claim saved');
@@ -287,7 +288,7 @@
     const line = {
       id: AsStorage.uid('line'),
       date: claim.dateFrom || new Date().toISOString().slice(0, 10),
-      jobNo: claim.jobNo && isValidJob(claim.jobNo) ? claim.jobNo : '',
+      jobNo: claim.jobNo || '',
       description: '',
       foreignCurrency: '',
       net: null,
@@ -334,7 +335,6 @@
     const sg = $('#ocr-suggest');
     if (!sg) return;
     $('#ocr-date').value = parsed.date || '';
-    $('#ocr-job-digits').value = parsed.jobNo ? String(parsed.jobNo).replace(/^[Pp]/, '') : '';
     $('#ocr-desc').value = parsed.description || '';
     $('#ocr-net').value = parsed.net != null ? parsed.net : '';
     $('#ocr-vat').value = parsed.vat != null ? parsed.vat : '';
@@ -345,7 +345,7 @@
     if (parsed.total != null) bits.push('total');
     if (parsed.net != null) bits.push('net');
     if (parsed.vat != null) bits.push('VAT');
-    if (parsed.jobNo) bits.push('job');
+    // Job is claim-level only — ignore OCR job suggestions
     $('#ocr-suggest-note').textContent = bits.length
       ? ('Found: ' + bits.join(', ') + '. Edit if needed, then tap Use these.')
       : 'Nothing useful found — you can still type the line yourself.';
@@ -360,8 +360,6 @@
     const net = numOrNull($('#ocr-net').value);
     const vat = numOrNull($('#ocr-vat').value);
     const total = numOrNull($('#ocr-total').value);
-    const jobRaw = $('#ocr-job-digits').value.trim();
-    const job = jobRaw ? normalizeJob(jobRaw) : '';
 
     if (date) $('#line-date').value = date;
     if (desc) $('#line-desc').value = desc;
@@ -381,10 +379,7 @@
         totEl.value = ((net || 0) + (vat || 0)).toFixed(2);
       }
     }
-    // Only set job when clearly present in OCR panel (user can clear it)
-    if (job && isValidJob(job)) {
-      $('#line-job-digits').value = digitsOnly(job);
-    }
+    // Job stays claim-level — never apply OCR job onto a line
     hideOcrUi();
     toast('Suggestions applied — save the line when ready');
   }
@@ -442,7 +437,12 @@
     if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
     $('#line-title').textContent = line.description || 'Line item';
     $('#line-date').value = line.date || '';
-    $('#line-job-digits').value = digitsOnly(line.jobNo);
+    const claimJobHint = $('#line-claim-job-hint');
+    if (claimJobHint) {
+      claimJobHint.textContent = claim.jobNo
+        ? ('Uses claim job ' + claim.jobNo + ' on every line (same as Android).')
+        : 'Set the claim job number first — it applies to every line.';
+    }
     $('#line-desc').value = line.description || '';
     $('#line-fx').value = line.foreignCurrency || '';
     $('#line-net').value = line.net != null ? line.net : '';
@@ -489,19 +489,14 @@
 
   async function saveLineForm(ev) {
     ev.preventDefault();
-    const jobRaw = $('#line-job-digits').value.trim();
-    const job = jobRaw ? normalizeJob(jobRaw) : '';
-    if (job && !isValidJob(job)) {
-      toast('Job number must be P + digits');
-      return;
-    }
     const claim = await AsStorage.getClaim(state.claimId);
     if (!claim) return;
     const idx = (claim.lines || []).findIndex((l) => l.id === state.lineId);
     if (idx < 0) return;
     const line = claim.lines[idx];
     line.date = $('#line-date').value;
-    line.jobNo = job;
+    // Job is claim-level only — mirror claim.jobNo onto every line
+    line.jobNo = claim.jobNo || '';
     line.description = $('#line-desc').value.trim();
     line.foreignCurrency = $('#line-fx').value.trim();
     line.net = numOrNull($('#line-net').value);
@@ -523,6 +518,7 @@
       line.receiptMeta = meta;
     }
     claim.lines[idx] = line;
+    (claim.lines || []).forEach((l) => { l.jobNo = claim.jobNo || ''; });
     await AsStorage.putClaim(claim);
     state.pendingReceipt = null;
     state.clearReceipt = false;
@@ -549,8 +545,24 @@
     status.textContent = 'Building zip…';
     try {
       const claim = await AsStorage.getClaim(state.claimId);
+      if (!claim) return;
+      const s = AsStorage.getSettings();
+      const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      if (!isValidJob(job)) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before exporting';
+        toast('Job number must be P + digits');
+        return;
+      }
+      claim.jobNo = job;
+      claim.dateFrom = $('#claim-from').value || claim.dateFrom;
+      claim.dateTo = $('#claim-to').value || claim.dateTo;
+      claim.name = s.displayName;
+      claim.sendTo = s.expenseTo;
+      (claim.lines || []).forEach((l) => { l.jobNo = job; });
+      await AsStorage.putClaim(claim);
       const name = await AsExport.exportClaimZip(claim);
-      status.textContent = 'Downloaded ' + name;
+      status.textContent = 'Downloaded ' + name + ' (Word form + numbered receipts)';
       toast('Zip downloaded');
     } catch (e) {
       console.error(e);
@@ -566,11 +578,19 @@
     try {
       const claim = await AsStorage.getClaim(state.claimId);
       const s = AsStorage.getSettings();
-      claim.jobNo = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      if (!isValidJob(job)) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before exporting';
+        toast('Job number must be P + digits');
+        return;
+      }
+      claim.jobNo = job;
       claim.dateFrom = $('#claim-from').value || claim.dateFrom;
       claim.dateTo = $('#claim-to').value || claim.dateTo;
       claim.name = s.displayName;
       claim.sendTo = s.expenseTo;
+      (claim.lines || []).forEach((l) => { l.jobNo = job; });
       await AsStorage.putClaim(claim);
       const name = await AsExport.exportFilledDocx(claim);
       status.textContent = 'Downloaded ' + name;
@@ -591,7 +611,7 @@
       to: email.to,
       subject: email.subject,
       body: email.body,
-      attachmentNote: 'Download the zip and/or Word form first, then attach in your mail app. Mailto cannot attach files.',
+      attachmentNote: 'Download the zip (Word form + numbered receipts) first, then attach in your mail app. Mailto cannot attach files.',
       filename: email.filename,
       onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
     });

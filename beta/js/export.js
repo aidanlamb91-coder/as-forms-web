@@ -74,24 +74,80 @@
     };
   }
 
+  /** Force every line JOB NO from claim (Android ClaimRepository sync). */
+  function syncLinesJobFromClaim(claim) {
+    const job = claim.jobNo || '';
+    (claim.lines || []).forEach((line) => {
+      line.jobNo = job;
+    });
+    return claim;
+  }
+
+  function receiptExtension(name, mime) {
+    const n = String(name || '');
+    const dot = n.lastIndexOf('.');
+    if (dot >= 0) return n.slice(dot).toLowerCase();
+    if (mime === 'application/pdf') return '.pdf';
+    if (mime && String(mime).startsWith('image/')) {
+      const sub = String(mime).slice(6).toLowerCase();
+      if (sub === 'jpeg') return '.jpg';
+      if (sub && sub.length <= 4) return '.' + sub;
+      return '.jpg';
+    }
+    return '';
+  }
+
+  function linesForDocx(claim) {
+    const claimJob = claim.jobNo || '';
+    return (claim.lines || []).map((l) => ({
+      date: l.date,
+      jobNo: claimJob, // always claim-level (Android toLineData)
+      description: l.description,
+      foreignCurrency: l.foreignCurrency || '',
+      net: l.net,
+      vat: l.vat,
+      total: l.total != null && l.total !== ''
+        ? l.total
+        : ((Number(l.net) || 0) + (Number(l.vat) || 0) || null),
+    }));
+  }
+
+  async function fillClaimDocxBlob(claim) {
+    const settings = AsStorage.getSettings();
+    syncLinesJobFromClaim(claim);
+    return AsDocxFiller.fillExpenseClaim({
+      name: claim.name || settings.displayName,
+      sendTo: claim.sendTo || settings.expenseTo || settings.sendTo,
+      dateFrom: claim.dateFrom,
+      dateTo: claim.dateTo,
+      lines: linesForDocx(claim),
+    });
+  }
+
+  /**
+   * Android ZipPackager parity: flat zip of filled ExpenseClaim_YYYY-MM-DD.docx
+   * plus receipt files named by 1-based form line index (e.g. 1.jpg, 3.pdf).
+   * No claim.json. Lines without receipts skip that file; numbering is line index.
+   */
   async function buildClaimZipBlob(claim) {
     if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
+    syncLinesJobFromClaim(claim);
+    const filledDocx = await fillClaimDocxBlob(claim);
+    const dateFrom = claim.dateFrom || new Date().toISOString().slice(0, 10);
+    const docxName = 'ExpenseClaim_' + dateFrom + '.docx';
+
     const zip = new JSZip();
-    const folder = claimZipInnerFolder(claim);
-    const root = zip.folder(folder);
-    root.file('claim.json', JSON.stringify(claimToJson(claim), null, 2));
-    const receipts = root.folder('receipts');
-    let i = 0;
-    for (const line of claim.lines || []) {
+    zip.file(docxName, filledDocx);
+
+    const lines = claim.lines || [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       if (!line.receiptId) continue;
-      i += 1;
       const rcpt = await AsStorage.getReceipt(line.receiptId);
       if (!rcpt || !rcpt.blob) continue;
-      const ext = (rcpt.name && rcpt.name.includes('.'))
-        ? rcpt.name.slice(rcpt.name.lastIndexOf('.'))
-        : (rcpt.type === 'application/pdf' ? '.pdf' : '.jpg');
-      const base = String(i).padStart(2, '0') + '_' + safeName(line.description || 'receipt');
-      receipts.file(base + ext, rcpt.blob);
+      const lineNumber = i + 1; // form line index (Android mapIndexed)
+      const ext = receiptExtension(rcpt.name || (line.receiptMeta && line.receiptMeta.name), rcpt.type);
+      zip.file(String(lineNumber) + ext, rcpt.blob);
     }
     return zip.generateAsync({ type: 'blob' });
   }
@@ -104,25 +160,9 @@
   }
 
   async function exportFilledDocx(claim) {
-    const settings = AsStorage.getSettings();
-    const blob = await AsDocxFiller.fillExpenseClaim({
-      name: claim.name || settings.displayName,
-      sendTo: claim.sendTo || settings.expenseTo || settings.sendTo,
-      dateFrom: claim.dateFrom,
-      dateTo: claim.dateTo,
-      lines: (claim.lines || []).map((l) => ({
-        date: l.date,
-        jobNo: l.jobNo,
-        description: l.description,
-        foreignCurrency: l.foreignCurrency || '',
-        net: l.net,
-        vat: l.vat,
-        total: l.total != null && l.total !== ''
-          ? l.total
-          : ((Number(l.net) || 0) + (Number(l.vat) || 0) || null),
-      })),
-    });
-    const name = safeName(claim.jobNo || 'claim') + '.docx';
+    const blob = await fillClaimDocxBlob(claim);
+    const dateFrom = claim.dateFrom || new Date().toISOString().slice(0, 10);
+    const name = 'ExpenseClaim_' + dateFrom + '.docx';
     downloadBlob(blob, name);
     return name;
   }
@@ -362,6 +402,8 @@
     downloadBlob,
     exportClaimZip,
     buildClaimZipBlob,
+    fillClaimDocxBlob,
+    syncLinesJobFromClaim,
     exportFilledDocx,
     exportTimesheetOdt,
     buildExpenseEmail,

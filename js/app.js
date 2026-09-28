@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.9 — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.10-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -24,6 +24,8 @@
     entryId: null,
     pendingReceipt: null,
     clearReceipt: false,
+    ocrToken: 0,
+    lastOcrParsed: null,
   };
 
   function toast(msg) {
@@ -229,8 +231,7 @@
       const receiptNote = line.receiptId ? ' · receipt' : '';
       btn.innerHTML =
         '<p class="title">' + escapeHtml(line.description || 'Line') + '</p>' +
-        '<p class="meta">' + escapeHtml(line.date || '') + ' · ' +
-        escapeHtml(line.jobNo || '') + receiptNote + '</p>' +
+        '<p class="meta">' + escapeHtml(line.date || '') + receiptNote + '</p>' +
         '<p class="money">' + money(lineTotal(line)) + '</p>';
       btn.addEventListener('click', () => openLine(line.id));
       list.appendChild(btn);
@@ -252,6 +253,8 @@
     claim.sendTo = s.expenseTo;
     claim.dateFrom = $('#claim-from').value;
     claim.dateTo = $('#claim-to').value;
+    // Android updateClaimJobNumber: every line JOB NO follows claim
+    (claim.lines || []).forEach((line) => { line.jobNo = job; });
     await AsStorage.putClaim(claim);
     $('#claim-title').textContent = claim.jobNo;
     toast('Claim saved');
@@ -285,7 +288,7 @@
     const line = {
       id: AsStorage.uid('line'),
       date: claim.dateFrom || new Date().toISOString().slice(0, 10),
-      jobNo: claim.jobNo && isValidJob(claim.jobNo) ? claim.jobNo : '',
+      jobNo: claim.jobNo || '',
       description: '',
       foreignCurrency: '',
       net: null,
@@ -300,6 +303,124 @@
     await openLine(line.id);
   }
 
+
+  // ——— Receipt OCR (beta, on-device) ———
+  function hideOcrUi() {
+    const st = $('#ocr-status');
+    const sg = $('#ocr-suggest');
+    if (st) {
+      st.classList.add('hidden');
+      st.classList.remove('ocr-error');
+    }
+    if (sg) sg.classList.add('hidden');
+    const alone = $('#btn-ocr-rescan-alone');
+    if (alone) alone.classList.add('hidden');
+    state.lastOcrParsed = null;
+  }
+
+  function showOcrStatus(msg, isError) {
+    const st = $('#ocr-status');
+    const sg = $('#ocr-suggest');
+    if (sg) sg.classList.add('hidden');
+    if (!st) return;
+    st.classList.remove('hidden');
+    st.classList.toggle('ocr-error', !!isError);
+    $('#ocr-status-text').textContent = msg;
+    const cancel = $('#btn-ocr-cancel');
+    if (cancel) cancel.classList.toggle('hidden', !!isError);
+  }
+
+  function fillOcrSuggest(parsed) {
+    state.lastOcrParsed = parsed;
+    const sg = $('#ocr-suggest');
+    if (!sg) return;
+    $('#ocr-date').value = parsed.date || '';
+    $('#ocr-desc').value = parsed.description || '';
+    $('#ocr-net').value = parsed.net != null ? parsed.net : '';
+    $('#ocr-vat').value = parsed.vat != null ? parsed.vat : '';
+    $('#ocr-total').value = parsed.total != null ? parsed.total : '';
+    const bits = [];
+    if (parsed.date) bits.push('date');
+    if (parsed.description) bits.push('merchant');
+    if (parsed.total != null) bits.push('total');
+    if (parsed.net != null) bits.push('net');
+    if (parsed.vat != null) bits.push('VAT');
+    // Job is claim-level only — ignore OCR job suggestions
+    $('#ocr-suggest-note').textContent = bits.length
+      ? ('Found: ' + bits.join(', ') + '. Edit if needed, then tap Use these.')
+      : 'Nothing useful found — you can still type the line yourself.';
+    sg.classList.remove('hidden');
+    const alone = $('#btn-ocr-rescan-alone');
+    if (alone) alone.classList.add('hidden');
+  }
+
+  function applyOcrSuggestions() {
+    const date = $('#ocr-date').value;
+    const desc = $('#ocr-desc').value.trim();
+    const net = numOrNull($('#ocr-net').value);
+    const vat = numOrNull($('#ocr-vat').value);
+    const total = numOrNull($('#ocr-total').value);
+
+    if (date) $('#line-date').value = date;
+    if (desc) $('#line-desc').value = desc;
+    if (net != null) {
+      $('#line-net').value = net;
+    }
+    if (vat != null) {
+      $('#line-vat').value = vat;
+    }
+    if (total != null) {
+      $('#line-total').value = total;
+      $('#line-total').dataset.touched = '1';
+    } else if (net != null || vat != null) {
+      // leave total auto-fill path
+      const totEl = $('#line-total');
+      if (totEl.dataset.touched !== '1') {
+        totEl.value = ((net || 0) + (vat || 0)).toFixed(2);
+      }
+    }
+    // Job stays claim-level — never apply OCR job onto a line
+    hideOcrUi();
+    toast('Suggestions applied — save the line when ready');
+  }
+
+  async function runReceiptOcr(blob, name) {
+    if (!blob || !globalThis.AsReceiptOcr) return;
+    const token = ++state.ocrToken;
+    showOcrStatus('Reading receipt…', false);
+    try {
+      const result = await AsReceiptOcr.readReceipt(blob, {
+        name: name || '',
+        onProgress: (msg) => {
+          if (token !== state.ocrToken) return;
+          showOcrStatus(msg || 'Reading receipt…', false);
+        },
+      });
+      if (token !== state.ocrToken) return;
+      $('#ocr-status').classList.add('hidden');
+      const parsed = result.parsed || {};
+      if (AsReceiptParse && AsReceiptParse.hasUsefulSuggestions(parsed)) {
+        fillOcrSuggest(parsed);
+      } else {
+        showOcrStatus('Could not read useful details from this receipt. You can fill the fields yourself — the attachment is still fine.', true);
+        const alone = $('#btn-ocr-rescan-alone');
+        if (alone) alone.classList.remove('hidden');
+      }
+    } catch (e) {
+      if (token !== state.ocrToken) return;
+      if (e && e.cancelled) {
+        showOcrStatus('Reading cancelled. Attachment is still kept.', true);
+        const alone = $('#btn-ocr-rescan-alone');
+        if (alone) alone.classList.remove('hidden');
+        return;
+      }
+      console.warn('OCR', e);
+      showOcrStatus((e && e.message) || 'Could not read this receipt. You can still type the details.', true);
+      const alone = $('#btn-ocr-rescan-alone');
+      if (alone) alone.classList.remove('hidden');
+    }
+  }
+
   async function openLine(lineId) {
     const claim = await AsStorage.getClaim(state.claimId);
     if (!claim) return;
@@ -311,9 +432,17 @@
     state.lineId = lineId;
     state.pendingReceipt = null;
     state.clearReceipt = false;
+    state.ocrToken++;
+    hideOcrUi();
+    if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
     $('#line-title').textContent = line.description || 'Line item';
     $('#line-date').value = line.date || '';
-    $('#line-job-digits').value = digitsOnly(line.jobNo);
+    const claimJobHint = $('#line-claim-job-hint');
+    if (claimJobHint) {
+      claimJobHint.textContent = claim.jobNo
+        ? ('Uses claim job ' + claim.jobNo + ' on every line (same as Android).')
+        : 'Set the claim job number first — it applies to every line.';
+    }
     $('#line-desc').value = line.description || '';
     $('#line-fx').value = line.foreignCurrency || '';
     $('#line-net').value = line.net != null ? line.net : '';
@@ -360,19 +489,14 @@
 
   async function saveLineForm(ev) {
     ev.preventDefault();
-    const jobRaw = $('#line-job-digits').value.trim();
-    const job = jobRaw ? normalizeJob(jobRaw) : '';
-    if (job && !isValidJob(job)) {
-      toast('Job number must be P + digits');
-      return;
-    }
     const claim = await AsStorage.getClaim(state.claimId);
     if (!claim) return;
     const idx = (claim.lines || []).findIndex((l) => l.id === state.lineId);
     if (idx < 0) return;
     const line = claim.lines[idx];
     line.date = $('#line-date').value;
-    line.jobNo = job;
+    // Job is claim-level only — mirror claim.jobNo onto every line
+    line.jobNo = claim.jobNo || '';
     line.description = $('#line-desc').value.trim();
     line.foreignCurrency = $('#line-fx').value.trim();
     line.net = numOrNull($('#line-net').value);
@@ -394,6 +518,7 @@
       line.receiptMeta = meta;
     }
     claim.lines[idx] = line;
+    (claim.lines || []).forEach((l) => { l.jobNo = claim.jobNo || ''; });
     await AsStorage.putClaim(claim);
     state.pendingReceipt = null;
     state.clearReceipt = false;
@@ -420,8 +545,24 @@
     status.textContent = 'Building zip…';
     try {
       const claim = await AsStorage.getClaim(state.claimId);
+      if (!claim) return;
+      const s = AsStorage.getSettings();
+      const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      if (!isValidJob(job)) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before exporting';
+        toast('Job number must be P + digits');
+        return;
+      }
+      claim.jobNo = job;
+      claim.dateFrom = $('#claim-from').value || claim.dateFrom;
+      claim.dateTo = $('#claim-to').value || claim.dateTo;
+      claim.name = s.displayName;
+      claim.sendTo = s.expenseTo;
+      (claim.lines || []).forEach((l) => { l.jobNo = job; });
+      await AsStorage.putClaim(claim);
       const name = await AsExport.exportClaimZip(claim);
-      status.textContent = 'Downloaded ' + name;
+      status.textContent = 'Downloaded ' + name + ' (Word form + numbered receipts)';
       toast('Zip downloaded');
     } catch (e) {
       console.error(e);
@@ -437,11 +578,19 @@
     try {
       const claim = await AsStorage.getClaim(state.claimId);
       const s = AsStorage.getSettings();
-      claim.jobNo = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      if (!isValidJob(job)) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before exporting';
+        toast('Job number must be P + digits');
+        return;
+      }
+      claim.jobNo = job;
       claim.dateFrom = $('#claim-from').value || claim.dateFrom;
       claim.dateTo = $('#claim-to').value || claim.dateTo;
       claim.name = s.displayName;
       claim.sendTo = s.expenseTo;
+      (claim.lines || []).forEach((l) => { l.jobNo = job; });
       await AsStorage.putClaim(claim);
       const name = await AsExport.exportFilledDocx(claim);
       status.textContent = 'Downloaded ' + name;
@@ -462,7 +611,7 @@
       to: email.to,
       subject: email.subject,
       body: email.body,
-      attachmentNote: 'Download the zip and/or Word form first, then attach in your mail app. Mailto cannot attach files.',
+      attachmentNote: 'Download the zip (Word form + numbered receipts) first, then attach in your mail app. Mailto cannot attach files.',
       filename: email.filename,
       onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
     });
@@ -1078,17 +1227,72 @@
       if (!file) return;
       state.pendingReceipt = { blob: file, name: file.name, type: file.type };
       state.clearReceipt = false;
+      hideOcrUi();
       const claim = await AsStorage.getClaim(state.claimId);
       const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
       await renderReceiptPreview(line);
+      // Auto-run on-device OCR; never blocks saving the attachment
+      runReceiptOcr(file, file.name);
     });
     $('#btn-clear-receipt').addEventListener('click', async () => {
       state.pendingReceipt = null;
       state.clearReceipt = true;
+      state.ocrToken++;
+      if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
+      hideOcrUi();
       $('#line-receipt').value = '';
       const claim = await AsStorage.getClaim(state.claimId);
       const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
       await renderReceiptPreview(line);
+    });
+    $('#btn-ocr-cancel').addEventListener('click', () => {
+      state.ocrToken++;
+      if (globalThis.AsReceiptOcr) AsReceiptOcr.cancel();
+      showOcrStatus('Reading cancelled. Attachment is still kept.', true);
+      const alone = $('#btn-ocr-rescan-alone');
+      if (alone) alone.classList.remove('hidden');
+    });
+    $('#btn-ocr-apply').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      applyOcrSuggestions();
+    });
+    $('#btn-ocr-dismiss').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      hideOcrUi();
+      const alone = $('#btn-ocr-rescan-alone');
+      if (alone && state.pendingReceipt) alone.classList.remove('hidden');
+    });
+    async function rescanCurrentReceipt() {
+      let blob = null;
+      let name = '';
+      if (state.pendingReceipt) {
+        blob = state.pendingReceipt.blob;
+        name = state.pendingReceipt.name || '';
+      } else if (state.lineId && state.claimId) {
+        const claim = await AsStorage.getClaim(state.claimId);
+        const line = (claim.lines || []).find((l) => l.id === state.lineId);
+        if (line && line.receiptId) {
+          const rcpt = await AsStorage.getReceipt(line.receiptId);
+          if (rcpt) {
+            blob = rcpt.blob;
+            name = rcpt.name || '';
+          }
+        }
+      }
+      if (!blob) {
+        toast('Attach a receipt first');
+        return;
+      }
+      hideOcrUi();
+      runReceiptOcr(blob, name);
+    }
+    $('#btn-ocr-rescan').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      rescanCurrentReceipt();
+    });
+    $('#btn-ocr-rescan-alone').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      rescanCurrentReceipt();
     });
     function maybeFillTotal() {
       const net = numOrNull($('#line-net').value);

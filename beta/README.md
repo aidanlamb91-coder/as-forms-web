@@ -1,10 +1,10 @@
-# AS Forms — Web (`0.3.1-web-beta`)
+# AS Forms — Web (`0.3.2-web-beta`)
 
 Free, **static**, browser-only port of AS Forms for Aidan Lamb / Andrews Survey.
 No paid APIs, no build step, no auto-send email.
 
-This folder is the **OCR beta** source (`0.3.1-web-beta`). Production GitHub Pages keeps
-stable **0.2.9-web** at the site root and serves this build under `/beta/`.
+This folder is the **OCR beta** source (`0.3.2-web-beta`). Production GitHub Pages keeps
+stable **0.2.10-web** at the site root and serves this build under `/beta/`.
 
 ## Open it
 
@@ -12,7 +12,7 @@ stable **0.2.9-web** at the site root and serves this build under `/beta/`.
 https://aidanlamb91-coder.github.io/as-forms-web/
 
 **OCR beta:**  
-https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.1-web-beta
+https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.2-web-beta
 
 **Local HTTP** (needed for Word/ODT template fetch):
 
@@ -33,7 +33,7 @@ Then open http://127.0.0.1:8765/
 
 ## What matches Android / prior web
 
-Expenses, Timesheets, Days worked, Settings — same as 0.2.9-web, plus optional receipt suggestions.
+Expenses, Timesheets, Days worked, Settings — same as 0.2.10-web, plus optional receipt suggestions.
 
 ## Files
 

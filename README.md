@@ -1,6 +1,7 @@
 # AS Forms Web (GitHub Pages)
 
-- **Stable** `0.2.9-web` (site root): https://aidanlamb91-coder.github.io/as-forms-web/
-- **OCR beta** `0.3.0-web-beta` (`/beta/`): https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.0-web-beta
+- **Stable** `0.2.10-web` (site root): https://aidanlamb91-coder.github.io/as-forms-web/
+- **OCR beta** `0.3.2-web-beta` (`/beta/`): https://aidanlamb91-coder.github.io/as-forms-web/beta/?v=0.3.2-web-beta
 
-Receipt OCR runs on-device (Tesseract.js); receipts are not uploaded to a paid OCR API.
+Claim/export matches Android: claim-level job number; zip = filled ExpenseClaim_YYYY-MM-DD.docx + line-indexed receipts (no claim.json).
+Receipt OCR (beta build) runs on-device (vendored Tesseract.js); receipts are not uploaded to a paid OCR API.
