@@ -8,7 +8,7 @@
   const TEXT_NS = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
   const TEMPLATE_URL = 'templates/timesheet.odt';
   const UNICODE_TICK = '✓';
-  const DEFAULT_NAME = 'Aidan Lamb';
+  const DEFAULT_NAME = '';
 
   const DayType = {
     OFFICE: 'OFFICE',

@@ -107,7 +107,7 @@
     const sendCells = childElements(rows[0], 'tc');
     setCellText(sendCells[1], claim.sendTo || 'invoice@andrewssurvey.com');
     const nameCells = childElements(rows[1], 'tc');
-    setCellText(nameCells[1], claim.name || 'Aidan Lamb');
+    setCellText(nameCells[1], claim.name || '');
     const dateCells = childElements(rows[2], 'tc');
     setCellText(dateCells[1], formatHeaderDate(claim.dateFrom));
     setCellText(dateCells[3], formatHeaderDate(claim.dateTo));

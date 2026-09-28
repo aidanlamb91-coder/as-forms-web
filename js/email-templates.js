@@ -4,7 +4,7 @@
 (function (global) {
   const EXPENSE_TO = 'invoice@andrewssurvey.com';
   const TIMESHEET_TO = 'Timesheets@andrewssurvey.com';
-  const DEFAULT_NAME = 'Aidan Lamb';
+  const DEFAULT_NAME = '';
 
   const DEFAULT_EXPENSE_SUBJECT = 'Expense claim — {job} — {name}';
   const DEFAULT_EXPENSE_BODY =

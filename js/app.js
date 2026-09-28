@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.2.13-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.2.14-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1577,10 +1577,72 @@
     });
   }
 
+
+  function promptDisplayNameIfNeeded() {
+    const s = AsStorage.getSettings();
+    if ((s.displayName || '').trim() || s.namePromptSeen) {
+      return Promise.resolve(false);
+    }
+    return new Promise((resolve) => {
+      const root = $('#modal-root');
+      root.className = 'modal-backdrop';
+      root.innerHTML =
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="welcome-name-title">' +
+        '<h2 id="welcome-name-title">Welcome to AS Forms</h2>' +
+        '<p class="hint">Enter the name that should appear on expense claims and timesheets. Data stays in this browser only.</p>' +
+        '<label class="field" style="display:block;margin:12px 0">' +
+        'Display name' +
+        '<input type="text" id="welcome-name-input" maxlength="80" autocomplete="name" placeholder="Your name" ' +
+        'style="display:block;width:100%;margin-top:4px;padding:10px 12px;border:1px solid var(--border);border-radius:8px" />' +
+        '</label>' +
+        '<p id="welcome-name-error" class="hint error hidden" style="color:var(--danger)">Please enter your name, or tap Skip.</p>' +
+        '<div class="actions">' +
+        '<button type="button" class="btn primary" id="welcome-name-continue">Continue</button>' +
+        '<button type="button" class="btn ghost" id="welcome-name-skip">Skip</button>' +
+        '</div></div>';
+
+      const input = $('#welcome-name-input', root);
+      const err = $('#welcome-name-error', root);
+
+      function finish(name, skipped) {
+        AsStorage.saveSettings({
+          displayName: name,
+          namePromptSeen: true,
+        });
+        root.className = 'hidden';
+        root.innerHTML = '';
+        updateListHeaders();
+        if ($('#settings-name')) $('#settings-name').value = name;
+        resolve(!skipped);
+      }
+
+      function onContinue() {
+        const name = (input.value || '').trim();
+        if (!name) {
+          err.classList.remove('hidden');
+          input.focus();
+          return;
+        }
+        finish(name, false);
+      }
+
+      $('#welcome-name-continue', root).onclick = onContinue;
+      $('#welcome-name-skip', root).onclick = () => finish('', true);
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          onContinue();
+        }
+      });
+      setTimeout(() => input.focus(), 50);
+    });
+  }
+
   async function boot() {
     wire();
     AsStorage.saveSettings(AsStorage.getSettings());
     updateListHeaders();
+    await promptDisplayNameIfNeeded();
     await showExpenses();
   }
 
