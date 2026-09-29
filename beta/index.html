@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0D0D0D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>AS Forms</title>
-  <link rel="stylesheet" href="css/app.css?v=0.3.13-web" />
+  <link rel="stylesheet" href="css/app.css?v=0.3.14-web" />
 </head>
 <body>
   <div id="app">
@@ -121,7 +121,7 @@
       </ul>
       <div class="panel">
         <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.3.13-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>0.3.14-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
         <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
@@ -220,7 +220,14 @@
           <label>Date from <input type="date" id="claim-from" required /></label>
           <label>Date to <input type="date" id="claim-to" required /></label>
         </div>
-        <button type="submit" class="btn primary">Save claim</button>
+        <div class="save-row">
+          <button type="submit" class="btn primary">Save claim</button>
+          <label class="toggle-control" for="claim-completed-toggle">
+            <span>Completed</span>
+            <input type="checkbox" id="claim-completed-toggle" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
       </form>
       <div class="toolbar">
         <h2>Line items <span id="line-count" class="badge">0</span></h2>
@@ -229,16 +236,15 @@
       <div id="line-list" class="card-list"></div>
       <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt (and optional bank statement for foreign claims).</p>
       <div class="panel export-panel">
-        <h2>Export &amp; send</h2>
-        <p class="hint">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. <strong>Send to Invoice</strong> builds the zip, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded zip yourself.</p>
+        <div class="section-heading">
+          <h2>Export &amp; send</h2>
+          <button type="button" class="help-btn" data-help-target="claim-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
+        </div>
+        <p class="hint attach-help hidden" id="claim-export-help">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. <strong>Send to Invoice</strong> builds the zip, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded zip yourself.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-export-zip">Download zip</button>
           <button type="button" class="btn secondary" id="btn-export-docx">Download Word only</button>
           <button type="button" class="btn accent" id="btn-send-invoice">Send to Invoice…</button>
-        </div>
-        <div class="btn-row" style="margin-top:8px">
-          <button type="button" class="btn secondary" id="btn-complete-claim">Mark complete</button>
-          <button type="button" class="btn ghost" id="btn-reopen-claim">Reopen</button>
         </div>
         <p id="export-status" class="status" role="status"></p>
       </div>
@@ -341,7 +347,14 @@
           <label>Month <select id="ts-edit-month"></select></label>
           <label>Year <select id="ts-edit-year"></select></label>
         </div>
-        <button type="submit" class="btn primary">Save month/year</button>
+        <div class="save-row">
+          <button type="submit" class="btn primary">Save month/year</button>
+          <label class="toggle-control" for="ts-completed-toggle">
+            <span>Completed</span>
+            <input type="checkbox" id="ts-completed-toggle" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
       </form>
       <div class="toolbar">
         <h2>Entries <span id="ts-entry-count" class="badge">0</span></h2>
@@ -350,15 +363,14 @@
       <div id="ts-entry-list" class="card-list"></div>
       <p id="ts-entry-empty" class="empty hidden">No entries. Add date-range blocks (Office / Offshore / Holiday / …).</p>
       <div class="panel">
-        <h2>Export &amp; send</h2>
-        <p class="hint"><strong>Send to Timesheets</strong> builds the .odt, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded .odt yourself.</p>
+        <div class="section-heading">
+          <h2>Export &amp; send</h2>
+          <button type="button" class="help-btn" data-help-target="timesheet-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
+        </div>
+        <p class="hint attach-help hidden" id="timesheet-export-help"><strong>Send to Timesheets</strong> builds the .odt, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded .odt yourself.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-export-odt">Download timesheet.odt</button>
           <button type="button" class="btn accent" id="btn-send-timesheets">Send to Timesheets…</button>
-        </div>
-        <div class="btn-row" style="margin-top:8px">
-          <button type="button" class="btn secondary" id="btn-complete-ts">Mark complete</button>
-          <button type="button" class="btn ghost" id="btn-reopen-ts">Reopen</button>
         </div>
         <p id="ts-export-status" class="status" role="status"></p>
       </div>
@@ -421,19 +433,19 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=0.3.13-web"></script>
-  <script src="js/email-templates.js?v=0.3.13-web"></script>
-  <script src="js/offshore-days.js?v=0.3.13-web"></script>
-  <script src="js/storage.js?v=0.3.13-web"></script>
-  <script src="js/docx-filler.js?v=0.3.13-web"></script>
-  <script src="js/timesheet-filler.js?v=0.3.13-web"></script>
-  <script src="js/timesheet-reader.js?v=0.3.13-web"></script>
-  <script src="js/expense-zip-reader.js?v=0.3.13-web"></script>
-  <script src="js/image-merge.js?v=0.3.13-web"></script>
-  <script src="js/export.js?v=0.3.13-web"></script>
-  <script src="js/folder-sync.js?v=0.3.13-web"></script>
-  <script src="js/receipt-parse.js?v=0.3.13-web"></script>
-  <script src="js/receipt-ocr.js?v=0.3.13-web"></script>
-  <script src="js/app.js?v=0.3.13-web"></script>
+  <script src="lib/jszip.min.js?v=0.3.14-web"></script>
+  <script src="js/email-templates.js?v=0.3.14-web"></script>
+  <script src="js/offshore-days.js?v=0.3.14-web"></script>
+  <script src="js/storage.js?v=0.3.14-web"></script>
+  <script src="js/docx-filler.js?v=0.3.14-web"></script>
+  <script src="js/timesheet-filler.js?v=0.3.14-web"></script>
+  <script src="js/timesheet-reader.js?v=0.3.14-web"></script>
+  <script src="js/expense-zip-reader.js?v=0.3.14-web"></script>
+  <script src="js/image-merge.js?v=0.3.14-web"></script>
+  <script src="js/export.js?v=0.3.14-web"></script>
+  <script src="js/folder-sync.js?v=0.3.14-web"></script>
+  <script src="js/receipt-parse.js?v=0.3.14-web"></script>
+  <script src="js/receipt-ocr.js?v=0.3.14-web"></script>
+  <script src="js/app.js?v=0.3.14-web"></script>
 </body>
 </html>

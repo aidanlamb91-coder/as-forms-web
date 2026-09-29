@@ -1,5 +1,5 @@
 /**
- * AS Forms web 0.3.13-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 0.3.14-web — Expenses | Timesheets | Days worked | Settings
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -448,8 +448,7 @@
     $('#claim-from').value = claim.dateFrom || '';
     $('#claim-to').value = claim.dateTo || '';
     $('#export-status').textContent = '';
-    $('#btn-complete-claim').classList.toggle('hidden', !!claim.completed);
-    $('#btn-reopen-claim').classList.toggle('hidden', !claim.completed);
+    $('#claim-completed-toggle').checked = !!claim.completed;
     renderLines(claim);
     setNav('expenses');
     showView('claim');
@@ -1156,8 +1155,7 @@
     fillMonthYearSelects($('#ts-edit-month'), $('#ts-edit-year'), ts.month, ts.year);
     $('#ts-edit-month').disabled = !!ts.completed;
     $('#ts-edit-year').disabled = !!ts.completed;
-    $('#btn-complete-ts').classList.toggle('hidden', !!ts.completed);
-    $('#btn-reopen-ts').classList.toggle('hidden', !ts.completed);
+    $('#ts-completed-toggle').checked = !!ts.completed;
     $('#btn-add-entry').disabled = !!ts.completed;
     $('#ts-export-status').textContent = '';
     renderEntries(ts);
@@ -2314,8 +2312,7 @@
     $('#btn-export-zip').addEventListener('click', doExportZip);
     $('#btn-export-docx').addEventListener('click', doExportDocx);
     $('#btn-send-invoice').addEventListener('click', sendToInvoice);
-    $('#btn-complete-claim').addEventListener('click', () => setClaimCompleted(true));
-    $('#btn-reopen-claim').addEventListener('click', () => setClaimCompleted(false));
+    $('#claim-completed-toggle').addEventListener('change', (ev) => setClaimCompleted(ev.target.checked));
 
     $('#line-receipt').addEventListener('change', async (ev) => {
       const file = ev.target.files && ev.target.files[0];
@@ -2458,8 +2455,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     });
     $('#btn-export-odt').addEventListener('click', doExportOdt);
     $('#btn-send-timesheets').addEventListener('click', sendToTimesheets);
-    $('#btn-complete-ts').addEventListener('click', () => setTsCompleted(true));
-    $('#btn-reopen-ts').addEventListener('click', () => setTsCompleted(false));
+    $('#ts-completed-toggle').addEventListener('change', (ev) => setTsCompleted(ev.target.checked));
     $('#btn-import-ts').addEventListener('click', () => $('#ts-import-files').click());
     $('#ts-import-files').addEventListener('change', async (ev) => {
       const files = Array.from(ev.target.files || []);
