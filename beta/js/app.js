@@ -1,5 +1,7 @@
 /**
- * AS Forms web 0.3.15-web — Expenses | Timesheets | Days worked | Settings
+ * AS Forms web 1.0.0-web — Expenses | Timesheets | Settings (Android 1.0.0 parity).
+ * Days worked lives inside Timesheets → Completed (tally years Mar–Feb); Settings is a list of
+ * banner buttons opening sub-pages; installable PWA (manifest + sw.js, see pwa.js).
  */
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -30,7 +32,12 @@
     lastOcrParsed: null,
     pendingUndo: null,
     backupBannerDismissedSession: false,
+    tsYearOpen: {}, // tally start-year → expanded? (current year open by default)
+    expYearOpen: {},
+    lineCategory: 'MISC',
   };
+
+  const TAB_VIEWS = new Set(['expenses', 'timesheets', 'settings']);
 
   function toast(msg) {
     const el = $('#toast');
@@ -61,6 +68,10 @@
     clearTimeout(toast._t);
     if (state.pendingUndo && state.pendingUndo._timer) {
       clearTimeout(state.pendingUndo._timer);
+      // A second delete replaced the first toast: the first one can no longer be undone.
+      const prev = state.pendingUndo;
+      state.pendingUndo = null;
+      if (prev.onExpire) Promise.resolve().then(prev.onExpire).catch((e) => console.error(e));
     }
     let undone = false;
     const finish = () => {
@@ -108,153 +119,11 @@
 
 
   /**
-   * Touch/pointer swipe on list rows.
-   * Slide right (or long-press then slide right) → delete (red).
-   * Slide left → complete (green) when onComplete provided (main Active lists only).
+   * Safer swipe (Android 1.0.0): press and hold ~400 ms, then drag sideways.
+   * Right = red Delete, left = green Completed (when onComplete given). See hold-swipe.js.
    */
   function wrapSwipeRow(frontEl, opts) {
-    const row = document.createElement('div');
-    row.className = 'swipe-row';
-    const bgDel = document.createElement('div');
-    bgDel.className = 'swipe-bg delete';
-    bgDel.textContent = 'Delete';
-    row.appendChild(bgDel);
-    if (opts.onComplete) {
-      const bgOk = document.createElement('div');
-      bgOk.className = 'swipe-bg complete';
-      bgOk.textContent = 'Completed';
-      row.appendChild(bgOk);
-    }
-    frontEl.classList.add('swipe-front');
-    row.appendChild(frontEl);
-
-    const THRESH = 96;
-    const LONG_PRESS_MS = 380;
-    let startX = 0, startY = 0, dx = 0, dy = 0;
-    let tracking = false, axis = null, longPressed = false, lpTimer = null;
-    let pointerId = null;
-    let suppressClick = false;
-
-    function setOffset(x) {
-      dx = x;
-      frontEl.style.transform = x ? 'translateX(' + x + 'px)' : '';
-      row.classList.toggle('show-delete', x > 8);
-      row.classList.toggle('show-complete', x < -8 && !!opts.onComplete);
-    }
-
-    function reset() {
-      row.classList.remove('dragging', 'swiping-x');
-      setOffset(0);
-      axis = null;
-      tracking = false;
-      longPressed = false;
-      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-    }
-
-    async function commit() {
-      const canComplete = !!opts.onComplete;
-      const delThresh = longPressed ? THRESH * 0.55 : THRESH;
-      const right = dx >= delThresh;
-      const left = canComplete && dx <= -THRESH;
-      if (!right && !left) {
-        reset();
-        return;
-      }
-      suppressClick = true;
-      const action = right ? 'delete' : 'complete';
-      const target = action === 'delete' ? (row.clientWidth || 280) : -(row.clientWidth || 280);
-      row.classList.remove('dragging');
-      setOffset(target);
-      try {
-        if (action === 'delete') {
-          if (opts.confirmDelete) {
-            const msg = opts.deleteConfirm || 'Delete this item?';
-            if (!confirm(msg)) {
-              reset();
-              suppressClick = false;
-              return;
-            }
-          }
-          await opts.onDelete();
-        } else {
-          await opts.onComplete();
-        }
-      } catch (e) {
-        console.error(e);
-        toast('Action failed');
-        reset();
-      }
-      // Row may be removed by refresh; if still present, reset
-      if (row.isConnected) reset();
-    }
-
-    frontEl.addEventListener('click', (ev) => {
-      if (suppressClick) {
-        ev.preventDefault();
-        ev.stopImmediatePropagation();
-        suppressClick = false;
-      }
-    }, true);
-
-    frontEl.addEventListener('pointerdown', (ev) => {
-      if (ev.button != null && ev.button !== 0) return;
-      pointerId = ev.pointerId;
-      startX = ev.clientX;
-      startY = ev.clientY;
-      dx = 0; dy = 0;
-      tracking = true;
-      axis = null;
-      longPressed = false;
-      row.classList.add('dragging');
-      try { frontEl.setPointerCapture(pointerId); } catch (_) {}
-      lpTimer = setTimeout(() => {
-        if (tracking && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
-          longPressed = true;
-          if (navigator.vibrate) try { navigator.vibrate(12); } catch (_) {}
-        }
-      }, LONG_PRESS_MS);
-    });
-
-    frontEl.addEventListener('pointermove', (ev) => {
-      if (!tracking || ev.pointerId !== pointerId) return;
-      const mx = ev.clientX - startX;
-      const my = ev.clientY - startY;
-      dy = my;
-      if (!axis) {
-        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-        if (Math.abs(mx) > Math.abs(my) * 1.15) {
-          axis = 'x';
-          row.classList.add('swiping-x');
-          if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-        } else {
-          axis = 'y';
-          // vertical scroll — abandon swipe
-          reset();
-          try { frontEl.releasePointerCapture(pointerId); } catch (_) {}
-          return;
-        }
-      }
-      if (axis !== 'x') return;
-      ev.preventDefault();
-      let x = mx;
-      if (!opts.onComplete && x < 0) x = Math.max(x, -24); // slight rubber-band only
-      if (x > 0) x = Math.min(x, row.clientWidth * 0.85);
-      if (x < 0) x = Math.max(x, -row.clientWidth * 0.85);
-      setOffset(x);
-    });
-
-    function endPointer(ev) {
-      if (!tracking || (ev && ev.pointerId !== pointerId)) return;
-      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-      if (axis === 'x') commit();
-      else reset();
-      pointerId = null;
-    }
-
-    frontEl.addEventListener('pointerup', endPointer);
-    frontEl.addEventListener('pointercancel', endPointer);
-
-    return row;
+    return AsHoldSwipe.wrap(frontEl, opts);
   }
 
 
@@ -301,16 +170,107 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  // ——— Browser / phone Back button support ———
+  // Tab roots sit on the base history entry; any sub-page adds ONE entry ({asSub}), and an open
+  // dialog / viewer adds one more ({overlay}). Hardware/gesture Back closes the dialog first,
+  // then acts like the page's own ← Back button.
+  const nav = { ignorePops: 0, queue: [], current: 'expenses' };
+  function histState() { return history.state || {}; }
+  function navRun(fn) {
+    if (nav.ignorePops > 0) nav.queue.push(fn);
+    else fn();
+  }
+  function navBack() {
+    nav.ignorePops++;
+    history.back();
+  }
+  function syncHistoryForView(name) {
+    navRun(() => {
+      const st = histState();
+      const sub = !TAB_VIEWS.has(name);
+      if (st.overlay) return; // resolved when the overlay closes
+      if (sub && !st.asSub) history.pushState({ asSub: true }, '');
+      else if (!sub && st.asSub) navBack();
+    });
+  }
+  function overlayOpen() {
+    const root = $('#modal-root');
+    return (root && !root.classList.contains('hidden')) ||
+      (globalThis.AsAttachments && AsAttachments.isViewerOpen()) ||
+      !!document.querySelector('.sheet-backdrop');
+  }
+  function closeOverlays() {
+    if (globalThis.AsAttachments && AsAttachments.isViewerOpen()) { AsAttachments.closeViewer(); return; }
+    const sheet = document.querySelector('.sheet-backdrop');
+    if (sheet) { sheet.remove(); return; }
+    const root = $('#modal-root');
+    if (root && !root.classList.contains('hidden')) {
+      // Prefer the dialog's own dismiss so pending promises resolve
+      const btn = root.querySelector('[data-close], #modal-close, [data-choice="skip"], #welcome-name-skip');
+      if (btn) btn.click();
+      else { root.className = 'hidden'; root.innerHTML = ''; }
+    }
+  }
+  function onOverlayMaybeChanged() {
+    navRun(() => {
+      const open = overlayOpen();
+      const st = histState();
+      if (open && !st.overlay) history.pushState({ asSub: !!st.asSub, overlay: true }, '');
+      else if (!open && st.overlay) navBack();
+    });
+  }
+  /** Make the history entry match what is on screen (after an overlay closed, etc.). */
+  function reconcileHistory() {
+    const st = histState();
+    const open = overlayOpen();
+    if (open) { if (!st.overlay) history.pushState({ asSub: !!st.asSub, overlay: true }, ''); return; }
+    if (st.overlay) { navBack(); return; }
+    const sub = !TAB_VIEWS.has(nav.current);
+    if (sub && !st.asSub) history.pushState({ asSub: true }, '');
+    else if (!sub && st.asSub) navBack();
+  }
+
+  function initHistory() {
+    if (histState().asSub || histState().overlay) history.replaceState({}, '');
+    window.addEventListener('popstate', () => {
+      if (nav.ignorePops > 0) {
+        nav.ignorePops--;
+        if (nav.ignorePops === 0) {
+          const q = nav.queue.splice(0);
+          q.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+          if (nav.ignorePops === 0) reconcileHistory();
+        }
+        return;
+      }
+      if (overlayOpen()) { closeOverlays(); return; }
+      const view = document.querySelector('.view:not(.hidden)');
+      const back = view && view.querySelector('.topbar .back-btn');
+      if (back) back.click();
+      else if (histState().asSub) history.replaceState({}, '');
+    });
+    const root = $('#modal-root');
+    if (root) new MutationObserver(onOverlayMaybeChanged).observe(root, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(onOverlayMaybeChanged).observe(document.body, { childList: true });
+    new MutationObserver(onOverlayMaybeChanged).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  }
+
   function showView(name) {
     $$('.view').forEach((v) => v.classList.add('hidden'));
+    nav.current = name;
     const map = {
       expenses: '#view-expenses',
       timesheets: '#view-timesheets',
-      days: '#view-days',
       settings: '#view-settings',
+      'set-profile': '#view-set-profile',
+      'set-email': '#view-set-email',
+      'set-folder': '#view-set-folder',
+      'set-import': '#view-set-import',
+      'set-install': '#view-set-install',
+      'set-about': '#view-set-about',
       emails: '#view-emails',
       templates: '#view-templates',
       backup: '#view-backup',
+      'ts-preview': '#view-ts-preview',
       claim: '#view-claim',
       line: '#view-line',
       'ts-new': '#view-ts-new',
@@ -319,7 +279,10 @@
     };
     const el = $(map[name]);
     if (el) el.classList.remove('hidden');
+    document.body.classList.toggle('on-tab-root', TAB_VIEWS.has(name));
     window.scrollTo(0, 0);
+    syncHistoryForView(name);
+    if (globalThis.__asRefreshInstallUi) __asRefreshInstallUi();
   }
 
   function setNav(tab) {
@@ -363,21 +326,128 @@
     empty.classList.add('hidden');
 
     if (state.expenseChip === 'completed') {
-      const byYear = {};
-      for (const c of filtered) {
-        const y = (c.dateTo || c.dateFrom || '').slice(0, 4) || String(new Date().getFullYear());
-        (byYear[y] = byYear[y] || []).push(c);
-      }
-      Object.keys(byYear).sort((a, b) => Number(b) - Number(a)).forEach((y) => {
-        const h = document.createElement('div');
-        h.className = 'year-header';
-        h.textContent = y;
-        list.appendChild(h);
-        byYear[y].forEach((c) => list.appendChild(claimCard(c)));
-      });
+      renderExpenseYears(list, filtered);
     } else {
       filtered.forEach((c) => list.appendChild(claimCard(c)));
     }
+  }
+
+  // ——— Expenses → Completed: tally years (Mar–Feb) with category totals (Android ExpenseYearComponents) ———
+  let expenseTallyLines = [];
+
+  /** Lines of completed claims as tally rows {date:{y,m,d}, category, total, claimId, claimLabel}. */
+  function expenseLineAmounts(claims) {
+    const out = [];
+    for (const c of claims) {
+      const fallback = AsExpenseTally.parseIso(c.dateFrom) || AsExpenseTally.parseIso(c.dateTo);
+      const label = (c.jobNo || 'No job') + ' · ' + ukShort(c.dateFrom) + ' – ' + ukShort(c.dateTo);
+      for (const l of c.lines || []) {
+        const date = AsExpenseTally.parseIso(l.date) || fallback;
+        if (!date) continue;
+        out.push({
+          date,
+          category: AsExpenseCategory.splitLine(l).category,
+          total: lineTotal(l),
+          claimId: c.id,
+          claimLabel: label,
+        });
+      }
+    }
+    return out;
+  }
+
+  function ukShort(iso) {
+    const d = AsExpenseTally.parseIso(iso);
+    if (!d) return '?';
+    return d.d + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.m - 1] + ' ' + d.y;
+  }
+
+  function yearToggle(opts) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'year-toggle' + (opts.open ? ' open' : '');
+    btn.setAttribute('aria-expanded', String(!!opts.open));
+    btn.innerHTML =
+      '<span class="yt-text"><span class="yt-title">' + escapeHtml(opts.title) + '</span>' +
+      '<span class="yt-sub">' + escapeHtml(opts.sub) + '</span></span>' +
+      '<span class="yt-chev" aria-hidden="true">⌄</span>';
+    btn.setAttribute('aria-label', opts.title + '. ' + opts.sub + '. ' + (opts.open ? 'Collapse' : 'Expand'));
+    btn.addEventListener('click', opts.onToggle);
+    return btn;
+  }
+
+  function renderExpenseYears(list, claims) {
+    const lines = expenseLineAmounts(claims);
+    expenseTallyLines = lines;
+    const groups = AsExpenseTally.groupByTallyYear(claims, (c) => AsExpenseTally.parseIso(c.dateFrom) || AsExpenseTally.parseIso(c.dateTo), lines);
+    for (const g of groups) {
+      const y = g.period.startMarchYear;
+      const open = state.expYearOpen[y] != null ? state.expYearOpen[y] : g.isCurrent;
+      const n = g.items.length;
+      const section = document.createElement('div');
+      section.className = 'year-group' + (open ? ' open' : '');
+      section.appendChild(yearToggle({
+        title: g.period.label,
+        sub: (g.isCurrent ? 'This year · ' : '') + n + ' completed claim' + (n === 1 ? '' : 's'),
+        open,
+        onToggle: () => { state.expYearOpen[y] = !open; refreshClaimList(); },
+      }));
+      if (open) {
+        section.appendChild(expenseBanner(g));
+        if (!n) {
+          const p = document.createElement('p');
+          p.className = 'empty small';
+          p.textContent = 'No completed claims in this year yet.';
+          section.appendChild(p);
+        }
+        g.items.forEach((c) => section.appendChild(claimCard(c)));
+      }
+      list.appendChild(section);
+    }
+  }
+
+  function expenseBanner(g) {
+    const el = document.createElement('div');
+    el.className = 'exp-banner';
+    const y = g.period.startMarchYear;
+    el.innerHTML =
+      '<div class="exp-tiles" role="list">' +
+      AsExpenseCategory.CATEGORIES.map((c) => {
+        const amt = g.totals[c.key] || 0;
+        return '<button type="button" class="exp-tile" role="listitem" data-cat="' + c.key + '" data-year="' + y + '" ' +
+          'aria-label="' + c.label + ': ' + AsExpenseTally.formatMoney(amt) + '. Show breakdown">' +
+          '<span class="n">' + escapeHtml(AsExpenseTally.formatTile(amt)) + '</span>' +
+          '<span class="lbl">' + c.label + '</span></button>';
+      }).join('') +
+      '</div>' +
+      '<p class="exp-total">Total ' + escapeHtml(AsExpenseTally.formatMoney(g.total)) + '</p>';
+    el.querySelectorAll('.exp-tile').forEach((b) => {
+      b.addEventListener('click', () => showExpenseBreakdown(Number(b.dataset.year), b.dataset.cat));
+    });
+    return el;
+  }
+
+  function showExpenseBreakdown(startMarchYear, category) {
+    const period = AsOffshoreDays.periodStartingMarch(startMarchYear);
+    const months = AsExpenseTally.breakdown(expenseTallyLines, startMarchYear, category);
+    const label = AsExpenseCategory.labelOf(category);
+    const body = !months.length
+      ? '<p class="empty" style="margin:8px 0">No ' + escapeHtml(label) + ' lines in this period.</p>'
+      : months.map((m) =>
+        '<div class="breakdown-month"><h3 class="money-row"><span>' + escapeHtml(m.label) + '</span><span>' +
+        escapeHtml(AsExpenseTally.formatMoney(m.amount)) + '</span></h3><ul class="money-list">' +
+        m.rows.map((r) => '<li><span>' + escapeHtml(r.label) + '</span><span>' + escapeHtml(AsExpenseTally.formatMoney(r.amount)) + '</span></li>').join('') +
+        '</ul></div>').join('');
+    const root = $('#modal-root');
+    root.className = 'modal-backdrop';
+    root.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="exp-breakdown-title">' +
+      '<h2 id="exp-breakdown-title">' + escapeHtml(label + ' — ' + period.label) + '</h2>' +
+      '<div class="breakdown-body">' + body + '</div>' +
+      '<div class="actions"><button type="button" class="btn ghost" id="modal-close">Close</button></div></div>';
+    const close = () => { root.className = 'hidden'; root.innerHTML = ''; };
+    $('#modal-close', root).onclick = close;
+    root.onclick = (e) => { if (e.target === root) close(); };
   }
 
   function claimCard(c) {
@@ -392,12 +462,19 @@
     btn.addEventListener('click', () => openClaim(c.id));
     const canComplete = !c.completed;
     return wrapSwipeRow(btn, {
-      deleteConfirm: 'Delete this claim and its receipts from this browser?',
       onDelete: async () => {
-        await AsStorage.deleteClaim(c.id);
-        toast('Claim deleted');
+        // Keep receipt files until the Undo window has passed
+        const snap = await AsStorage.softDeleteClaim(c.id);
         scheduleFolderSync();
         await refreshClaimList();
+        toastUndo('Claim deleted', async () => {
+          if (snap) await AsStorage.putClaim(snap);
+          scheduleFolderSync();
+          await refreshClaimList();
+        });
+        if (state.pendingUndo) {
+          state.pendingUndo.onExpire = async () => { await AsStorage.purgeClaimReceipts(snap); };
+        }
       },
       onComplete: canComplete ? async () => {
         const claim = await AsStorage.getClaim(c.id);
@@ -465,16 +542,40 @@
       return;
     }
     empty.classList.add('hidden');
-    lines.forEach((line) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'card';
-      const receiptNote = line.receiptId ? ' · receipt' : '';
+    lines.forEach((line, idx) => {
+      const btn = document.createElement('div');
+      btn.className = 'card line-card';
+      btn.setAttribute('role', 'button');
+      btn.tabIndex = 0;
+      const parts = AsExpenseCategory.splitLine(line);
+      const catLabel = AsExpenseCategory.labelOf(parts.category);
+      const fx = line.foreignCurrency ? ' · ' + escapeHtml(line.foreignCurrency) : '';
       btn.innerHTML =
-        '<p class="title">' + escapeHtml(line.description || 'Line') + '</p>' +
-        '<p class="meta">' + escapeHtml(line.date || '') + receiptNote + '</p>' +
-        '<p class="money">' + money(lineTotal(line)) + '</p>';
+        '<div class="line-card-body">' +
+        '<p class="title"><span class="cat-tag cat-' + parts.category.toLowerCase() + '">' + escapeHtml(catLabel) + '</span> ' +
+        escapeHtml(parts.detail || (parts.category === 'MISC' ? 'Line ' + (idx + 1) : '')) + '</p>' +
+        '<p class="meta">' + escapeHtml(line.date || '') + fx + '</p>' +
+        '<p class="money">' + money(lineTotal(line)) + '</p>' +
+        '</div><div class="line-thumbs"></div>';
+      const thumbs = btn.querySelector('.line-thumbs');
+      const lineNo = idx + 1;
+      if (line.receiptId || line.receiptMeta) {
+        thumbs.appendChild(AsAttachments.thumbButton({
+          label: 'Receipt',
+          getRow: () => AsStorage.getReceipt(line.receiptId),
+          onOpen: (row) => AsAttachments.openViewer(row, 'Receipt — line ' + lineNo, 'Receipt'),
+        }));
+      }
+      if (line.statementId || line.statementMeta) {
+        thumbs.appendChild(AsAttachments.thumbButton({
+          label: 'Statement',
+          getRow: () => AsStorage.getReceipt(line.statementId),
+          onOpen: (row) => AsAttachments.openViewer(row, 'Bank statement — line ' + lineNo, 'Statement'),
+        }));
+      }
+      if (!thumbs.children.length) thumbs.remove();
       btn.addEventListener('click', () => openLine(line.id));
+      btn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openLine(line.id); } });
       list.appendChild(wrapSwipeRow(btn, {
         onDelete: async () => {
           const claim = await AsStorage.getClaim(state.claimId);
@@ -559,6 +660,7 @@
       id: AsStorage.uid('line'),
       date: claim.dateFrom || new Date().toISOString().slice(0, 10),
       jobNo: claim.jobNo || '',
+      category: 'MISC',
       description: '',
       foreignCurrency: '',
       net: null,
@@ -607,7 +709,13 @@
     const sg = $('#ocr-suggest');
     if (!sg) return;
     $('#ocr-date').value = parsed.date || '';
-    $('#ocr-desc').value = parsed.description || '';
+    $('#ocr-desc').value = parsed.description ? AsExpenseCategory.stripOwnPrefix(state.lineCategory, parsed.description) : '';
+    const catNote = $('#ocr-cat-note');
+    if (catNote) {
+      const guessed = parsed.category ? AsExpenseCategory.fromName(parsed.category) : null;
+      catNote.classList.toggle('hidden', !guessed);
+      catNote.textContent = guessed ? 'Category: ' + AsExpenseCategory.labelOf(guessed) + ' (from the receipt — you can change it)' : '';
+    }
     const fxEl = $('#ocr-fx');
     if (fxEl) fxEl.value = parsed.foreignCurrency || '';
     $('#ocr-net').value = parsed.net != null ? parsed.net : '';
@@ -616,6 +724,7 @@
     const bits = [];
     if (parsed.date) bits.push('date');
     if (parsed.description) bits.push('merchant');
+    if (parsed.category) bits.push('category');
     if (parsed.foreignCurrency) bits.push('foreign');
     if (parsed.total != null) bits.push('total');
     if (parsed.net != null) bits.push('net');
@@ -639,7 +748,10 @@
     const total = numOrNull($('#ocr-total').value);
 
     if (date) $('#line-date').value = date;
-    if (desc) $('#line-desc').value = desc;
+    const guessed = state.lastOcrParsed && state.lastOcrParsed.category ? AsExpenseCategory.fromName(state.lastOcrParsed.category) : null;
+    if (guessed) setLineCategory(guessed);
+    if (desc) $('#line-desc').value = AsExpenseCategory.stripOwnPrefix(state.lineCategory, desc);
+    updateDescSample();
     if (fx) {
       const lineFx = $('#line-fx');
       if (lineFx) lineFx.value = fx;
@@ -721,9 +833,12 @@
       btn.setAttribute('aria-expanded', 'false');
     });
     if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
-    $('#line-title').textContent = line.description || 'Line item';
+    const parts = AsExpenseCategory.splitLine(line);
+    $('#line-title').textContent = AsExpenseCategory.lineText(line) || 'Line item';
     $('#line-date').value = line.date || '';
-    $('#line-desc').value = line.description || '';
+    setLineCategory(parts.category);
+    $('#line-desc').value = parts.detail;
+    updateDescSample();
     $('#line-fx').value = line.foreignCurrency || '';
     $('#line-net').value = line.net != null ? line.net : '';
     $('#line-vat').value = line.vat != null ? line.vat : '';
@@ -733,6 +848,42 @@
     await renderReceiptPreview(line);
     await renderStatementPreview(line);
     showView('line');
+  }
+
+  function setLineCategory(key) {
+    state.lineCategory = AsExpenseCategory.fromStored(key);
+    $$('#line-cat-chips .cat-chip').forEach((b) => {
+      const on = b.dataset.cat === state.lineCategory;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+    $('#line-desc-prefix').textContent = AsExpenseCategory.prefix(state.lineCategory);
+    updateDescSample();
+  }
+
+  function updateDescSample() {
+    const el = $('#line-desc-sample');
+    if (!el) return;
+    const text = AsExpenseCategory.composeForStorage(state.lineCategory, $('#line-desc').value);
+    el.textContent = text || (AsExpenseCategory.prefix(state.lineCategory) + '…');
+  }
+
+  /** Line-edit attachment preview: thumbnail (tap → full-screen viewer) + file name. */
+  function renderAttachmentBox(box, row, label) {
+    box.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'att-preview';
+    wrap.appendChild(AsAttachments.thumbButton({
+      label,
+      getRow: async () => row,
+      onOpen: (r) => AsAttachments.openViewer(r, label, label),
+    }));
+    const info = document.createElement('div');
+    info.className = 'att-info';
+    info.innerHTML = '<span class="att-name"></span><span class="hint">Tap the preview to view full screen</span>';
+    info.querySelector('.att-name').textContent = row ? (row.name || label) : label + ' missing — attach it again';
+    wrap.appendChild(info);
+    box.appendChild(wrap);
   }
 
   async function renderReceiptPreview(line) {
@@ -752,20 +903,18 @@
         meta = { name: rcpt.name, type: rcpt.type };
       }
     }
-    if (!blob) return;
+    if (!blob) {
+      if (!state.clearReceipt && line.receiptId) {
+        // Stored file is gone (site data cleared / restored without receipts)
+        box.classList.remove('hidden');
+        $('#btn-clear-receipt').classList.remove('hidden');
+        renderAttachmentBox(box, null, 'Receipt');
+      }
+      return;
+    }
     box.classList.remove('hidden');
     $('#btn-clear-receipt').classList.remove('hidden');
-    if ((meta.type || '').startsWith('image/')) {
-      const img = document.createElement('img');
-      img.alt = 'Receipt preview';
-      img.src = URL.createObjectURL(blob);
-      box.appendChild(img);
-    } else {
-      const chip = document.createElement('div');
-      chip.className = 'pdf-chip';
-      chip.textContent = '📎 ' + (meta.name || 'receipt.pdf');
-      box.appendChild(chip);
-    }
+    renderAttachmentBox(box, { id: state.pendingReceipt ? null : line.receiptId, blob, name: meta.name, type: meta.type }, 'Receipt');
   }
 
 
@@ -785,20 +934,17 @@
       const row = await AsStorage.getReceipt(line.statementId);
       if (row) { blob = row.blob; meta = row; }
     }
-    if (!blob) return;
+    if (!blob) {
+      if (!state.clearStatement && line && line.statementId) {
+        box.classList.remove('hidden');
+        if (clearBtn) clearBtn.classList.remove('hidden');
+        renderAttachmentBox(box, null, 'Statement');
+      }
+      return;
+    }
     box.classList.remove('hidden');
     if (clearBtn) clearBtn.classList.remove('hidden');
-    if ((meta.type || '').startsWith('image/')) {
-      const img = document.createElement('img');
-      img.alt = 'Bank statement preview';
-      img.src = URL.createObjectURL(blob);
-      box.appendChild(img);
-    } else {
-      const chip = document.createElement('div');
-      chip.className = 'pdf-chip';
-      chip.textContent = '📎 ' + (meta.name || 'statement.pdf');
-      box.appendChild(chip);
-    }
+    renderAttachmentBox(box, { id: state.pendingStatement ? null : line.statementId, blob, name: meta.name, type: meta.type }, 'Statement');
   }
 
   async function saveLineForm(ev) {
@@ -811,7 +957,9 @@
     line.date = $('#line-date').value;
     // Job is claim-level only — mirror claim.jobNo onto every line
     line.jobNo = claim.jobNo || '';
-    line.description = $('#line-desc').value.trim();
+    const detail = AsExpenseCategory.stripOwnPrefix(state.lineCategory, $('#line-desc').value);
+    line.category = state.lineCategory;
+    line.description = AsExpenseCategory.composeForStorage(state.lineCategory, detail);
     line.foreignCurrency = $('#line-fx').value.trim();
     line.net = numOrNull($('#line-net').value);
     line.vat = numOrNull($('#line-vat').value);
@@ -823,7 +971,7 @@
       line.receiptMeta = null;
     }
     if (state.pendingReceipt) {
-      if (line.receiptId) await AsStorage.deleteReceipt(line.receiptId);
+      if (line.receiptId) { await AsStorage.deleteReceipt(line.receiptId); AsAttachments.forget(line.receiptId); }
       const meta = await AsStorage.putReceipt(state.pendingReceipt.blob, {
         name: state.pendingReceipt.name,
         type: state.pendingReceipt.type,
@@ -837,7 +985,7 @@
       line.statementMeta = null;
     }
     if (state.pendingStatement) {
-      if (line.statementId) await AsStorage.deleteReceipt(line.statementId);
+      if (line.statementId) { await AsStorage.deleteReceipt(line.statementId); AsAttachments.forget(line.statementId); }
       const meta = await AsStorage.putReceipt(state.pendingStatement.blob, {
         name: state.pendingStatement.name,
         type: state.pendingStatement.type,
@@ -1057,20 +1205,43 @@
     }
     empty.classList.add('hidden');
     if (state.tsChip === 'completed') {
-      const byYear = {};
-      for (const t of filtered) {
-        const y = String(t.year);
-        (byYear[y] = byYear[y] || []).push(t);
-      }
-      Object.keys(byYear).sort((a, b) => Number(b) - Number(a)).forEach((y) => {
-        const h = document.createElement('div');
-        h.className = 'year-header';
-        h.textContent = y;
-        list.appendChild(h);
-        byYear[y].forEach((t) => list.appendChild(tsCard(t)));
-      });
+      renderTimesheetYears(list, filtered);
     } else {
       filtered.forEach((t) => list.appendChild(tsCard(t)));
+    }
+  }
+
+  /** Timesheets → Completed grouped by tally year (Mar–Feb), each a collapsible header row. */
+  function renderTimesheetYears(list, completed) {
+    daysBreakdownTimesheets = completed;
+    const totals = AsOffshoreDays.tallyFromTimesheets(completed);
+    const groups = AsOffshoreDays.groupByTallyYear(completed, (t) => [t.year, t.month], totals);
+    for (const g of groups) {
+      const y = g.total.period.startMarchYear;
+      const open = state.tsYearOpen[y] != null ? state.tsYearOpen[y] : g.isCurrent;
+      const n = g.items.length;
+      const section = document.createElement('div');
+      section.className = 'year-group' + (open ? ' open' : '');
+      section.appendChild(yearToggle({
+        title: AsOffshoreDays.yearHeader(g.total),
+        sub: (g.isCurrent ? 'This year · ' : '') + n + ' completed timesheet' + (n === 1 ? '' : 's'),
+        open,
+        onToggle: () => { state.tsYearOpen[y] = !open; refreshTsList(); },
+      }));
+      if (open) {
+        const banner = daysPeriodBanner(g.total, { current: g.isCurrent });
+        section.appendChild(banner);
+        wireDaysBannerClicks(banner);
+        if (!n) {
+          const p = document.createElement('p');
+          p.className = 'empty small';
+          p.textContent = 'No completed timesheets in this year yet.';
+          section.appendChild(p);
+        }
+        g.items.slice().sort((a, b) => (b.year - a.year) || (b.month - a.month))
+          .forEach((t) => section.appendChild(tsCard(t)));
+      }
+      list.appendChild(section);
     }
   }
 
@@ -1833,7 +2004,10 @@
         id: AsStorage.uid('line'),
         date: (pl && pl.date) || '',
         jobNo: job || (pl && pl.jobNo) || '',
-        description: (pl && pl.description) || '',
+        ...(function () {
+          const [category, detail] = AsExpenseCategory.fromImport(pl && pl.category, (pl && pl.description) || '');
+          return { category, description: AsExpenseCategory.composeForStorage(category, detail) };
+        })(),
         foreignCurrency: (pl && pl.foreignCurrency) || '',
         net: pl ? pl.net : null,
         vat: pl ? pl.vat : null,
@@ -2016,9 +2190,7 @@
     );
     el.dataset.periodYear = String(year);
     el.innerHTML =
-      '<p class="period">' +
-      escapeHtml(pt.period.label) +
-      '</p>' +
+      '<p class="period">' + (opts.current ? 'Days worked · this year' : 'Days worked') + '</p>' +
       '<p class="label">Offshore days</p>' +
       '<button type="button" class="big tally-tap" data-day-type="offshore" data-period-year="' +
       year +
@@ -2073,17 +2245,108 @@
       '<div class="breakdown-body">' +
       bodyHtml +
       '</div>' +
-      '<div class="actions">' +
+      '<div class="actions split">' +
       '<button type="button" class="btn ghost" id="modal-close">Close</button>' +
+      '<button type="button" class="btn primary" id="btn-print-summary">' + PRINT_ICON + ' Print summary</button>' +
       '</div></div>';
     const close = () => {
       root.className = 'hidden';
       root.innerHTML = '';
     };
     $('#modal-close', root).onclick = close;
+    $('#btn-print-summary', root).onclick = () => printDaysSummary(startMarchYear);
     root.onclick = (e) => {
       if (e.target === root) close();
     };
+  }
+
+  const PRINT_ICON = '<svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h12v5H6V2zm-2 6h16a2 2 0 0 1 2 2v6h-4v5H6v-5H2v-6a2 2 0 0 1 2-2zm4 7v4h8v-4H8zm10-4.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>';
+
+  /** Bottom sheet (used for "Summary ready", "Open file", iOS install steps). */
+  function openSheet(html, onClose) {
+    const old = document.querySelector('.sheet-backdrop');
+    if (old) old.remove();
+    const back = document.createElement('div');
+    back.className = 'sheet-backdrop';
+    back.innerHTML = html;
+    const close = () => { if (back.isConnected) back.remove(); if (onClose) onClose(); };
+    back.addEventListener('click', (e) => {
+      if (e.target === back || e.target.closest('[data-close]')) close();
+    });
+    document.body.appendChild(back);
+    return { el: back, close };
+  }
+
+  /** Generate the Days worked summary PDF (trip → project rows) and offer Open / Download / Share. */
+  async function printDaysSummary(startMarchYear) {
+    const btn = $('#btn-print-summary');
+    if (btn) { btn.disabled = true; btn.innerHTML = PRINT_ICON + ' Preparing…'; }
+    try {
+      const summary = AsDaysWorkedSummary.build(daysBreakdownTimesheets, startMarchYear);
+      const name = AsStorage.getSettings().displayName || '';
+      const pdf = await AsSummaryPdf.buildBlob(summary, name, new Date());
+      const title = AsDaysWorkedSummary.title(summary.period);
+      const root = $('#modal-root');
+      root.className = 'hidden';
+      root.innerHTML = '';
+      showFileSheet({
+        title: 'Summary ready',
+        lines: [title, summary.offshoreDays + ' offshore days · ' + summary.tripCount + ' trip' + (summary.tripCount === 1 ? '' : 's') +
+          ' · ' + pdf.pages + ' page' + (pdf.pages === 1 ? '' : 's')],
+        note: 'Open shows the PDF in a new tab — print it from there (on iPhone: Share → Print). Download saves it to your Downloads / Files.',
+        blob: pdf.blob,
+        fileName: pdf.fileName,
+        mime: 'application/pdf',
+        canOpen: true,
+      });
+      state.lastSummaryPdf = { fileName: pdf.fileName, size: pdf.blob.size, pages: pdf.pages, title };
+    } catch (e) {
+      console.error(e);
+      toast((e && e.message) || 'Could not create summary');
+      if (btn) { btn.disabled = false; btn.innerHTML = PRINT_ICON + ' Print summary'; }
+    }
+  }
+
+  /**
+   * Sheet offering a generated file. Every action runs straight from a tap (iOS Safari blocks
+   * window.open / share calls that happen after an await).
+   */
+  function showFileSheet(o) {
+    let file = null;
+    try { file = new File([o.blob], o.fileName, { type: o.mime }); } catch (_) { file = null; }
+    const canShare = AsAttachments.canShareFile(file);
+    const sheet = openSheet(
+      '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="file-sheet-title">' +
+      '<div class="sheet-grip" aria-hidden="true"></div>' +
+      '<h2 id="file-sheet-title">' + escapeHtml(o.title) + '</h2>' +
+      (o.lines || []).map((l, i) => '<p class="' + (i ? 'hint' : 'sheet-line') + '">' + escapeHtml(l) + '</p>').join('') +
+      '<p class="file-chip">📄 ' + escapeHtml(o.fileName) + '</p>' +
+      (o.note ? '<p class="hint">' + escapeHtml(o.note) + '</p>' : '') +
+      '<div class="sheet-actions">' +
+      (o.canOpen ? '<button type="button" class="btn primary" data-act="open">Open</button>' : '') +
+      '<button type="button" class="btn ' + (o.canOpen ? 'secondary' : 'primary') + '" data-act="download">Download</button>' +
+      (canShare ? '<button type="button" class="btn secondary" data-act="share">' + escapeHtml(o.shareLabel || 'Share…') + '</button>' : '') +
+      '<button type="button" class="btn ghost" data-close>Close</button>' +
+      '</div></div>'
+    );
+    sheet.el.querySelectorAll('[data-act]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const act = b.dataset.act;
+        if (act === 'open') {
+          if (!AsAttachments.openBlobInTab(o.blob, o.mime)) {
+            AsExport.downloadBlob(o.blob, o.fileName);
+            toast('Pop-up blocked — downloaded ' + o.fileName + ' instead');
+          }
+        } else if (act === 'download') {
+          AsExport.downloadBlob(o.blob, o.fileName);
+          toast('Downloaded ' + o.fileName);
+          if (o.onDownload) o.onDownload();
+        } else if (act === 'share' && file) {
+          try { await navigator.share({ files: [file], title: o.fileName }); } catch (_) { /* cancelled */ }
+        }
+      });
+    });
+    return sheet;
   }
 
   function wireDaysBannerClicks(root) {
@@ -2097,44 +2360,137 @@
     });
   }
 
-  async function showDays() {
-    setNav('days');
-    const all = await AsStorage.listTimesheets();
-    const completed = all.filter((t) => t.completed);
-    daysBreakdownTimesheets = completed;
-    const totals = AsOffshoreDays.tallyFromTimesheets(completed);
-    const box = $('#days-content');
-    box.innerHTML = '';
-    if (!totals.length) {
-      box.innerHTML = '<p class="empty">No completed timesheets yet.</p>';
-      showView('days');
-      return;
-    }
-    const current = daysPeriodBanner(totals[0]);
-    box.appendChild(current);
-    wireDaysBannerClicks(current);
-
-    if (totals.length > 1) {
-      const past = document.createElement('div');
-      past.innerHTML = '<h2 style="font-size:1rem;margin:8px 0">Past periods</h2>';
-      totals.slice(1).forEach((pt) => {
-        const banner = daysPeriodBanner(pt, { past: true });
-        past.appendChild(banner);
-        wireDaysBannerClicks(banner);
-      });
-      box.appendChild(past);
-    }
-    showView('days');
+  // ——— Settings (banner list → sub-pages, Android 1.0.0) ———
+  function versionLabel() {
+    const beta = /\/beta\//.test(location.pathname);
+    return AsStorage.APP_VERSION + (beta ? ' beta' : '');
   }
 
-  // ——— Settings ———
+  function lastBackupText() {
+    const s = AsStorage.getSettings();
+    const last = s.lastBackupAt || s.lastBackupSuccessAt || null;
+    if (!last) return 'Last backup: never';
+    const d = new Date(last);
+    return 'Last backup: ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function refreshSettingsSubtitles() {
+    const s = AsStorage.getSettings();
+    $('#sb-profile-sub').textContent = 'Name on forms: ' + (s.displayName || 'not set');
+    $('#sb-email-sub').textContent = 'Send-to addresses, email templates';
+    $('#sb-emails-sub').textContent = 'Expenses: ' + (s.expenseTo || s.sendTo) + ' · Timesheets: ' + s.timesheetTo;
+    $('#sb-backup-sub').textContent = AsStorage.shouldShowBackupReminder() ? 'Reminder: no backup in 28 days' : lastBackupText().replace('Last backup:', 'Last backup');
+    $('#sb-about-sub').textContent = versionLabel() + ' · OCR info';
+    let folder = 'Sync to a folder (Chrome / Edge on a computer)';
+    try {
+      if (globalThis.AsFolderSync && AsFolderSync.isSupported()) {
+        const name = await AsFolderSync.folderName();
+        folder = name ? 'Saving to ' + name : 'No data folder chosen yet';
+      } else {
+        folder = 'Not available in this browser — use Backup & restore';
+      }
+    } catch (_) { /* ignore */ }
+    $('#sb-folder-sub').textContent = folder;
+    const ps = AsPwa.state();
+    $('#sb-install-sub').textContent = ps.standalone ? 'Installed — you are using the app'
+      : ps.ios ? 'iPhone / iPad: Share → Add to Home Screen'
+      : ps.canPrompt ? 'Add AS Forms to your Home Screen / desktop'
+      : 'Add to Home Screen (browser menu)';
+    updateBackupBanner();
+  }
+
   function showSettings() {
     setNav('settings');
-    const s = AsStorage.getSettings();
-    $('#settings-name').value = s.displayName;
-    $('#about-version').innerHTML = 'AS Forms <strong>' + AsStorage.APP_VERSION + '</strong>';
+    $('#settings-header-sub').textContent = (AsStorage.getSettings().displayName || 'Stored in this browser') + ' · ' + versionLabel();
+    refreshSettingsSubtitles();
     showView('settings');
   }
+
+  function showProfile() {
+    $('#settings-name').value = AsStorage.getSettings().displayName;
+    showView('set-profile');
+  }
+
+  function showEmailHub() {
+    refreshSettingsSubtitles();
+    showView('set-email');
+  }
+
+  function showFolder() {
+    $('#folder-status').textContent = '';
+    showView('set-folder');
+    refreshBackupFolderUi();
+    const s = AsStorage.getSettings();
+    if (!s.folderHintSeen) AsStorage.saveSettings({ folderHintSeen: true });
+  }
+
+  function showImportPage() { showView('set-import'); }
+
+  function showAbout() {
+    $('#about-version').innerHTML = 'AS Forms <strong>' + escapeHtml(versionLabel()) + '</strong>';
+    const ctl = navigator.serviceWorker && navigator.serviceWorker.controller;
+    $('#about-offline').textContent = ctl
+      ? 'Offline: ready — the app and receipt reader are saved on this device.'
+      : ('serviceWorker' in navigator ? 'Offline: getting ready (reload once while online).' : 'Offline mode is not supported in this browser.');
+    showView('set-about');
+  }
+
+  function refreshInstallPage() {
+    const ps = AsPwa.state();
+    $('#install-standalone-note').classList.toggle('hidden', !ps.standalone);
+    $('#install-actions').classList.toggle('hidden', ps.standalone);
+    const btn = $('#btn-install-app');
+    const hint = $('#install-hint');
+    if (ps.ios) {
+      btn.textContent = 'Show me how';
+      hint.textContent = ps.iosNonSafari
+        ? 'Open this page in Safari, then use Share → Add to Home Screen.'
+        : 'On iPhone and iPad, Safari adds web apps from its Share menu.';
+    } else if (ps.canPrompt) {
+      btn.textContent = 'Install app';
+      hint.textContent = 'Your browser will ask you to confirm.';
+    } else {
+      btn.textContent = 'How to install';
+      hint.textContent = 'In Chrome or Edge: open the browser menu (⋮) and choose “Install app” or “Add to Home screen”. Already installed? Open it from your Home Screen or app list.';
+    }
+  }
+
+  function showInstallPage() {
+    refreshInstallPage();
+    showView('set-install');
+  }
+
+  function showIosInstallSheet() {
+    openSheet(AsPwa.iosSheetHtml().replace('class="install-sheet"', 'class="sheet install-sheet"'));
+  }
+
+  async function onInstallTapped() {
+    const ps = AsPwa.state();
+    if (ps.ios) { showIosInstallSheet(); return; }
+    if (ps.canPrompt) {
+      const outcome = await AsPwa.promptInstall();
+      if (outcome === 'accepted') { toast('Installing AS Forms…'); AsPwa.dismissBanner(); }
+      refreshInstallUi();
+      return;
+    }
+    openSheet('<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grip"></div><h2>Install AS Forms</h2>' +
+      '<ol class="ios-steps"><li><span class="step-num">1</span><span class="step-text">Open the browser menu <b>⋮</b> (top right in Chrome / Edge).</span></li>' +
+      '<li><span class="step-num">2</span><span class="step-text">Tap <b>Install app</b> or <b>Add to Home screen</b>.</span></li>' +
+      '<li><span class="step-num">3</span><span class="step-text">Confirm. AS Forms then opens from your Home Screen or app list.</span></li></ol>' +
+      '<div class="sheet-actions"><button type="button" class="btn primary" data-close>Got it</button></div></div>');
+  }
+
+  /** Install banner (first visits, dismissible once) + update bar + install page state. */
+  function refreshInstallUi() {
+    const banner = $('#install-banner');
+    if (banner) banner.classList.toggle('hidden', !(AsPwa.shouldShowBanner() && TAB_VIEWS.has(nav.current)));
+    const upd = $('#update-bar');
+    if (upd) upd.classList.toggle('hidden', !AsPwa.state().updateReady);
+    if (nav.current === 'set-install') refreshInstallPage();
+    if (nav.current === 'settings') refreshSettingsSubtitles();
+  }
+  globalThis.__asRefreshInstallUi = refreshInstallUi;
 
   function showEmails() {
     const s = AsStorage.getSettings();
@@ -2195,12 +2551,75 @@
 
   function showBackup() {
     $('#backup-status').textContent = '';
+    $('#backup-last').textContent = lastBackupText();
     updateBackupBanner();
     showView('backup');
-    refreshBackupFolderUi();
-    const s = AsStorage.getSettings();
-    if (!s.folderHintSeen) {
-      AsStorage.saveSettings({ folderHintSeen: true });
+  }
+
+  // ——— Timesheet Preview + Open file (Android 1.0.0) ———
+  let tsPreviewZoom = null;
+
+  async function showTimesheetPreview() {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    const name = AsStorage.getSettings().displayName || AsTimesheetFiller.DEFAULT_NAME;
+    let sheet;
+    try {
+      sheet = AsTimesheetPreview.sheetFor(ts, name);
+    } catch (e) {
+      toast(e.message || 'Could not build preview');
+      return;
+    }
+    $('#tsp-title').textContent = 'Preview';
+    $('#tsp-month').textContent = AsTimesheetFiller.displayTitle(ts.year, ts.month);
+    $('#tsp-summary').textContent = AsTimesheetLayout.summaryLine(sheet);
+    const content = $('#tsp-content');
+    content.innerHTML = AsTimesheetPreview.render(sheet);
+    content.style.width = AsTimesheetPreview.DESIGN_WIDTH + 'px';
+    showView('ts-preview');
+    sizePreviewViewport();
+    if (tsPreviewZoom) tsPreviewZoom.destroy();
+    tsPreviewZoom = AsZoomView.attach($('#tsp-viewport'), content, { fit: 'width', maxScale: 4 });
+    // logo image may change the height after load
+    const img = content.querySelector('img');
+    if (img && !img.complete) img.addEventListener('load', () => tsPreviewZoom && tsPreviewZoom.refresh(), { once: true });
+  }
+
+  /** Fill the screen between the hint and the bottom tabs (works with iOS's moving toolbars). */
+  function sizePreviewViewport() {
+    const vp = $('#tsp-viewport');
+    if (!vp || $('#view-ts-preview').classList.contains('hidden')) return;
+    const top = vp.getBoundingClientRect().top + window.scrollY;
+    const nav = document.querySelector('.bottom-nav');
+    const navH = nav ? nav.getBoundingClientRect().height : 60;
+    const btns = $('.tsp-zoom-btns');
+    const btnH = btns ? btns.getBoundingClientRect().height + 16 : 56;
+    vp.style.height = Math.max(280, Math.round(window.innerHeight - top - navH - btnH - 8)) + 'px';
+  }
+  window.addEventListener('resize', () => { sizePreviewViewport(); });
+
+  /** "Open file": build the .odt from entries, then offer Download / Share (Open in Word / Files). */
+  async function openTimesheetFile() {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    try {
+      const blob = await AsExport.buildTimesheetOdtBlob(ts);
+      const fileName = AsTimesheetFiller.exportFileName(ts.year, ts.month);
+      showFileSheet({
+        title: 'Open timesheet',
+        lines: [AsTimesheetFiller.displayTitle(ts.year, ts.month) + ' — made fresh from your entries'],
+        note: 'A web app cannot launch Word directly. Download saves the .odt — open it from Downloads / Files with Word, Google Docs or LibreOffice.' +
+          ' On iPhone use Share… → Word (or Save to Files).',
+        blob,
+        fileName,
+        mime: 'application/vnd.oasis.opendocument.text',
+        canOpen: false,
+        shareLabel: 'Share / Open in…',
+        onDownload: scheduleFolderSync,
+      });
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'Could not build the timesheet');
     }
   }
 
@@ -2253,7 +2672,6 @@
         const tab = btn.getAttribute('data-nav');
         if (tab === 'expenses') showExpenses();
         else if (tab === 'timesheets') showTimesheets();
-        else if (tab === 'days') showDays();
         else if (tab === 'settings') showSettings();
       });
     });
@@ -2293,6 +2711,8 @@
         if (to === 'expenses') showExpenses();
         else if (to === 'timesheets') showTimesheets();
         else if (to === 'settings') showSettings();
+        else if (to === 'set-email') showEmailHub();
+        else if (to === 'ts-edit') openTimesheet(state.tsId);
       });
     });
 
@@ -2471,10 +2891,35 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       toast('Name saved');
       scheduleFolderSync();
       updateListHeaders();
+      refreshSettingsSubtitles();
     });
+    $('#btn-goto-profile').addEventListener('click', showProfile);
+    $('#btn-goto-email').addEventListener('click', showEmailHub);
+    $('#btn-goto-folder').addEventListener('click', showFolder);
+    $('#btn-goto-import').addEventListener('click', showImportPage);
+    $('#btn-goto-install').addEventListener('click', showInstallPage);
+    $('#btn-goto-about').addEventListener('click', showAbout);
     $('#btn-goto-emails').addEventListener('click', showEmails);
     $('#btn-goto-templates').addEventListener('click', showTemplates);
     $('#btn-goto-backup').addEventListener('click', showBackup);
+    $('#btn-settings-import-ts').addEventListener('click', () => $('#ts-import-files').click());
+    $('#btn-settings-import-claims').addEventListener('click', () => $('#claim-import-files').click());
+    $('#btn-install-app').addEventListener('click', onInstallTapped);
+    $('#btn-install-banner').addEventListener('click', onInstallTapped);
+    $('#btn-install-banner-dismiss').addEventListener('click', () => { AsPwa.dismissBanner(); refreshInstallUi(); });
+    $('#btn-update-reload').addEventListener('click', () => AsPwa.applyUpdate());
+    AsPwa.onChange(refreshInstallUi);
+
+    // Line category chips: swap the fixed prefix, keep the typed detail
+    $$('#line-cat-chips .cat-chip').forEach((b) => b.addEventListener('click', () => setLineCategory(b.dataset.cat)));
+    $('#line-desc').addEventListener('input', updateDescSample);
+
+    $('#btn-ts-preview').addEventListener('click', showTimesheetPreview);
+    $('#btn-ts-open-file').addEventListener('click', openTimesheetFile);
+    $('#btn-tsp-open-file').addEventListener('click', openTimesheetFile);
+    $('#btn-tsp-zoom-in').addEventListener('click', () => tsPreviewZoom && tsPreviewZoom.zoomBy(1.5));
+    $('#btn-tsp-zoom-out').addEventListener('click', () => tsPreviewZoom && tsPreviewZoom.zoomBy(1 / 1.5));
+    $('#btn-tsp-zoom-fit').addEventListener('click', () => tsPreviewZoom && tsPreviewZoom.reset());
     $('#form-emails').addEventListener('submit', (ev) => {
       ev.preventDefault();
       let expenseTo = $('#settings-expense-to').value.trim() || AsEmailTemplates.EXPENSE_TO;
@@ -2491,7 +2936,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       toast('Emails saved');
       scheduleFolderSync();
       updateListHeaders();
-      showSettings();
+      showEmailHub();
     });
     $('#form-templates').addEventListener('submit', (ev) => {
       ev.preventDefault();
@@ -2503,7 +2948,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       });
       toast('Templates saved');
       scheduleFolderSync();
-      showSettings();
+      showEmailHub();
     });
     const remExport = $('#btn-backup-reminder-export');
     if (remExport) remExport.addEventListener('click', () => {
@@ -2524,6 +2969,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       try {
         const name = await AsExport.exportBackupZip();
         updateBackupBanner();
+        $('#backup-last').textContent = lastBackupText();
         st.textContent = 'Downloaded ' + name;
         toast('Backup exported');
       } catch (e) {
@@ -2554,7 +3000,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     });
 
     $('#btn-folder-choose').addEventListener('click', async () => {
-      const st = $('#backup-status');
+      const st = $('#folder-status');
       st.classList.remove('error');
       try {
         const handle = await AsFolderSync.chooseFolder();
@@ -2579,7 +3025,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       }
     });
     $('#btn-folder-sync').addEventListener('click', async () => {
-      const st = $('#backup-status');
+      const st = $('#folder-status');
       st.classList.remove('error');
       st.textContent = 'Syncing…';
       try {
@@ -2601,7 +3047,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     });
     $('#btn-folder-restore').addEventListener('click', async () => {
       if (!confirm('Replace all data in this browser with the folder contents?')) return;
-      const st = $('#backup-status');
+      const st = $('#folder-status');
       st.classList.remove('error');
       st.textContent = 'Restoring from folder…';
       try {
@@ -2622,7 +3068,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     });
     $('#btn-folder-disconnect').addEventListener('click', async () => {
       await AsFolderSync.disconnectFolder();
-      $('#backup-status').textContent = 'Disconnected (files on disk were not deleted)';
+      $('#folder-status').textContent = 'Disconnected (files on disk were not deleted)';
       toast('Folder disconnected');
       await refreshBackupFolderUi();
     });
@@ -2694,11 +3140,15 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
   }
 
   async function boot() {
+    globalThis.__asToast = toast;
+    initHistory();
     wire();
+    AsPwa.register();
     AsStorage.saveSettings(AsStorage.getSettings());
     updateListHeaders();
     await promptDisplayNameIfNeeded();
     await showExpenses();
+    refreshInstallUi();
   }
 
   if (document.readyState === 'loading') {

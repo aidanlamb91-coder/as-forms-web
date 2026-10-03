@@ -1,5 +1,6 @@
 /**
- * Mar–Feb day tallies from completed timesheets — mirrors Android OffshoreDays.
+ * Mar–Feb day tallies from completed timesheets — mirrors Android OffshoreDays
+ * (incl. 0.3.8 tally-year grouping for Timesheets → Completed).
  */
 (function (global) {
   const DayTypeKey = {
@@ -264,7 +265,64 @@
     return { empty: false, months: months, typeKey: typeKey, label: labelForType(typeKey) };
   }
 
+  /** Mar–Feb tally year (its starting March year) for a calendar month. Feb stays in the previous year. */
+  function tallyYearOf(year, month) {
+    return month >= 3 ? year : year - 1;
+  }
+
+  function countsEmpty(c) {
+    return !c || (!c.offshore && !c.holiday && !c.sick && !c.office && !c.training);
+  }
+
+  /**
+   * Port of Android OffshoreDays.groupByTallyYear (Timesheets → Completed).
+   * Current tally year (containing asOf) always first, even when empty; other years newest
+   * first, dropped when they have no items and no counted days. Item order follows input.
+   * @param {Array} items
+   * @param {(item) => [number, number]} yearMonthOf  → [year, month]
+   * @param {Array<{period, counts}>} totals  from tallyFromTimesheets
+   * @returns {Array<{total:{period,counts,offshoreDays}, items:Array, isCurrent:boolean}>}
+   */
+  function groupByTallyYear(items, yearMonthOf, totals, asOf) {
+    const now = asOf || new Date();
+    const currentYear = periodContaining(now).startMarchYear;
+    const byYear = {};
+    for (const it of items || []) {
+      const ym = yearMonthOf(it);
+      const y = tallyYearOf(ym[0], ym[1]);
+      (byYear[y] = byYear[y] || []).push(it);
+    }
+    const totalsByYear = {};
+    for (const t of totals || []) totalsByYear[t.period.startMarchYear] = t;
+    const yearSet = new Set([...Object.keys(byYear).map(Number), ...Object.keys(totalsByYear).map(Number), currentYear]);
+    const years = Array.from(yearSet).sort((a, b) => b - a);
+    const out = [];
+    for (const y of years) {
+      const groupItems = byYear[y] || [];
+      const t = totalsByYear[y] || { period: periodStartingMarch(y), counts: emptyCounts() };
+      const isCurrent = y === currentYear;
+      if (!isCurrent && !groupItems.length && countsEmpty(t.counts)) continue;
+      out.push({
+        total: { period: t.period, counts: t.counts, offshoreDays: t.counts.offshore },
+        items: groupItems,
+        isCurrent,
+      });
+    }
+    const current = out.filter((g) => g.isCurrent);
+    return current.concat(out.filter((g) => !g.isCurrent));
+  }
+
+  /** "Mar 2025 – Feb 2026 · 63 offshore days" */
+  function yearHeader(total) {
+    const n = total.offshoreDays != null ? total.offshoreDays : (total.counts ? total.counts.offshore : 0);
+    return total.period.label + ' · ' + n + ' offshore day' + (n === 1 ? '' : 's');
+  }
+
   global.AsOffshoreDays = {
+    tallyYearOf,
+    groupByTallyYear,
+    yearHeader,
+    emptyCounts,
     DayTypeKey,
     daysInMonth,
     periodContaining,
@@ -275,4 +333,4 @@
     labelForType,
     formatDayNumbers,
   };
-})(window);
+})(typeof window !== 'undefined' ? window : globalThis);

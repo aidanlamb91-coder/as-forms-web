@@ -56,6 +56,7 @@
           index: idx + 1,
           date: line.date,
           jobNo: line.jobNo,
+          category: global.AsExpenseCategory ? global.AsExpenseCategory.splitLine(line).category : undefined,
           description: line.description,
           foreignCurrency: line.foreignCurrency || '',
           net: line.net,
@@ -102,7 +103,7 @@
     return (claim.lines || []).map((l) => ({
       date: l.date,
       jobNo: claimJob, // always claim-level (Android toLineData)
-      description: l.description,
+      description: global.AsExpenseCategory ? global.AsExpenseCategory.lineText(l) : l.description,
       foreignCurrency: l.foreignCurrency || '',
       net: l.net,
       vat: l.vat,
@@ -365,7 +366,8 @@
           dateMillis: line.date ? Date.parse(line.date + 'T00:00:00') : null,
           date: line.date,
           jobNo: line.jobNo || '',
-          description: line.description || '',
+          category: global.AsExpenseCategory ? global.AsExpenseCategory.splitLine(line).category : undefined,
+          description: global.AsExpenseCategory ? global.AsExpenseCategory.lineText(line) : (line.description || ''),
           foreignCurrency: line.foreignCurrency || '',
           net: line.net,
           vat: line.vat,

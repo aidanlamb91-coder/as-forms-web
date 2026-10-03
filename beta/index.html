@@ -5,8 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0D0D0D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="AS Forms" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="application-name" content="AS Forms" />
   <title>AS Forms</title>
-  <link rel="stylesheet" href="css/app.css?v=0.3.15-web" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="css/app.css?v=1.0.0-web" />
 </head>
 <body>
   <div id="app">
@@ -19,6 +27,19 @@
         <button type="button" class="btn primary" id="btn-backup-reminder-export">Export backup</button>
         <button type="button" class="btn ghost" id="btn-backup-reminder-dismiss">Dismiss</button>
       </div>
+    </div>
+    <div id="update-bar" class="update-bar hidden" role="status">
+      <span>New version available</span>
+      <button type="button" class="btn primary" id="btn-update-reload">Reload</button>
+    </div>
+    <div id="install-banner" class="install-banner hidden" role="region" aria-label="Install AS Forms">
+      <img src="icons/icon-192.png" alt="" width="40" height="40" />
+      <div class="install-banner-text">
+        <strong>Add AS Forms to your Home Screen</strong>
+        <span>Opens like an app and works offline.</span>
+      </div>
+      <button type="button" class="btn primary" id="btn-install-banner">Install</button>
+      <button type="button" class="icon-btn" id="btn-install-banner-dismiss" aria-label="Dismiss">✕</button>
     </div>
     <!-- EXPENSES LIST -->
     <section id="view-expenses" class="view">
@@ -78,23 +99,7 @@
       <p id="ts-empty" class="empty hidden">No timesheets yet. Tap <strong>+ New</strong> and pick a month.</p>
     </section>
 
-    <!-- DAYS WORKED -->
-    <section id="view-days" class="view hidden">
-      <header class="app-header">
-        <div class="brand">
-          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
-          <span class="brand-mark" style="display:none">AS</span>
-          <div>
-            <h1>Days worked</h1>
-            <p class="sub">From completed timesheets</p>
-          </div>
-        </div>
-      </header>
-      <div id="days-content"></div>
-    </section>
-
-    <!-- SETTINGS -->
+    <!-- SETTINGS (banner list → sub-pages, Android 1.0.0) -->
     <section id="view-settings" class="view hidden">
       <header class="app-header">
         <div class="brand">
@@ -103,35 +108,128 @@
           <span class="brand-mark" style="display:none">AS</span>
           <div>
             <h1>Settings</h1>
-            <p class="sub">Local browser only</p>
+            <p class="sub" id="settings-header-sub">Stored in this browser</p>
           </div>
         </div>
+      </header>
+      <div class="settings-banners">
+        <button type="button" class="settings-banner" id="btn-goto-profile"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4.4 0-8 2.2-8 5v1.5h16V19c0-2.8-3.6-5-8-5z"/></g></svg></span><span class="sb-text"><span class="sb-title">Profile</span><span class="sb-sub" id="sb-profile-sub">Name on forms</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-email"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm9 7.2L4.4 7H4v.9l8 5.4 8-5.4V7h-.4L12 12.2z"/></g></svg></span><span class="sb-text"><span class="sb-title">Email &amp; addresses</span><span class="sb-sub" id="sb-email-sub">Send-to addresses, email templates</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-folder"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M3 5h6l2 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></g></svg></span><span class="sb-text"><span class="sb-title">Data folder</span><span class="sb-sub" id="sb-folder-sub">Sync to a folder (Chrome / Edge)</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-backup"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 3a9 9 0 1 1-8.5 6h2.2A7 7 0 1 0 12 5V8L7.5 4.5 12 1v2zm-1 5h2v4.6l3.2 1.9-1 1.7L11 13.7V8z"/></g></svg></span><span class="sb-text"><span class="sb-title">Backup &amp; restore <span id="backup-settings-badge" class="badge warn hidden">!</span></span><span class="sb-sub" id="sb-backup-sub">Backup zip, restore, 28-day reminder</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-import"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3V3zM4 18h16v3H4v-3z"/></g></svg></span><span class="sb-text"><span class="sb-title">Import</span><span class="sb-sub" id="sb-import-sub">Old timesheets and expense zips</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-install"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M7 1h10a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zm0 3v15h10V4H7zm4 2h2v5.2l1.8-1.8 1.4 1.4L12 14l-4.2-4.2 1.4-1.4L11 11.2V6z"/></g></svg></span><span class="sb-text"><span class="sb-title">Install app</span><span class="sb-sub" id="sb-install-sub">Add AS Forms to your Home Screen</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-about"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 8v7h2v-7h-2zm0-3v2h2V7h-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">About</span><span class="sb-sub" id="sb-about-sub">1.0.0-web · OCR info</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+      </div>
+    </section>
+
+    <section id="view-set-profile" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Profile</h1>
       </header>
       <form id="form-settings-name" class="panel">
         <label>
           Display name
           <input type="text" id="settings-name" maxlength="80" autocomplete="name" placeholder="Your name" />
         </label>
+        <p class="hint">Printed as “Name” on expense claims, timesheets and the Days worked summary.</p>
         <button type="submit" class="btn primary">Save name</button>
       </form>
-      <ul class="settings-list">
-        <li><button type="button" id="btn-goto-emails">Destination emails <span class="chev">›</span></button></li>
-        <li><button type="button" id="btn-goto-templates">Email templates <span class="chev">›</span></button></li>
-        <li><button type="button" id="btn-goto-backup">Backup <span id="backup-settings-badge" class="badge warn hidden">!</span> <span class="chev">›</span></button></li>
-      </ul>
+    </section>
+
+    <section id="view-set-email" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Email &amp; addresses</h1>
+      </header>
+      <div class="settings-banners">
+        <button type="button" class="settings-banner" id="btn-goto-emails"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></g></svg></span><span class="sb-text"><span class="sb-title">Destination emails</span><span class="sb-sub" id="sb-emails-sub">Expenses and timesheets addresses</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-templates"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M5 3h10l4 4v14H5V3zm9 1.5V8h3.5L14 4.5zM8 11h8v1.6H8V11zm0 3.4h8V16H8v-1.6zm0 3.4h5v1.6H8v-1.6z"/></g></svg></span><span class="sb-text"><span class="sb-title">Email templates</span><span class="sb-sub" id="sb-templates-sub">Expense &amp; timesheet subject and body</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+      </div>
+      <p class="hint pad">AS Forms never sends email by itself. Send… downloads the file, then <strong>Open mail app</strong> fills in the address, subject and body — you attach the file and press Send.</p>
+    </section>
+
+    <section id="view-set-folder" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Data folder</h1>
+      </header>
       <div class="panel">
-        <h2>About</h2>
-        <p class="hint" id="about-version">AS Forms <strong>0.3.15-web</strong></p>
+        <p class="hint">Data lives in this browser for speed. On Chrome or Edge (desktop) you can also keep a copy in a folder on your computer — it is updated after saves and exports.</p>
+        <p class="hint" id="folder-support-hint" hidden></p>
+        <p class="hint" id="folder-connected">No data folder connected.</p>
+        <div class="btn-row" id="folder-controls">
+          <button type="button" class="btn primary" id="btn-folder-choose">Choose data folder…</button>
+          <button type="button" class="btn secondary" id="btn-folder-sync" disabled>Sync now</button>
+          <button type="button" class="btn secondary" id="btn-folder-restore">Restore from folder…</button>
+          <button type="button" class="btn ghost" id="btn-folder-disconnect" disabled>Disconnect folder</button>
+        </div>
+        <label class="check-row" id="folder-autosync-row">
+          <input type="checkbox" id="chk-folder-autosync" />
+          <span>Auto-sync after saves and exports (when a folder is connected)</span>
+        </label>
+        <p id="folder-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <section id="view-set-import" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Import</h1>
+      </header>
+      <div class="panel">
+        <h2 class="section-title">Old timesheets</h2>
+        <p class="hint">Pick one or more filled timesheets (<code>.odt</code> or <code>.docx</code>). Each becomes a completed timesheet; you choose what happens if that month already exists.</p>
+        <button type="button" class="btn primary" id="btn-settings-import-ts">Import timesheets…</button>
+        <h2 class="section-title">Expense zips</h2>
+        <p class="hint">Pick one or more expense zips exported by AS Forms (e.g. <code>P5503.zip</code>). Each becomes a completed claim with its receipts. Line categories are read from the description (“Travel - …”); anything else becomes Misc.</p>
+        <button type="button" class="btn primary" id="btn-settings-import-claims">Import expense zips…</button>
+        <p class="hint">To move <em>everything</em> (all claims, timesheets and settings) use Backup &amp; restore instead.</p>
+      </div>
+    </section>
+
+    <section id="view-set-install" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Install app</h1>
+      </header>
+      <div class="panel" id="install-panel">
+        <div class="install-hero">
+          <img src="icons/icon-192.png" alt="" width="64" height="64" />
+          <div>
+            <h2>AS Forms on your Home Screen</h2>
+            <p class="hint">Opens full-screen like an app, starts instantly and works offline (including receipt reading).</p>
+          </div>
+        </div>
+        <p class="status ok hidden" id="install-standalone-note">✓ You are using the installed app.</p>
+        <div id="install-actions">
+          <button type="button" class="btn primary" id="btn-install-app">Install app</button>
+          <p class="hint" id="install-hint"></p>
+        </div>
+        <p class="hint"><strong>iPhone / iPad:</strong> the Home Screen app keeps its own storage, separate from Safari. Anything entered in Safari will not appear in the Home Screen app — use <strong>Backup &amp; restore</strong> to move it (Export backup in Safari, Restore backup in the app).</p>
+      </div>
+    </section>
+
+    <section id="view-set-about" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>About</h1>
+      </header>
+      <div class="panel">
+        <p class="hint" id="about-version">AS Forms <strong>1.0.0-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
-        <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
+        <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app and kept for offline use after the first visit.</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
+        <p class="hint">Installed on iPhone? The Home Screen app's data is separate from Safari's — use Backup &amp; restore to move it.</p>
+        <p class="hint" id="about-offline"></p>
       </div>
     </section>
 
     <!-- DESTINATION EMAILS -->
     <section id="view-emails" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <button type="button" class="btn ghost back-btn" data-back="set-email">← Back</button>
         <h1>Destination emails</h1>
       </header>
       <form id="form-emails" class="panel">
@@ -151,7 +249,7 @@
     <!-- EMAIL TEMPLATES -->
     <section id="view-templates" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <button type="button" class="btn ghost back-btn" data-back="set-email">← Back</button>
         <h1>Email templates</h1>
       </header>
       <form id="form-templates" class="panel">
@@ -166,44 +264,30 @@
       </form>
     </section>
 
-    <!-- BACKUP -->
+    <!-- BACKUP & RESTORE -->
     <section id="view-backup" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="settings">← Back</button>
-        <h1>Backup</h1>
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Backup &amp; restore</h1>
       </header>
       <div class="panel">
-        <p class="hint">Data still lives in this browser for speed. A data folder (Chrome/Edge) or backup zip is your durable copy if site data is cleared.</p>
-
-        <h2 class="section-title">Data folder</h2>
-        <p class="hint" id="folder-support-hint" hidden></p>
-        <p class="hint" id="folder-connected">No data folder connected.</p>
-        <div class="btn-row" id="folder-controls">
-          <button type="button" class="btn primary" id="btn-folder-choose">Choose data folder…</button>
-          <button type="button" class="btn secondary" id="btn-folder-sync" disabled>Sync now</button>
-          <button type="button" class="btn secondary" id="btn-folder-restore">Restore from folder…</button>
-          <button type="button" class="btn ghost" id="btn-folder-disconnect" disabled>Disconnect folder</button>
-        </div>
-        <label class="check-row" id="folder-autosync-row">
-          <input type="checkbox" id="chk-folder-autosync" />
-          <span>Auto-sync after saves and exports (when a folder is connected)</span>
-        </label>
-
-        <h2 class="section-title">Backup zip</h2>
-        <p class="hint">Works in every browser. Export a zip with all claims, timesheets, settings, and receipt files. Import replaces everything in this browser.</p>
+        <p class="hint" id="backup-last">Last backup: never</p>
+        <p class="hint">Works in every browser. Export a zip with all claims, timesheets, settings, and receipt files. Restore replaces everything in this browser.</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-backup-export">Export backup zip</button>
-          <button type="button" class="btn secondary" id="btn-backup-import">Import backup…</button>
+          <button type="button" class="btn secondary" id="btn-backup-import">Restore backup…</button>
         </div>
         <input type="file" id="backup-import-file" accept=".zip,application/zip" hidden />
         <p id="backup-status" class="status" role="status"></p>
+        <p class="hint">A reminder appears if you have not backed up (zip or data folder) for 28 days.</p>
+        <p class="hint"><strong>Moving to the Home Screen app on iPhone?</strong> Export a backup here in Safari, then open the Home Screen app and Restore it — the two keep separate data.</p>
       </div>
     </section>
 
     <!-- CLAIM EDIT -->
     <section id="view-claim" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="expenses">← Back</button>
+        <button type="button" class="btn ghost back-btn" data-back="expenses">← Back</button>
         <h1 id="claim-title">Claim</h1>
         <button type="button" class="btn danger ghost" id="btn-delete-claim" title="Delete claim">🗑</button>
       </header>
@@ -253,13 +337,29 @@
     <!-- LINE EDIT -->
     <section id="view-line" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" id="btn-line-back">← Back</button>
+        <button type="button" class="btn ghost back-btn" id="btn-line-back">← Back</button>
         <h1 id="line-title">Line item</h1>
         <button type="button" class="btn danger ghost" id="btn-delete-line" title="Delete line">🗑</button>
       </header>
       <form id="form-line" class="panel">
         <label>Date <input type="date" id="line-date" required /></label>
-        <label>Description <input type="text" id="line-desc" maxlength="200" required /></label>
+        <div class="field-block">
+          <span class="field-label" id="line-cat-label">Category</span>
+          <div class="cat-chips" id="line-cat-chips" role="radiogroup" aria-labelledby="line-cat-label">
+            <button type="button" class="cat-chip" data-cat="TRAVEL" role="radio" aria-checked="false">Travel</button>
+            <button type="button" class="cat-chip" data-cat="FOOD" role="radio" aria-checked="false">Food</button>
+            <button type="button" class="cat-chip" data-cat="EQUIPMENT" role="radio" aria-checked="false">Equipment</button>
+            <button type="button" class="cat-chip" data-cat="TRAINING" role="radio" aria-checked="false">Training</button>
+            <button type="button" class="cat-chip on" data-cat="MISC" role="radio" aria-checked="true">Misc</button>
+          </div>
+        </div>
+        <label>Description
+          <div class="desc-prefix">
+            <span class="pfx" id="line-desc-prefix" aria-hidden="true">Misc - </span>
+            <input type="text" id="line-desc" maxlength="200" placeholder="e.g. Taxi to heliport" aria-describedby="line-desc-hint" />
+          </div>
+        </label>
+        <p class="hint" id="line-desc-hint">The Word form shows “<span id="line-desc-sample">Misc - …</span>”.</p>
         <label>Foreign currency (optional) <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
         <div class="grid-3">
           <label>£ Net <input type="number" id="line-net" step="0.01" min="0" inputmode="decimal" /></label>
@@ -284,6 +384,7 @@
             <p class="hint" id="ocr-suggest-note">Check these, edit if needed, then tap Use these.</p>
             <label>Date <input type="date" id="ocr-date" /></label>
             <label>Description <input type="text" id="ocr-desc" maxlength="200" /></label>
+            <p class="hint hidden" id="ocr-cat-note"></p>
             <label>Foreign currency <input type="text" id="ocr-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
             <div class="grid-3">
               <label>£ Net <input type="number" id="ocr-net" step="0.01" min="0" inputmode="decimal" /></label>
@@ -318,7 +419,7 @@
     <!-- NEW TIMESHEET DIALOG (as view) -->
     <section id="view-ts-new" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="timesheets">← Back</button>
+        <button type="button" class="btn ghost back-btn" data-back="timesheets">← Back</button>
         <h1>New timesheet</h1>
       </header>
       <form id="form-ts-new" class="panel">
@@ -337,7 +438,7 @@
     <!-- TIMESHEET EDIT -->
     <section id="view-ts-edit" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" data-back="timesheets">← Back</button>
+        <button type="button" class="btn ghost back-btn" data-back="timesheets">← Back</button>
         <h1 id="ts-title">Timesheet</h1>
         <button type="button" class="btn danger ghost" id="btn-delete-ts" title="Delete">🗑</button>
       </header>
@@ -356,6 +457,10 @@
           </label>
         </div>
       </form>
+      <div class="ts-file-row">
+        <button type="button" class="btn secondary" id="btn-ts-preview">Preview</button>
+        <button type="button" class="btn secondary" id="btn-ts-open-file">Open file</button>
+      </div>
       <div class="toolbar">
         <h2>Entries <span id="ts-entry-count" class="badge">0</span></h2>
         <button type="button" class="btn primary" id="btn-add-entry">+ Entry</button>
@@ -376,10 +481,30 @@
       </div>
     </section>
 
+    <!-- TIMESHEET PREVIEW (read-only, Android 1.0.0) -->
+    <section id="view-ts-preview" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="ts-edit">← Back</button>
+        <h1 id="tsp-title">Preview</h1>
+        <button type="button" class="btn secondary" id="btn-tsp-open-file">Open file</button>
+      </header>
+      <p class="tsp-month" id="tsp-month"></p>
+      <p class="tsp-summary" id="tsp-summary"></p>
+      <p class="hint pad" id="tsp-hint">Read-only — exactly what Export puts in the .odt. Pinch or double-tap to zoom.</p>
+      <div class="tsp-viewport" id="tsp-viewport">
+        <div class="tsp-zoom" id="tsp-content"></div>
+      </div>
+      <div class="tsp-zoom-btns">
+        <button type="button" class="btn ghost" id="btn-tsp-zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" class="btn ghost" id="btn-tsp-zoom-fit">Fit</button>
+        <button type="button" class="btn ghost" id="btn-tsp-zoom-in" aria-label="Zoom in">+</button>
+      </div>
+    </section>
+
     <!-- ENTRY EDIT -->
     <section id="view-ts-entry" class="view hidden">
       <header class="topbar">
-        <button type="button" class="btn ghost" id="btn-entry-back">← Back</button>
+        <button type="button" class="btn ghost back-btn" id="btn-entry-back">← Back</button>
         <h1 id="entry-title">Entry</h1>
         <button type="button" class="btn danger ghost" id="btn-delete-entry" title="Delete">🗑</button>
       </header>
@@ -425,7 +550,6 @@
     <div class="inner">
       <button type="button" class="on" data-nav="expenses"><span class="ico">£</span>Expenses</button>
       <button type="button" data-nav="timesheets"><span class="ico">⏱</span>Timesheets</button>
-      <button type="button" data-nav="days"><span class="ico">📅</span>Days worked</button>
       <button type="button" data-nav="settings"><span class="ico">⚙</span>Settings</button>
     </div>
   </nav>
@@ -433,19 +557,29 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=0.3.15-web"></script>
-  <script src="js/email-templates.js?v=0.3.15-web"></script>
-  <script src="js/offshore-days.js?v=0.3.15-web"></script>
-  <script src="js/storage.js?v=0.3.15-web"></script>
-  <script src="js/docx-filler.js?v=0.3.15-web"></script>
-  <script src="js/timesheet-filler.js?v=0.3.15-web"></script>
-  <script src="js/timesheet-reader.js?v=0.3.15-web"></script>
-  <script src="js/expense-zip-reader.js?v=0.3.15-web"></script>
-  <script src="js/image-merge.js?v=0.3.15-web"></script>
-  <script src="js/export.js?v=0.3.15-web"></script>
-  <script src="js/folder-sync.js?v=0.3.15-web"></script>
-  <script src="js/receipt-parse.js?v=0.3.15-web"></script>
-  <script src="js/receipt-ocr.js?v=0.3.15-web"></script>
-  <script src="js/app.js?v=0.3.15-web"></script>
+  <script src="lib/jszip.min.js?v=1.0.0-web"></script>
+  <script src="js/email-templates.js?v=1.0.0-web"></script>
+  <script src="js/expense-category.js?v=1.0.0-web"></script>
+  <script src="js/offshore-days.js?v=1.0.0-web"></script>
+  <script src="js/expense-tally.js?v=1.0.0-web"></script>
+  <script src="js/days-worked-summary.js?v=1.0.0-web"></script>
+  <script src="js/storage.js?v=1.0.0-web"></script>
+  <script src="js/docx-filler.js?v=1.0.0-web"></script>
+  <script src="js/timesheet-layout.js?v=1.0.0-web"></script>
+  <script src="js/timesheet-filler.js?v=1.0.0-web"></script>
+  <script src="js/timesheet-reader.js?v=1.0.0-web"></script>
+  <script src="js/expense-zip-reader.js?v=1.0.0-web"></script>
+  <script src="js/image-merge.js?v=1.0.0-web"></script>
+  <script src="js/export.js?v=1.0.0-web"></script>
+  <script src="js/folder-sync.js?v=1.0.0-web"></script>
+  <script src="js/receipt-parse.js?v=1.0.0-web"></script>
+  <script src="js/receipt-ocr.js?v=1.0.0-web"></script>
+  <script src="js/summary-pdf.js?v=1.0.0-web"></script>
+  <script src="js/hold-swipe.js?v=1.0.0-web"></script>
+  <script src="js/zoom-view.js?v=1.0.0-web"></script>
+  <script src="js/attachments.js?v=1.0.0-web"></script>
+  <script src="js/timesheet-preview.js?v=1.0.0-web"></script>
+  <script src="js/pwa.js?v=1.0.0-web"></script>
+  <script src="js/app.js?v=1.0.0-web"></script>
 </body>
 </html>

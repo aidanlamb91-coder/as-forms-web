@@ -10,7 +10,7 @@
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.3.15-web';
+  const APP_VERSION = '1.0.0-web';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -305,6 +305,14 @@
    * Replace-all import from backup snapshot + receipt map { path: Blob }.
    * Snapshot uses web-friendly shape (string ids OK).
    */
+  /** Category + composed description for a backup / import line (category carried or inferred). */
+  function categoryFields(l) {
+    const C = global.AsExpenseCategory;
+    if (!C) return { description: l.description || '' };
+    const [category, detail] = C.fromImport(l.category, l.description || '');
+    return { category, description: C.composeForStorage(category, detail) };
+  }
+
   async function importBackup(snapshot, receiptBlobs) {
     await clearAllData();
     if (snapshot.prefs) {
@@ -356,7 +364,7 @@
           id: l.id != null ? String(l.id) : uid('line'),
           date: dateIso,
           jobNo: l.jobNo || '',
-          description: l.description || '',
+          ...categoryFields(l),
           foreignCurrency: l.foreignCurrency || '',
           net: l.net,
           vat: l.vat,

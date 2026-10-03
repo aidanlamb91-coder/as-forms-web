@@ -441,6 +441,8 @@
       vat,
       foreignCurrency,
       jobNo,
+      // Category from the receipt text (Android ExpenseCategory.guess) — null when unsure
+      category: global.AsExpenseCategory ? global.AsExpenseCategory.guess(cleaned) : null,
       rawLength: cleaned.length,
     };
   }
