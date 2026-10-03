@@ -1,5 +1,5 @@
 /**
- * IndexedDB + localStorage for AS Forms web 0.3.14-web.
+ * IndexedDB + localStorage for AS Forms web 0.3.15-web.
  * Claims, timesheets, receipts/statements in IDB; settings in localStorage.
  */
 (function (global) {
@@ -10,7 +10,7 @@
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.3.14-web';
+  const APP_VERSION = '0.3.15-web';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -20,7 +20,7 @@
     return {
       displayName: e ? e.DEFAULT_NAME : '',
       expenseTo: e ? e.EXPENSE_TO : 'invoice@andrewssurvey.com',
-      timesheetTo: e ? e.TIMESHEET_TO : 'Timesheets@andrewssurvey.com',
+      timesheetTo: e ? e.TIMESHEET_TO : 'timesheet@andrewssurvey.com',
       expenseSubject: e ? e.DEFAULT_EXPENSE_SUBJECT : '',
       expenseBody: e ? e.DEFAULT_EXPENSE_BODY : '',
       timesheetSubject: e ? e.DEFAULT_TIMESHEET_SUBJECT : '',
@@ -75,6 +75,16 @@
     return (prefix || 'id') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
   }
 
+  /** Old default 'Timesheets@andrewssurvey.com' (any case) → new default; other addresses untouched. */
+  function migrateTimesheetTo(value) {
+    const e = ET();
+    if (e && e.migrateTimesheetTo) return e.migrateTimesheetTo(value);
+    if (typeof value !== 'string') return value;
+    return value.trim().toLowerCase() === 'timesheets@andrewssurvey.com'
+      ? 'timesheet@andrewssurvey.com'
+      : value;
+  }
+
   function getSettings() {
     const defaults = defaultSettings();
     try {
@@ -83,6 +93,8 @@
       const parsed = JSON.parse(raw);
       // migrate legacy sendTo → expenseTo
       if (parsed.sendTo && !parsed.expenseTo) parsed.expenseTo = parsed.sendTo;
+      // 0.3.15-web: migrate old default timesheet address
+      if (parsed.timesheetTo != null) parsed.timesheetTo = migrateTimesheetTo(parsed.timesheetTo);
       return { ...defaults, ...parsed, sendTo: parsed.expenseTo || parsed.sendTo || defaults.expenseTo };
     } catch {
       return { ...defaults };
@@ -299,7 +311,7 @@
       saveSettings({
         displayName: snapshot.prefs.displayName || defaultSettings().displayName,
         expenseTo: snapshot.prefs.expenseTo || defaultSettings().expenseTo,
-        timesheetTo: snapshot.prefs.timesheetTo || defaultSettings().timesheetTo,
+        timesheetTo: migrateTimesheetTo(snapshot.prefs.timesheetTo || defaultSettings().timesheetTo),
         expenseSubject: snapshot.prefs.expenseSubject || defaultSettings().expenseSubject,
         expenseBody: snapshot.prefs.expenseBody || defaultSettings().expenseBody,
         timesheetSubject: snapshot.prefs.timesheetSubject || defaultSettings().timesheetSubject,
@@ -454,6 +466,7 @@
     purgeClaimReceipts,
     getSettings,
     saveSettings,
+    migrateTimesheetTo,
     defaultSettings,
     listClaims,
     getClaim,

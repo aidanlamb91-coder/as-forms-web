@@ -3,7 +3,9 @@
  */
 (function (global) {
   const EXPENSE_TO = 'invoice@andrewssurvey.com';
-  const TIMESHEET_TO = 'Timesheets@andrewssurvey.com';
+  const TIMESHEET_TO = 'timesheet@andrewssurvey.com';
+  // Previous default (<= 0.3.14-web); saved values equal to this are migrated.
+  const LEGACY_TIMESHEET_TO = 'timesheets@andrewssurvey.com';
   const DEFAULT_NAME = '';
 
   const DEFAULT_EXPENSE_SUBJECT = 'Expense claim — {job} — {name}';
@@ -45,9 +47,17 @@
     return true;
   }
 
+  /** Old default timesheet address (case-insensitive) → new default; anything else unchanged. */
+  function migrateTimesheetTo(value) {
+    if (typeof value !== 'string') return value;
+    return value.trim().toLowerCase() === LEGACY_TIMESHEET_TO ? TIMESHEET_TO : value;
+  }
+
   global.AsEmailTemplates = {
     EXPENSE_TO,
     TIMESHEET_TO,
+    LEGACY_TIMESHEET_TO,
+    migrateTimesheetTo,
     DEFAULT_NAME,
     DEFAULT_EXPENSE_SUBJECT,
     DEFAULT_EXPENSE_BODY,
