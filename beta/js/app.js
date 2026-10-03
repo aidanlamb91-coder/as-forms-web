@@ -1,5 +1,5 @@
 /**
- * AS Forms web 1.0.0-web — Expenses | Timesheets | Settings (Android 1.0.0 parity).
+ * AS Forms web 1.0.1-web — Expenses | Timesheets | Settings (Android 1.0.0 parity) + guided tour (js/tutorial.js).
  * Days worked lives inside Timesheets → Completed (tally years Mar–Feb); Settings is a list of
  * banner buttons opening sub-pages; installable PWA (manifest + sw.js, see pwa.js).
  */
@@ -195,11 +195,13 @@
   }
   function overlayOpen() {
     const root = $('#modal-root');
-    return (root && !root.classList.contains('hidden')) ||
+    return (globalThis.AsTutorial && AsTutorial.isOpen()) ||
+      (root && !root.classList.contains('hidden')) ||
       (globalThis.AsAttachments && AsAttachments.isViewerOpen()) ||
       !!document.querySelector('.sheet-backdrop');
   }
   function closeOverlays() {
+    if (globalThis.AsTutorial && AsTutorial.isOpen()) { AsTutorial.skip(); return; } // Back = Skip
     if (globalThis.AsAttachments && AsAttachments.isViewerOpen()) { AsAttachments.closeViewer(); return; }
     const sheet = document.querySelector('.sheet-backdrop');
     if (sheet) { sheet.remove(); return; }
@@ -3084,6 +3086,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     if ((s.displayName || '').trim() || s.namePromptSeen) {
       return Promise.resolve(false);
     }
+    state.namePromptShown = true;
     return new Promise((resolve) => {
       const root = $('#modal-root');
       root.className = 'modal-backdrop';
@@ -3139,16 +3142,57 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     });
   }
 
+  // ——— Guided tour (js/tutorial.js) ———
+  // The tour is a sandboxed simulation: it draws its own mock screens and never reads/writes
+  // claims, timesheets, receipts or settings. Only localStorage `as-forms-tutorialSeen` is set.
+  function hideTourBanner() {
+    const b = $('#tour-banner');
+    if (b) b.classList.add('hidden');
+  }
+  function startTour() {
+    if (!globalThis.AsTutorial || AsTutorial.isOpen()) return;
+    AsTutorial.markSeen();
+    hideTourBanner();
+    AsTutorial.start({
+      displayName: AsStorage.getSettings().displayName || '',
+      onEnd: (reason) => { if (reason === 'done') toast('Replay any time: Settings → Tutorial'); },
+    });
+  }
+  /** First open (just after the name prompt) → run the tour. Existing users → one-time banner. */
+  async function offerTutorial() {
+    if (!globalThis.AsTutorial || AsTutorial.seen()) return;
+    if (state.namePromptShown) { startTour(); return; }
+    let existing = true;
+    try {
+      const s = AsStorage.getSettings();
+      existing = !!((s.displayName || '').trim() || s.namePromptSeen);
+      if (!existing) {
+        const [claims, sheets] = await Promise.all([AsStorage.listClaims(), AsStorage.listTimesheets()]);
+        existing = claims.length + sheets.length > 0;
+      }
+    } catch (_) { existing = true; }
+    if (existing) $('#tour-banner').classList.remove('hidden');
+    else startTour();
+  }
+  function wireTour() {
+    $('#btn-tour-banner').addEventListener('click', startTour);
+    $('#btn-tour-banner-dismiss').addEventListener('click', () => { AsTutorial.markSeen(); hideTourBanner(); });
+    $('#btn-settings-tutorial').addEventListener('click', startTour);
+    $('#btn-about-replay-tour').addEventListener('click', startTour);
+  }
+
   async function boot() {
     globalThis.__asToast = toast;
     initHistory();
     wire();
+    wireTour();
     AsPwa.register();
     AsStorage.saveSettings(AsStorage.getSettings());
     updateListHeaders();
     await promptDisplayNameIfNeeded();
     await showExpenses();
     refreshInstallUi();
+    await offerTutorial();
   }
 
   if (document.readyState === 'loading') {
