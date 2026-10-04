@@ -14,8 +14,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=1.0.2-web" />
-  <link rel="stylesheet" href="css/tutorial.css?v=1.0.2-web" />
+  <link rel="stylesheet" href="css/app.css?v=1.0.3-web" />
+  <link rel="stylesheet" href="css/tutorial.css?v=1.0.3-web" />
 </head>
 <body>
   <div id="app">
@@ -130,7 +130,7 @@
         <button type="button" class="settings-banner" id="btn-goto-import"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3V3zM4 18h16v3H4v-3z"/></g></svg></span><span class="sb-text"><span class="sb-title">Import</span><span class="sb-sub" id="sb-import-sub">Old timesheets and expense zips</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
         <button type="button" class="settings-banner" id="btn-goto-install"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M7 1h10a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zm0 3v15h10V4H7zm4 2h2v5.2l1.8-1.8 1.4 1.4L12 14l-4.2-4.2 1.4-1.4L11 11.2V6z"/></g></svg></span><span class="sb-text"><span class="sb-title">Install app</span><span class="sb-sub" id="sb-install-sub">Add AS Forms to your Home Screen</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
         <button type="button" class="settings-banner" id="btn-settings-tutorial"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-2 5.5v9l7-4.5-7-4.5z"/></g></svg></span><span class="sb-text"><span class="sb-title">Tutorial</span><span class="sb-sub">Replay the quick tour</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
-        <button type="button" class="settings-banner" id="btn-goto-about"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 8v7h2v-7h-2zm0-3v2h2V7h-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">About</span><span class="sb-sub" id="sb-about-sub">1.0.2-web · OCR info</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-about"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 8v7h2v-7h-2zm0-3v2h2V7h-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">About</span><span class="sb-sub" id="sb-about-sub">1.0.3-web · OCR info</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
       </div>
     </section>
 
@@ -228,7 +228,7 @@
         <h1>About</h1>
       </header>
       <div class="panel">
-        <p class="hint" id="about-version">AS Forms <strong>1.0.2-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>1.0.3-web</strong></p>
         <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
         <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app and kept for offline use after the first visit.</p>
         <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
@@ -569,30 +569,32 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
-  <script src="lib/jszip.min.js?v=1.0.2-web"></script>
-  <script src="js/email-templates.js?v=1.0.2-web"></script>
-  <script src="js/expense-category.js?v=1.0.2-web"></script>
-  <script src="js/offshore-days.js?v=1.0.2-web"></script>
-  <script src="js/expense-tally.js?v=1.0.2-web"></script>
-  <script src="js/days-worked-summary.js?v=1.0.2-web"></script>
-  <script src="js/storage.js?v=1.0.2-web"></script>
-  <script src="js/docx-filler.js?v=1.0.2-web"></script>
-  <script src="js/timesheet-layout.js?v=1.0.2-web"></script>
-  <script src="js/timesheet-filler.js?v=1.0.2-web"></script>
-  <script src="js/timesheet-reader.js?v=1.0.2-web"></script>
-  <script src="js/expense-zip-reader.js?v=1.0.2-web"></script>
-  <script src="js/image-merge.js?v=1.0.2-web"></script>
-  <script src="js/export.js?v=1.0.2-web"></script>
-  <script src="js/folder-sync.js?v=1.0.2-web"></script>
-  <script src="js/receipt-parse.js?v=1.0.2-web"></script>
-  <script src="js/receipt-ocr.js?v=1.0.2-web"></script>
-  <script src="js/summary-pdf.js?v=1.0.2-web"></script>
-  <script src="js/hold-swipe.js?v=1.0.2-web"></script>
-  <script src="js/zoom-view.js?v=1.0.2-web"></script>
-  <script src="js/attachments.js?v=1.0.2-web"></script>
-  <script src="js/timesheet-preview.js?v=1.0.2-web"></script>
-  <script src="js/pwa.js?v=1.0.2-web"></script>
-  <script src="js/tutorial.js?v=1.0.2-web"></script>
-  <script src="js/app.js?v=1.0.2-web"></script>
+  <script src="lib/jszip.min.js?v=1.0.3-web"></script>
+  <script src="js/email-templates.js?v=1.0.3-web"></script>
+  <script src="js/expense-category.js?v=1.0.3-web"></script>
+  <script src="js/offshore-days.js?v=1.0.3-web"></script>
+  <script src="js/expense-tally.js?v=1.0.3-web"></script>
+  <script src="js/days-worked-summary.js?v=1.0.3-web"></script>
+  <script src="js/storage.js?v=1.0.3-web"></script>
+  <script src="js/docx-filler.js?v=1.0.3-web"></script>
+  <script src="js/timesheet-layout.js?v=1.0.3-web"></script>
+  <script src="js/timesheet-filler.js?v=1.0.3-web"></script>
+  <script src="js/timesheet-reader.js?v=1.0.3-web"></script>
+  <script src="js/expense-zip-reader.js?v=1.0.3-web"></script>
+  <script src="js/image-merge.js?v=1.0.3-web"></script>
+  <script src="js/export.js?v=1.0.3-web"></script>
+  <script src="js/folder-sync.js?v=1.0.3-web"></script>
+  <script src="js/receipt-parse.js?v=1.0.3-web"></script>
+  <script src="js/receipt-ocr.js?v=1.0.3-web"></script>
+  <script src="js/summary-pdf.js?v=1.0.3-web"></script>
+  <script src="js/hold-swipe.js?v=1.0.3-web"></script>
+  <script src="js/tab-swipe.js?v=1.0.3-web"></script>
+  <script src="js/year-picker.js?v=1.0.3-web"></script>
+  <script src="js/zoom-view.js?v=1.0.3-web"></script>
+  <script src="js/attachments.js?v=1.0.3-web"></script>
+  <script src="js/timesheet-preview.js?v=1.0.3-web"></script>
+  <script src="js/pwa.js?v=1.0.3-web"></script>
+  <script src="js/tutorial.js?v=1.0.3-web"></script>
+  <script src="js/app.js?v=1.0.3-web"></script>
 </body>
 </html>

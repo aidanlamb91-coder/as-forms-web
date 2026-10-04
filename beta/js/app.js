@@ -1,5 +1,5 @@
 /**
- * AS Forms web 1.0.2-web — Expenses | Timesheets | Settings (Android 1.0.0 parity) + guided tour (js/tutorial.js).
+ * AS Forms web 1.0.3-web — Expenses | Timesheets | Settings (Android 1.0.0 parity) + guided tour (js/tutorial.js).
  * Days worked lives inside Timesheets → Completed (tally years Mar–Feb); Settings is a list of
  * banner buttons opening sub-pages; installable PWA (manifest + sw.js, see pwa.js).
  */
@@ -1175,15 +1175,9 @@
       if (m === selectedMonth) opt.selected = true;
       monthSel.appendChild(opt);
     }
-    const cy = new Date().getFullYear();
-    yearSel.innerHTML = '';
-    for (let y = cy - 2; y <= cy + 2; y++) {
-      const opt = document.createElement('option');
-      opt.value = String(y);
-      opt.textContent = String(y);
-      if (y === selectedYear) opt.selected = true;
-      yearSel.appendChild(opt);
-    }
+    // 1.0.3: was current year ± 2 only (2024–2028 in 2026); now 2000 … this year + 10
+    // (plus the timesheet's own year) and ◀ / ▶ step beyond — see js/year-picker.js.
+    AsYearPicker.fillYearSelect(yearSel, selectedYear);
   }
 
   async function showTimesheets() {
@@ -2673,7 +2667,35 @@
     };
   }
 
+  /** 1.0.3: swipe between the top-level tabs (js/tab-swipe.js); slide in from the swipe side. */
+  const TAB_ORDER = ['expenses', 'timesheets', 'settings'];
+  async function swipeToTab(dir) {
+    const next = AsTabSwipe.target(nav.current, dir, TAB_ORDER);
+    if (!next) return;
+    if (next === 'expenses') await showExpenses();
+    else if (next === 'timesheets') await showTimesheets();
+    else await showSettings();
+    const view = document.querySelector('#view-' + next);
+    if (!view) return;
+    view.classList.remove('tab-in-left', 'tab-in-right');
+    void view.offsetWidth; // restart the animation
+    document.body.classList.add('tab-anim');
+    view.classList.add(dir > 0 ? 'tab-in-right' : 'tab-in-left');
+    const end = () => { view.classList.remove('tab-in-left', 'tab-in-right'); document.body.classList.remove('tab-anim'); };
+    view.addEventListener('animationend', end, { once: true });
+    setTimeout(end, 600); // safety net (animation skipped / tab hidden)
+  }
+  function wireTabSwipe() {
+    AsTabSwipe.attach({
+      canSwipe: () => TAB_VIEWS.has(nav.current) && !overlayOpen() && !document.querySelector('.swipe-row.armed'),
+      onSwipe: (dir) => { swipeToTab(dir).catch((e) => console.error(e)); },
+    });
+  }
+
   function wire() {
+    wireTabSwipe();
+    AsYearPicker.attachStepper($('#ts-new-year'));
+    AsYearPicker.attachStepper($('#ts-edit-year'));
     $$('.bottom-nav button').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tab = btn.getAttribute('data-nav');

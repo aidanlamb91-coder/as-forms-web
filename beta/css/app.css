@@ -831,3 +831,25 @@ html.viewer-open, html.viewer-open body { overflow: hidden; }
 .toast { width: max-content; text-align: center; }
 #install-actions .hint { margin-top: 8px; }
 .receipt-preview .att-thumb img { border: none; border-radius: 0; max-height: none; max-width: none; }
+
+/* 1.0.3: timesheet Year picker — ◀ select ▶ (any year; quick list 2000 … this year + 10) */
+.year-stepper { display: flex; align-items: center; gap: 6px; }
+.year-stepper select { flex: 1; min-width: 0; }
+.year-stepper .year-step {
+  flex: 0 0 auto; min-width: 40px; height: 40px; padding: 0 10px;
+  font-size: .95rem; line-height: 1; border-radius: 10px;
+}
+.year-stepper .year-step:disabled { opacity: .35; }
+
+/* 1.0.3: swipe between top-level tabs — the new tab slides in from the swipe side */
+@keyframes tab-in-from-right { from { transform: translateX(28%); opacity: .2; } to { transform: none; opacity: 1; } }
+@keyframes tab-in-from-left { from { transform: translateX(-28%); opacity: .2; } to { transform: none; opacity: 1; } }
+.view.tab-in-right { animation: tab-in-from-right .26s cubic-bezier(.2, .8, .2, 1); }
+.view.tab-in-left { animation: tab-in-from-left .26s cubic-bezier(.2, .8, .2, 1); }
+/* Clip the sliding view at the app column: on mobile Chrome a wider page would otherwise grow the
+   layout viewport for a moment (bottom nav jumps off-screen). clip ≠ scroll container. */
+body.tab-anim #app { overflow-x: hidden; overflow-x: clip; }
+@media (prefers-reduced-motion: reduce) {
+  @keyframes tab-fade-in { from { opacity: .4; } to { opacity: 1; } }
+  .view.tab-in-right, .view.tab-in-left { animation: tab-fade-in .12s linear; }
+}

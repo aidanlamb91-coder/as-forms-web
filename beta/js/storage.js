@@ -10,7 +10,7 @@
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '1.0.2-web';
+  const APP_VERSION = '1.0.3-web';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
