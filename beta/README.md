@@ -1,10 +1,15 @@
-# AS Forms — Web beta (`1.0.1-web beta`)
+# AS Forms — Web beta (`1.0.2-web beta`)
 
-Beta of **1.0.1-web**: feature parity with Android 1.0.0, installable to the Home Screen (PWA), and a
+Beta of **1.0.2-web**: feature parity with Android 1.0.0, installable to the Home Screen (PWA), and a
 first-run guided tour.
 The site root stays on stable **0.3.15-web** until this beta is approved.
 
 - https://aidanlamb91-coder.github.io/as-forms-web/beta/
+
+New in 1.0.2: the tour now starts by pointing out the **Expenses** tab and, before the timesheet part,
+the **Timesheets** tab (a separate section); the auto-filled parts play more slowly so you can follow them;
+and a **◀ Back** button (next to Skip) steps back through the tour — the browser/phone Back button does the
+same (on the first step it skips). Esc still skips. 15 steps.
 
 New in 1.0.1: a quick guided tour (spotlight practice run of a claim, a receipt, a timesheet entry and
 the Days worked banner). It is a simulation — nothing is saved — and shows once after the name prompt;

@@ -6,7 +6,7 @@
  * Root (stable) and /beta/ have separate scopes on the same origin. Cache names carry the
  * scope path so neither ever deletes the other's caches, and the root worker ignores /beta/.
  */
-const VERSION = '1.0.1-web';
+const VERSION = '1.0.2-web';
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';

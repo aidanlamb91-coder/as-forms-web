@@ -1,5 +1,5 @@
 /**
- * AS Forms web 1.0.1-web — Expenses | Timesheets | Settings (Android 1.0.0 parity) + guided tour (js/tutorial.js).
+ * AS Forms web 1.0.2-web — Expenses | Timesheets | Settings (Android 1.0.0 parity) + guided tour (js/tutorial.js).
  * Days worked lives inside Timesheets → Completed (tally years Mar–Feb); Settings is a list of
  * banner buttons opening sub-pages; installable PWA (manifest + sw.js, see pwa.js).
  */
@@ -201,7 +201,12 @@
       !!document.querySelector('.sheet-backdrop');
   }
   function closeOverlays() {
-    if (globalThis.AsTutorial && AsTutorial.isOpen()) { AsTutorial.skip(); return; } // Back = Skip
+    if (globalThis.AsTutorial && AsTutorial.isOpen()) {
+      // 1.0.2: phone / browser Back = previous tour step (Skip on the first step).
+      // The popstate used up the tour's history entry, so put it back.
+      if (AsTutorial.canGoBack()) { AsTutorial.back(); reconcileHistory(); } else AsTutorial.skip();
+      return;
+    }
     if (globalThis.AsAttachments && AsAttachments.isViewerOpen()) { AsAttachments.closeViewer(); return; }
     const sheet = document.querySelector('.sheet-backdrop');
     if (sheet) { sheet.remove(); return; }

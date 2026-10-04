@@ -1,4 +1,4 @@
-/* AS Forms web 1.0.1 — guided tour (spotlight simulation). See js/tutorial.js. */
+/* AS Forms web 1.0.2 — guided tour (spotlight simulation). See js/tutorial.js. */
 html.tut-open, html.tut-open body { overflow: hidden; }
 
 .tut-root {
@@ -99,13 +99,23 @@ html.tut-open, html.tut-open body { overflow: hidden; }
 }
 .tut-next:focus-visible { outline: 3px solid #111; outline-offset: 2px; }
 
-.tut-skip {
+/* Top-right tour chrome: ◀ Back (from step 2) + Skip */
+.tut-chrome {
   position: fixed; z-index: 9; top: calc(10px + env(safe-area-inset-top, 0px)); right: 12px;
+  display: flex; gap: 8px; align-items: center;
+}
+.tut-skip, .tut-back {
   border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer;
   background: rgba(255,255,255,.94); color: #111; font-weight: 750; font-size: .9rem;
   box-shadow: 0 2px 12px rgba(0,0,0,.3);
 }
-.tut-skip:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.tut-back { padding: 8px 14px; animation: tut-fade .2s ease-out; }
+.tut-back[hidden] { display: none; }
+.tut-skip:focus-visible, .tut-back:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Long captions (tab intros) may wrap to two lines */
+.tut-cap.wrap { white-space: normal; border-radius: 20px; max-width: min(330px, calc(100vw - 20px)); line-height: 1.3; }
+/* Screen rebuilt after ◀ Back (or first open): quick fade */
+.tut-screen.tut-jump { animation: tut-fade .25s ease-out; }
 .tut-progress { position: fixed; z-index: 8; top: env(safe-area-inset-top, 0px); left: 0; right: 0; height: 3px; background: rgba(255,255,255,.18); pointer-events: none; }
 .tut-progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .45s ease; }
 

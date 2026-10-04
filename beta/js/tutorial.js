@@ -1,5 +1,9 @@
 /**
- * AS Forms web 1.0.1 — first-run guided tour (a controlled simulation).
+ * AS Forms web 1.0.2 — first-run guided tour (a controlled simulation).
+ *
+ * 1.0.2: 15 steps (tab intros for Expenses and Timesheets), slower auto-filled parts, and a
+ * ◀ Back control (also phone/browser Back) that returns to the previous step. Every step can be
+ * re-entered from either direction: `enterScene(i)` rebuilds the mock state at the start of step i.
  *
  * Sandbox: the tour draws its OWN mock screens (same CSS classes as the real app) inside a
  * full-screen layer. It never calls AsStorage, IndexedDB, folder sync or any app function, and
@@ -12,14 +16,16 @@
  * prefers-reduced-motion → fades instead of movement.
  *
  *   AsTutorial.start({ displayName, onEnd(reason) })  → Promise<{ reason: 'done' | 'skip' }>
- *   AsTutorial.isOpen(), AsTutorial.skip(), AsTutorial.seen(), AsTutorial.markSeen()
+ *   AsTutorial.isOpen(), AsTutorial.skip(), AsTutorial.back(), AsTutorial.canGoBack(),
+ *   AsTutorial.seen(), AsTutorial.markSeen()
  */
 (function (global) {
   'use strict';
 
   const SEEN_KEY = 'as-forms-tutorialSeen';
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const STEPS = ['e-new', 'e-line', 'e-food', 'e-attach', 'e-accept', 'e-swipe', 't-month', 't-start', 't-end', 't-offshore', 'd-big', 'd-tiles', 'd-year'];
+  const STEPS = ['e-tab', 'e-new', 'e-line', 'e-food', 'e-attach', 'e-accept', 'e-swipe',
+    't-tab', 't-month', 't-start', 't-end', 't-offshore', 'd-big', 'd-tiles', 'd-year'];
   // Material "touch_app" glyph (Apache 2.0)
   const HAND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.91-1.38z"/></svg>';
 
@@ -33,6 +39,36 @@
   }
   function isOpen() { return !!active; }
   function skip() { if (active) active.finish('skip'); }
+  /** Previous step (no-op on the first step). */
+  function back() { if (active) active.back(); }
+  /** Tour pacing in ms (1.0.2: auto-filled parts ~1.5–2× slower than 1.0.1). */
+  function timings(reduced) {
+    return {
+      intro: reduced ? 150 : 380,
+      type: reduced ? 60 : 140, // per character (1.0.1: 80, reduced 35)
+      beforeType: 650, // spotlight on the field → first character (1.0.1: 320 / 200)
+      afterType: 700, // after the last character (1.0.1: 300 / 200)
+      tabOpen: reduced ? 300 : 500, // after tapping a tab, before the section shows
+      prefixHold: 1300, // "Food - " prefix shown (1.0.1: 650)
+      receiptIn: reduced ? 150 : 450, // receipt slides in (1.0.1: 280 / 80)
+      scan: 2400, // scanning shimmer (1.0.1: 1900)
+      suggestIn: reduced ? 300 : 600, // suggestion card appears (1.0.1: 300 / 80)
+      fieldGap: reduced ? 200 : 350, // between £ fields filling (1.0.1: 170 / 60)
+      afterFill: 900, // all fields filled → Save (1.0.1: 450)
+      beforeAuto: 450, // spotlight off → the app presses a button for you (1.0.1: 0)
+      autoTap: 600, // after an automatic press (1.0.1: 260–320)
+      afterGo: reduced ? 450 : 700, // after a screen change (1.0.1: 250–350 / 100)
+      showResult: 2000, // new line / entry spotlighted (1.0.1: 1300)
+      monthList: 900, monthPick: 800, monthSet: 800, // month drop-down (1.0.1: 500 / 450 / 380)
+      rangeDay: 55, // range lights up day by day (1.0.1: 28)
+      rangeHold: 1200, // whole range shown (1.0.1: 650)
+      offshoreHold: 700, // Offshore ticked (1.0.1: 350)
+      swipeOut: reduced ? 150 : 380,
+      swipeToast: reduced ? 600 : 1100, // "Marked complete" (1.0.1: 650 / 300)
+    };
+  }
+
+  function canGoBack() { return !!active && active.canGoBack(); }
   function currentStep() { return active ? active.step : null; }
 
   function esc(s) {
@@ -50,10 +86,15 @@
     const reduced = !!(global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches);
     const speed = Math.max(0.1, Number(opts.speed || global.AS_TUTORIAL_SPEED || 1));
     const CANCEL = new Error('tutorial-cancelled');
+    const BACK = new Error('tutorial-back');
     const ctx = {
       step: null, finished: false, cancelled: false, timers: new Set(), rejects: new Set(),
       target: null, pad: 6, radius: 12, lastKey: '', raf: 0, onHit: null, onNext: null, swipe: null,
+      waiting: false, backTo: -1, backs: 0,
     };
+    // Pauses (ms at speed 1). 1.0.2 slowed every auto-filled part ~1.5–2× so you can see it happen;
+    // tap/caption timing is unchanged. Reduced motion keeps the reading pauses, drops movement.
+    const T = timings(reduced);
     let resolveEnd;
     ctx.promise = new Promise((r) => { resolveEnd = r; });
 
@@ -91,7 +132,8 @@
       '<button type="button" class="tut-hit" hidden></button>' +
       '<div class="tut-cap" aria-live="polite"><span class="tut-cap-text"></span><button type="button" class="tut-next hidden">Next</button></div>' +
       '<div class="tut-progress" aria-hidden="true"><span></span></div>' +
-      '<button type="button" class="tut-skip">Skip</button>' +
+      '<div class="tut-chrome"><button type="button" class="tut-back" aria-label="Previous step" hidden>◀ Back</button>' +
+      '<button type="button" class="tut-skip">Skip</button></div>' +
       '<div class="tut-toast hidden" role="status"></div>';
     const $r = (sel) => root.querySelector(sel);
     const stage = $r('.tut-stage');
@@ -102,6 +144,7 @@
     const nextBtn = $r('.tut-next');
     const bar = $r('.tut-progress span');
     const toastEl = $r('.tut-toast');
+    const backBtn = $r('.tut-back');
     const q = (name) => stage.querySelector('.tut-screen:last-child [data-t="' + name + '"]');
 
     // Block the real app underneath (keyboard + pointer), remember what to restore.
@@ -117,7 +160,7 @@
     function waitable(executor) {
       return new Promise((resolve, reject) => {
         if (ctx.cancelled) { reject(CANCEL); return; }
-        const rej = () => reject(CANCEL);
+        const rej = (err) => reject(err || CANCEL);
         ctx.rejects.add(rej);
         executor((v) => {
           ctx.rejects.delete(rej);
@@ -200,6 +243,7 @@
     function showCaption(text, o) {
       o = o || {};
       capText.textContent = text;
+      cap.classList.toggle('wrap', text.length > 30);
       nextBtn.textContent = o.next || 'Next';
       nextBtn.classList.toggle('hidden', !o.next);
       cap.classList.remove('show');
@@ -214,6 +258,7 @@
       root.dataset.step = id || '';
       const i = STEPS.indexOf(id);
       if (i >= 0) bar.style.width = Math.round(((i + 1) / STEPS.length) * 100) + '%';
+      backBtn.hidden = !(i >= 1);
     }
     function nudge() {
       hole.classList.remove('tut-nudge');
@@ -279,7 +324,7 @@
       for (const ch of text) {
         input.value += ch;
         if (onChar) onChar(input.value);
-        await sleep(reduced ? 35 : 80);
+        await sleep(T.type);
       }
       input.classList.remove('tut-typing');
     }
@@ -302,7 +347,9 @@
       await sleep(reduced ? 0 : 180);
       showCaption(caption);
       try { hit.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+      ctx.waiting = true;
       await waitable((done) => { ctx.onHit = () => { ctx.onHit = null; done(); }; });
+      ctx.waiting = false;
       hit.hidden = true;
       hole.classList.remove('tut-ring');
       hideCaption();
@@ -318,7 +365,9 @@
       await sleep(reduced ? 0 : 200);
       showCaption(caption, { next: o.button || 'Next' });
       try { nextBtn.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+      ctx.waiting = true;
       await waitable((done) => { ctx.onNext = () => { ctx.onNext = null; done(); }; });
+      ctx.waiting = false;
       hideCaption();
       await sleep(120);
     }
@@ -347,11 +396,11 @@
           : '') + '</div>' +
         (withClaim ? '' : '<p class="empty">No claims yet. Tap <strong>+ New</strong> to start.</p>');
     }
-    function scrClaim(withLine) {
-      return topbar(withLine ? 'P1234' : 'Claim', '<button type="button" class="btn danger ghost">🗑</button>') +
+    function scrClaim(withLine, typed) {
+      return topbar(withLine || typed ? 'P1234' : 'Claim', '<button type="button" class="btn danger ghost">🗑</button>') +
         '<form class="panel">' +
         '<label>Job number<div class="job-prefix" data-t="jobwrap"><span class="pfx">P</span>' +
-        '<input type="text" readonly tabindex="-1" data-t="job" value="' + (withLine ? '1234' : '') + '" /></div></label>' +
+        '<input type="text" readonly tabindex="-1" data-t="job" value="' + (withLine || typed ? '1234' : '') + '" /></div></label>' +
         '<div class="grid-2"><label>Date from <input type="date" readonly tabindex="-1" value="' + iso + '" /></label>' +
         '<label>Date to <input type="date" readonly tabindex="-1" value="' + iso + '" /></label></div>' +
         '<div class="save-row"><button type="button" class="btn primary">Save claim</button>' +
@@ -476,6 +525,65 @@
     }
 
     // ——— The script ———
+    function navBtn(name) { return root.querySelector('.tut-nav [data-tn="' + name + '"]'); }
+    /** Food chosen: chip on + "Food - " prefix (the real app's fixed category prefix). */
+    function applyFood(animate) {
+      q('cat-MISC').classList.remove('on');
+      q('cat-FOOD').classList.add('on');
+      const pfx = q('pfx');
+      pfx.textContent = 'Food - ';
+      if (animate) pfx.classList.add('tut-pfx-in');
+    }
+    function applyStart() {
+      q('d' + dStart).classList.add('range-start', 'pending');
+      q('start').value = String(dStart);
+      q('cal-status').textContent = 'Tap end';
+    }
+    function rangeStatus() { return dStart + '–' + dEnd + ' · ' + (dEnd - dStart + 1) + ' days'; }
+
+    /** Rebuild the mock app exactly as it looks at the START of step i (Back / first run). */
+    async function enterScene(i) {
+      const id = STEPS[i];
+      clearTarget();
+      root.querySelectorAll('.tut-tapdot').forEach((d) => d.remove());
+      toastEl.classList.add('hidden');
+      delete root.dataset.swipe;
+      let html;
+      if (i <= 1) html = scrExpenses(false);
+      else if (id === 'e-line') html = scrClaim(false, true);
+      else if (id === 'e-food' || id === 'e-attach' || id === 'e-accept') html = scrLine();
+      else if (id === 'e-swipe') html = scrExpenses(true);
+      else if (id === 't-tab') html = scrExpenses(false);
+      else if (id === 't-month') html = scrTsNew();
+      else if (id === 't-start' || id === 't-end' || id === 't-offshore') html = scrEntry();
+      else html = scrTimesheets(true);
+      navTab(i === 0 ? '' : i <= 7 ? 'expenses' : 'timesheets');
+      const next = document.createElement('div');
+      next.className = 'tut-screen tut-jump';
+      next.innerHTML = '<div class="tut-page">' + html + '</div>';
+      stage.innerHTML = '';
+      stage.appendChild(next);
+      if (id === 'e-attach' || id === 'e-accept') applyFood(false);
+      if (id === 'e-accept') {
+        q('fname').textContent = 'demo-receipt.jpg';
+        q('preview').classList.remove('hidden');
+        q('suggest').classList.remove('hidden');
+      }
+      if (id === 't-end' || id === 't-offshore') applyStart();
+      if (id === 't-offshore') {
+        q('d' + dStart).classList.remove('pending');
+        for (let d = dStart + 1; d < dEnd; d++) q('d' + d).classList.add('in-range');
+        q('d' + dEnd).classList.add('range-end');
+        q('end').value = String(dEnd);
+        q('cal-status').textContent = rangeStatus();
+        q('cal').classList.add('hidden');
+        q('job').value = '1234';
+        q('desc').value = 'Offshore survey';
+      }
+      setStep(id);
+      bar.style.width = i === 0 ? '2%' : Math.round((i / STEPS.length) * 100) + '%';
+    }
+
     async function swipeStep() {
       const row = q('row');
       const front = q('front');
@@ -488,6 +596,7 @@
       hit.setAttribute('aria-label', 'Hold, then swipe left. Or press Next.');
       await sleep(reduced ? 0 : 200);
       showCaption('Hold, then swipe', { next: 'Next' });
+      ctx.waiting = true;
       const how = await waitable((done) => {
         let pid = null;
         let sx = 0;
@@ -537,6 +646,7 @@
         };
         ctx.onNext = () => { ctx.onNext = null; ctx.swipe = null; done('next'); };
       });
+      ctx.waiting = false;
       ctx.swipe = null;
       root.dataset.swipe = how;
       hit.hidden = true;
@@ -545,163 +655,216 @@
       row.classList.remove('tut-demo', 'dragging');
       row.classList.add('armed', 'show-complete');
       front.style.transform = 'translateX(-105%)';
-      await sleep(reduced ? 150 : 380);
+      await sleep(T.swipeOut);
       row.classList.add('tut-gone');
       toast('Marked complete');
-      await sleep(reduced ? 300 : 650);
+      await sleep(T.swipeToast);
     }
+
+    /** "The app presses it for you": pause, touch dot, pause. */
+    async function auto(el) {
+      await sleep(T.beforeAuto);
+      autoTap(el);
+      await sleep(T.autoTap);
+    }
+
+    const STEP_RUN = {
+      // ——— Expenses ———
+      'e-tab': async () => {
+        await sleep(T.intro);
+        await tap(navBtn('expenses'), 'Expenses — your claims and receipts live here', { step: 'e-tab', pad: 2, label: 'Expenses tab' });
+        navTab('expenses');
+        await sleep(T.tabOpen);
+        await go(scrExpenses(false), 'fade');
+        await sleep(300);
+      },
+      'e-new': async () => {
+        await tap(q('new'), 'Tap +', { step: 'e-new', label: 'New claim' });
+        await go(scrClaim(false), 'push');
+        setTarget(q('jobwrap'), { pad: 6 });
+        await sleep(T.beforeType);
+        const title = q('title');
+        await typeText(q('job'), '1234', (v) => { title.textContent = 'P' + v; });
+        await sleep(T.afterType);
+      },
+      'e-line': async () => {
+        await tap(q('add-line'), 'Add a line', { step: 'e-line' });
+        await go(scrLine(), 'push');
+      },
+      'e-food': async () => {
+        await tap(q('cat-FOOD'), 'Food', { step: 'e-food', pad: 4 });
+        applyFood(true);
+        setTarget(q('pfx').parentElement, { pad: 6 });
+        await sleep(T.prefixHold);
+      },
+      'e-attach': async () => {
+        await tap(q('attach'), 'Attach a receipt', { step: 'e-attach', pad: 8 });
+        q('fname').textContent = 'demo-receipt.jpg';
+        const preview = q('preview');
+        preview.classList.remove('hidden');
+        await sleep(T.receiptIn);
+        await reveal(preview);
+        setTarget(q('rimg'), { pad: 6 });
+        preview.classList.add('scanning');
+        q('ocr-status').classList.remove('hidden');
+        await sleep(T.scan);
+        preview.classList.remove('scanning');
+        q('ocr-status').classList.add('hidden');
+        const sug = q('suggest');
+        sug.classList.remove('hidden');
+        sug.classList.add('tut-pop');
+        await sleep(T.suggestIn);
+      },
+      'e-accept': async () => {
+        await tap(q('use'), 'Accept', { step: 'e-accept', label: 'Use these' });
+        q('suggest').classList.add('hidden');
+        const fields = q('fields');
+        await reveal(fields);
+        setTarget(fields, { pad: 8 });
+        await sleep(T.beforeType);
+        await typeText(q('desc'), 'Demo Café');
+        q('date').value = '2026-09-15';
+        for (const [k, v] of [['net', '10.42'], ['vat', '2.08'], ['total', '12.50']]) {
+          fill(q(k), v);
+          await sleep(T.fieldGap);
+        }
+        await sleep(T.afterFill);
+        const save = q('save');
+        clearTarget();
+        await reveal(save);
+        await auto(save);
+        await go(scrClaim(true), 'pop');
+        await sleep(T.afterGo);
+        setTarget(q('line-card'), { pad: 6 });
+        await sleep(T.showResult);
+        clearTarget();
+        await auto(q('back'));
+        await go(scrExpenses(true), 'pop');
+        await sleep(T.afterGo);
+      },
+      'e-swipe': swipeStep,
+      // ——— Timesheets (a separate section) ———
+      't-tab': async () => {
+        await tap(navBtn('timesheets'), 'Timesheets — a separate section for your days worked', { step: 't-tab', pad: 2, label: 'Timesheets tab' });
+        navTab('timesheets');
+        await sleep(T.tabOpen);
+        await go(scrTimesheets(false), 'fade');
+        await sleep(T.afterGo);
+        await auto(q('new'));
+        await go(scrTsNew(), 'push');
+      },
+      't-month': async () => {
+        await tap(q('month'), 'Pick a month', { step: 't-month' });
+        const list = q('month-list');
+        list.classList.remove('hidden');
+        setTarget(list, { pad: 4 });
+        await sleep(T.monthList);
+        q('month-opt').classList.add('on');
+        await sleep(T.monthPick);
+        list.classList.add('hidden');
+        q('month').querySelector('.v').textContent = monthName;
+        setTarget(q('month'), { pad: 6 });
+        await sleep(T.monthSet);
+        clearTarget();
+        await auto(q('create'));
+        await go(scrTsEdit(false), 'push');
+        await sleep(T.afterGo);
+        await auto(q('add-entry'));
+        await go(scrEntry(), 'push');
+      },
+      't-start': async () => {
+        await tap(q('d' + dStart), 'Tap start', { step: 't-start', pad: 3, label: 'Day ' + dStart });
+        applyStart();
+      },
+      't-end': async () => {
+        await tap(q('d' + dEnd), 'Tap end', { step: 't-end', pad: 3, label: 'Day ' + dEnd });
+        q('d' + dStart).classList.remove('pending');
+        setTarget(q('cal'), { pad: 4 });
+        for (let d = dStart + 1; d < dEnd; d++) {
+          q('d' + d).classList.add('in-range');
+          if (!reduced) await sleep(T.rangeDay);
+        }
+        q('d' + dEnd).classList.add('range-end');
+        q('end').value = String(dEnd);
+        q('cal-status').textContent = rangeStatus();
+        await sleep(T.rangeHold);
+        await auto(q('cal-done'));
+        q('cal').classList.add('hidden');
+        const jd = q('jobdesc');
+        await reveal(jd);
+        setTarget(jd, { pad: 8 });
+        await sleep(T.beforeType);
+        await typeText(q('job'), '1234');
+        await typeText(q('desc'), 'Offshore survey');
+        await sleep(T.afterType);
+      },
+      't-offshore': async () => {
+        const off = q('type-OFFSHORE');
+        await tap(off, 'Offshore', { step: 't-offshore', pad: 3 });
+        off.querySelector('input').checked = true;
+        off.classList.add('tut-checked');
+        await sleep(T.offshoreHold);
+        clearTarget();
+        const saveE = q('save');
+        await reveal(saveE);
+        await auto(saveE);
+        await go(scrTsEdit(true), 'pop');
+        await sleep(T.afterGo);
+        setTarget(q('entry-card'), { pad: 6 });
+        await sleep(T.showResult);
+        // ——— Days worked (Timesheets → Completed) ———
+        clearTarget();
+        await auto(q('back'));
+        await go(scrTimesheets(false), 'pop');
+        await sleep(T.afterGo);
+        await auto(q('chip-completed'));
+        await go(scrTimesheets(true), 'fade');
+        await sleep(T.afterGo);
+      },
+      'd-big': () => slide(q('big'), 'Offshore days', 'd-big', { pad: 6 }),
+      'd-tiles': () => slide(q('tiles'), 'Holiday · Sick · Office · Training', 'd-tiles', { pad: 6 }),
+      'd-year': () => slide(q('year'), 'Each Mar–Feb tally year', 'd-year', { pad: 6, button: 'Done' }),
+    };
 
     async function script() {
-      // ——— Expenses ———
-      navTab('expenses');
-      await go(scrExpenses(false));
-      bar.style.width = '2%';
-      await sleep(reduced ? 150 : 380);
-      await tap(q('new'), 'Tap +', { step: 'e-new', label: 'New claim' });
-      await go(scrClaim(false), 'push');
-      setTarget(q('jobwrap'), { pad: 6 });
-      await sleep(320);
-      const title = q('title');
-      await typeText(q('job'), '1234', (v) => { title.textContent = 'P' + v; });
-      await sleep(300);
-      await tap(q('add-line'), 'Add a line', { step: 'e-line' });
-      await go(scrLine(), 'push');
-      await tap(q('cat-FOOD'), 'Food', { step: 'e-food', pad: 4 });
-      q('cat-MISC').classList.remove('on');
-      q('cat-FOOD').classList.add('on');
-      const pfx = q('pfx');
-      pfx.textContent = 'Food - ';
-      pfx.classList.add('tut-pfx-in');
-      setTarget(pfx.parentElement, { pad: 6 });
-      await sleep(650);
-      await tap(q('attach'), 'Attach a receipt', { step: 'e-attach', pad: 8 });
-      q('fname').textContent = 'demo-receipt.jpg';
-      const preview = q('preview');
-      preview.classList.remove('hidden');
-      await sleep(reduced ? 80 : 280);
-      await reveal(preview);
-      setTarget(q('rimg'), { pad: 6 });
-      preview.classList.add('scanning');
-      q('ocr-status').classList.remove('hidden');
-      await sleep(1900);
-      preview.classList.remove('scanning');
-      q('ocr-status').classList.add('hidden');
-      const sug = q('suggest');
-      sug.classList.remove('hidden');
-      sug.classList.add('tut-pop');
-      await sleep(reduced ? 80 : 300);
-      await tap(q('use'), 'Accept', { step: 'e-accept', label: 'Use these' });
-      sug.classList.add('hidden');
-      const fields = q('fields');
-      await reveal(fields);
-      setTarget(fields, { pad: 8 });
-      await sleep(200);
-      await typeText(q('desc'), 'Demo Café');
-      q('date').value = '2026-09-15';
-      for (const [k, v] of [['net', '10.42'], ['vat', '2.08'], ['total', '12.50']]) {
-        fill(q(k), v);
-        await sleep(reduced ? 60 : 170);
+      let i = 0;
+      let jumped = true;
+      while (i < STEPS.length) {
+        try {
+          if (jumped) { await enterScene(i); jumped = false; }
+          await STEP_RUN[STEPS[i]]();
+          i++;
+        } catch (e) {
+          if (e !== BACK || ctx.cancelled) throw e;
+          i = ctx.backTo;
+          jumped = true;
+        }
       }
-      await sleep(450);
-      const save = q('save');
-      clearTarget();
-      await reveal(save);
-      autoTap(save);
-      await sleep(320);
-      await go(scrClaim(true), 'pop');
-      await sleep(reduced ? 100 : 350);
-      setTarget(q('line-card'), { pad: 6 });
-      await sleep(1300);
-      clearTarget();
-      autoTap(q('back'));
-      await sleep(280);
-      await go(scrExpenses(true), 'pop');
-      await sleep(250);
-      await swipeStep();
-
-      // ——— Timesheets ———
-      clearTarget();
-      const tsTab = root.querySelector('.tut-nav [data-tn="timesheets"]');
-      autoTap(tsTab);
-      navTab('timesheets');
-      await sleep(250);
-      await go(scrTimesheets(false), 'fade');
-      await sleep(300);
-      autoTap(q('new'));
-      await sleep(320);
-      await go(scrTsNew(), 'push');
-      await tap(q('month'), 'Pick a month', { step: 't-month' });
-      const list = q('month-list');
-      list.classList.remove('hidden');
-      setTarget(list, { pad: 4 });
-      await sleep(500);
-      q('month-opt').classList.add('on');
-      await sleep(450);
-      list.classList.add('hidden');
-      q('month').querySelector('.v').textContent = monthName;
-      setTarget(q('month'), { pad: 6 });
-      await sleep(380);
-      clearTarget();
-      autoTap(q('create'));
-      await sleep(300);
-      await go(scrTsEdit(false), 'push');
-      await sleep(320);
-      autoTap(q('add-entry'));
-      await sleep(300);
-      await go(scrEntry(), 'push');
-      await tap(q('d' + dStart), 'Tap start', { step: 't-start', pad: 3, label: 'Day ' + dStart });
-      q('d' + dStart).classList.add('range-start', 'pending');
-      q('start').value = String(dStart);
-      q('cal-status').textContent = 'Tap end';
-      await tap(q('d' + dEnd), 'Tap end', { step: 't-end', pad: 3, label: 'Day ' + dEnd });
-      q('d' + dStart).classList.remove('pending');
-      setTarget(q('cal'), { pad: 4 });
-      for (let d = dStart + 1; d < dEnd; d++) {
-        q('d' + d).classList.add('in-range');
-        if (!reduced) await sleep(28);
-      }
-      q('d' + dEnd).classList.add('range-end');
-      q('end').value = String(dEnd);
-      q('cal-status').textContent = dStart + '–' + dEnd + ' · ' + (dEnd - dStart + 1) + ' days';
-      await sleep(650);
-      autoTap(q('cal-done'));
-      await sleep(260);
-      q('cal').classList.add('hidden');
-      const jd = q('jobdesc');
-      await reveal(jd);
-      setTarget(jd, { pad: 8 });
-      await typeText(q('job'), '1234');
-      await typeText(q('desc'), 'Offshore survey');
-      await sleep(200);
-      const off = q('type-OFFSHORE');
-      await tap(off, 'Offshore', { step: 't-offshore', pad: 3 });
-      off.querySelector('input').checked = true;
-      off.classList.add('tut-checked');
-      await sleep(350);
-      clearTarget();
-      const saveE = q('save');
-      await reveal(saveE);
-      autoTap(saveE);
-      await sleep(300);
-      await go(scrTsEdit(true), 'pop');
-      await sleep(reduced ? 100 : 350);
-      setTarget(q('entry-card'), { pad: 6 });
-      await sleep(1300);
-
-      // ——— Days worked (Timesheets → Completed) ———
-      clearTarget();
-      autoTap(q('back'));
-      await sleep(260);
-      await go(scrTimesheets(false), 'pop');
-      await sleep(300);
-      autoTap(q('chip-completed'));
-      await sleep(250);
-      await go(scrTimesheets(true), 'fade');
-      await sleep(300);
-      await slide(q('big'), 'Offshore days', 'd-big', { pad: 6 });
-      await slide(q('tiles'), 'Holiday · Sick · Office · Training', 'd-tiles', { pad: 6 });
-      await slide(q('year'), 'Each Mar–Feb tally year', 'd-year', { pad: 6, button: 'Done' });
     }
+
+    function canGoBack() { return !ctx.finished && STEPS.indexOf(ctx.step) >= 1; }
+    /**
+     * ◀ Back: waiting for you on step i → step i-1; while step i is playing (after your tap)
+     * → the start of step i again. Either way the step's screen is rebuilt from scratch.
+     */
+    function goBack() {
+      if (!canGoBack()) return;
+      const idx = STEPS.indexOf(ctx.step);
+      ctx.backTo = ctx.waiting ? idx - 1 : idx;
+      ctx.backs++;
+      root.dataset.backs = String(ctx.backs);
+      ctx.waiting = false;
+      ctx.onHit = null;
+      ctx.onNext = null;
+      ctx.swipe = null;
+      ctx.timers.forEach((t) => clearTimeout(t));
+      ctx.timers.clear();
+      const rs = Array.from(ctx.rejects);
+      ctx.rejects.clear();
+      rs.forEach((r) => r(BACK));
+    }
+    ctx.back = goBack;
+    ctx.canGoBack = canGoBack;
 
     // ——— Input ———
     function onKey(e) {
@@ -717,6 +880,7 @@
     }
     document.addEventListener('keydown', onKey, true);
     $r('.tut-skip').addEventListener('click', () => finish('skip'));
+    backBtn.addEventListener('click', () => goBack());
     $r('.tut-block').addEventListener('pointerdown', (e) => { e.preventDefault(); nudge(); });
     $r('.tut-block').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
     hit.addEventListener('click', () => { if (ctx.onHit) ctx.onHit(); });
@@ -761,5 +925,5 @@
     return ctx;
   }
 
-  global.AsTutorial = { start, isOpen, skip, seen, markSeen, currentStep, SEEN_KEY, STEPS };
+  global.AsTutorial = { start, isOpen, skip, back, canGoBack, seen, markSeen, currentStep, timings, SEEN_KEY, STEPS };
 })(typeof window !== 'undefined' ? window : globalThis);
