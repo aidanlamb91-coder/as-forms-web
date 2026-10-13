@@ -24,8 +24,8 @@
   const PLACEHOLDER_ONEDRIVE = 'PASTE-AZURE-APPLICATION-CLIENT-ID';
 
   const config = {
-    googleClientId: PLACEHOLDER_GOOGLE,
-    oneDriveClientId: PLACEHOLDER_ONEDRIVE,
+    googleClientId: '698136732826-r6hg6ojjlsg20uvbs1b62hrmtrm61uvf.apps.googleusercontent.com', // Web client, project as-forms-510718 (no secret: browser flow)
+    oneDriveClientId: '9c085b40-0d03-49db-8652-2a0a90f9b8a4', // same Azure app as Android (SPA platform)
   };
 
   /** This page's folder address, used as the OAuth redirect URI (no file name, no ?query or #hash). */
