@@ -1,6 +1,6 @@
-# AS Forms — Web beta (`1.0.3-web beta`)
+# AS Forms — Web beta (`1.1.0-web beta`)
 
-Beta of **1.0.3-web**: feature parity with Android 1.0.0, installable to the Home Screen (PWA), a
+Beta of **1.1.0-web**: feature parity with Android 1.1.0 (mileage claims, Google Drive / OneDrive sync, yearly receipt archive, Review & export), installable to the Home Screen (PWA), a
 first-run guided tour, swipe between tabs and an unlimited timesheet Year picker.
 The site root stays on stable **0.3.15-web** until this beta is approved.
 
@@ -34,3 +34,5 @@ The beta service worker is scoped to `/as-forms-web/beta/` and uses its own cach
 does not control the root site. Data (IndexedDB/localStorage) is shared with the root site in the
 same browser (same origin). On iPhone, the Home Screen app has its own storage separate from
 Safari — use Settings → Backup & restore to move data across.
+
+Android source: private repo `aidanlamb91-coder/as-forms-android`. APK downloads stay on this repo's releases.
