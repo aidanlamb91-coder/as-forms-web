@@ -30,6 +30,7 @@
   }
 
   function periodStartingMarch(marchYear) {
+    if (global.AsYearPeriods) return global.AsYearPeriods.periodStarting(marchYear);
     const endY = marchYear + 1;
     const end = { y: endY, m: 2, d: daysInMonth(endY, 2) };
     return {
@@ -68,8 +69,8 @@
    */
   function build(sources, startMarchYear) {
     const period = periodStartingMarch(startMarchYear);
-    const pStart = toDayNum(period.startInclusive.y, 3, 1);
-    const pEnd = toDayNum(period.endInclusive.y, 2, period.endInclusive.d);
+    const pStart = toDayNum(period.startInclusive.y, period.startInclusive.m, 1);
+    const pEnd = toDayNum(period.endInclusive.y, period.endInclusive.m, period.endInclusive.d);
     // Expand every Offshore entry into dates; first entry wins if a day repeats.
     const days = new Map();
     const sorted = (sources || []).slice().sort((a, b) => (a.year - b.year) || (a.month - b.month));

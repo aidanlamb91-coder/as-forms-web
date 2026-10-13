@@ -6,8 +6,25 @@
  * released past 30% of the row width; otherwise it springs back.
  * Moving before the hold completes is left to the browser, so vertical scrolling is untouched
  * (rows use touch-action: pan-y; once armed, touchmove is cancelled so iOS Safari does not scroll).
+ *
+ * 1.1.0-web: directions now match Android 1.0.8+ — items swipe toward the tab they are going to:
+ *   Active tab (opts.onComplete):   right = green Complete, left = red Delete
+ *   Completed tab (opts.onReopen):  left = blue Reopen,     right = red Delete
+ *   Lines / entries (neither):      right = red Delete only
  */
 (function (global) {
+  /**
+   * Plain rule used by the row and the tests: which action a drag of dx pixels means.
+   * Returns 'delete', 'complete', 'reopen' or null (no action that way).
+   */
+  function actionFor(opts, dx) {
+    if (!dx) return null;
+    const right = dx > 0;
+    if (opts.onComplete) return right ? 'complete' : (opts.onDelete ? 'delete' : null);
+    if (opts.onReopen) return right ? (opts.onDelete ? 'delete' : null) : 'reopen';
+    return right && opts.onDelete ? 'delete' : null;
+  }
+
   const HOLD_MS = 400;
   const SLOP = 10; // px of movement allowed during the hold
   const COMMIT_FRACTION = 0.3;
@@ -21,10 +38,17 @@
     bgDel.innerHTML = '<span>Delete</span>';
     row.appendChild(bgDel);
     if (opts.onComplete) {
+      // Active rows: green Complete shows on the left as the card slides right
+      bgDel.classList.add('on-right');
       const bgOk = document.createElement('div');
-      bgOk.className = 'swipe-bg complete';
-      bgOk.innerHTML = '<span>Completed</span>';
+      bgOk.className = 'swipe-bg complete on-left';
+      bgOk.innerHTML = '<span>Complete</span>';
       row.appendChild(bgOk);
+    } else if (opts.onReopen) {
+      const bgRe = document.createElement('div');
+      bgRe.className = 'swipe-bg reopen on-right';
+      bgRe.innerHTML = '<span>Reopen</span>';
+      row.appendChild(bgRe);
     }
     frontEl.classList.add('swipe-front');
     row.appendChild(frontEl);
@@ -43,8 +67,10 @@
     function setOffset(x) {
       dx = x;
       frontEl.style.transform = x ? 'translateX(' + x + 'px)' : '';
-      row.classList.toggle('show-delete', x > 4);
-      row.classList.toggle('show-complete', x < -4 && !!opts.onComplete);
+      const a = Math.abs(x) > 4 ? actionFor(opts, x) : null;
+      row.classList.toggle('show-delete', a === 'delete');
+      row.classList.toggle('show-complete', a === 'complete');
+      row.classList.toggle('show-reopen', a === 'reopen');
       const past = Math.abs(x) >= width() * COMMIT_FRACTION;
       row.classList.toggle('past-threshold', past);
     }
@@ -73,7 +99,7 @@
     async function commit(action) {
       busy = true;
       row.classList.remove('dragging');
-      setOffset(action === 'delete' ? width() : -width());
+      setOffset(dx > 0 ? width() : -width());
       try {
         if (action === 'delete') {
           if (opts.confirmDelete && !confirm(opts.deleteConfirm || 'Delete this item?')) {
@@ -82,6 +108,8 @@
             return;
           }
           await opts.onDelete();
+        } else if (action === 'reopen') {
+          await opts.onReopen();
         } else {
           await opts.onComplete();
         }
@@ -134,7 +162,7 @@
       ev.preventDefault();
       let x = mx;
       const max = width() * 0.9;
-      if (!opts.onComplete && x < 0) x = Math.max(x, -20); // no left action: slight rubber band
+      if (!actionFor(opts, x)) x = Math.max(-20, Math.min(20, x)); // no action that way: slight rubber band
       x = Math.max(-max, Math.min(max, x));
       setOffset(x);
     });
@@ -147,8 +175,8 @@
       try { frontEl.releasePointerCapture(pointerId); } catch (_) { /* ignore */ }
       pointerId = null;
       const past = Math.abs(dx) >= width() * COMMIT_FRACTION;
-      if (ev.type === 'pointerup' && past && dx > 0) commit('delete');
-      else if (ev.type === 'pointerup' && past && dx < 0 && opts.onComplete) commit('complete');
+      const action = actionFor(opts, dx);
+      if (ev.type === 'pointerup' && past && action) commit(action);
       else reset();
       // Clear suppress shortly after in case no click follows (touch devices)
       setTimeout(() => { suppressClick = false; }, 400);
@@ -164,5 +192,5 @@
     return row;
   }
 
-  global.AsHoldSwipe = { wrap, HOLD_MS, COMMIT_FRACTION };
+  global.AsHoldSwipe = { wrap, actionFor, HOLD_MS, COMMIT_FRACTION };
 })(window);

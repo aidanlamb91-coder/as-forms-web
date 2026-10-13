@@ -16,6 +16,7 @@
   }
 
   function tallyYearOfDate(dt) {
+    if (global.AsYearPeriods) return global.AsYearPeriods.startYearOf(dt.y, dt.m);
     return dt.m >= 3 ? dt.y : dt.y - 1;
   }
 

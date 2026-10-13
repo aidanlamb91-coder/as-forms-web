@@ -289,5 +289,8 @@
     formatMoney,
     MAX_LINES,
     TEMPLATE_URL,
+    // 1.1.0-web: shared with the mileage form filler (js/mileage-docx.js)
+    setCellText,
+    cellText,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

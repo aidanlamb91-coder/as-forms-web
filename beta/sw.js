@@ -6,7 +6,7 @@
  * Root (stable) and /beta/ have separate scopes on the same origin. Cache names carry the
  * scope path so neither ever deletes the other's caches, and the root worker ignores /beta/.
  */
-const VERSION = '1.0.3-web';
+const VERSION = '1.1.0-web';
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';
@@ -32,6 +32,7 @@ const SHELL = [
   'icons/favicon-32.png',
   'js/email-templates.js',
   'js/expense-category.js',
+  'js/year-periods.js',
   'js/offshore-days.js',
   'js/expense-tally.js',
   'js/days-worked-summary.js',
@@ -43,7 +44,14 @@ const SHELL = [
   'js/expense-zip-reader.js',
   'js/image-merge.js',
   'js/export.js',
-  'js/folder-sync.js',
+  'js/mileage.js',
+  'js/mileage-docx.js',
+  'js/backup-format.js',
+  'js/image-shrink.js',
+  'js/cloud-config.js',
+  'js/token-refresh.js',
+  'js/cloud.js',
+  'js/archive.js',
   'js/receipt-parse.js',
   'js/receipt-ocr.js',
   'js/summary-pdf.js',
@@ -56,6 +64,13 @@ const SHELL = [
   'js/pwa.js',
   'js/tutorial.js',
   'js/app.js',
+  'js/mileage-ui.js',
+  'js/sync-ui.js',
+  'js/ui-110.js',
+  'templates/mileage-claim.docx',
+  'img/as_logo.png',
+  'img/ic_google_drive.png',
+  'img/ic_onedrive.png',
 ];
 
 // Large, rarely-changing files: cached best-effort (a failure here never blocks the install).

@@ -18,7 +18,9 @@
     return new Date(year, month, 0).getDate();
   }
 
+  /** 1.1.0-web: follows Settings → Year starts in (js/year-periods.js); March when that file isn't loaded. */
   function periodStartingMarch(marchYear) {
+    if (global.AsYearPeriods) return global.AsYearPeriods.periodStarting(marchYear);
     const start = { y: marchYear, m: 3, d: 1 };
     const endY = marchYear + 1;
     const end = { y: endY, m: 2, d: daysInMonth(endY, 2) }; // day before 1 Mar
@@ -41,7 +43,7 @@
       y = date.y;
       m = date.m;
     }
-    const startYear = m >= 3 ? y : y - 1;
+    const startYear = global.AsYearPeriods ? global.AsYearPeriods.startYearOf(y, m) : (m >= 3 ? y : y - 1);
     return periodStartingMarch(startYear);
   }
 
@@ -267,6 +269,7 @@
 
   /** Mar–Feb tally year (its starting March year) for a calendar month. Feb stays in the previous year. */
   function tallyYearOf(year, month) {
+    if (global.AsYearPeriods) return global.AsYearPeriods.startYearOf(year, month);
     return month >= 3 ? year : year - 1;
   }
 

@@ -1,5 +1,8 @@
 /**
- * AS Forms web 1.0.3-web — Expenses | Timesheets | Settings (Android 1.0.0 parity) + guided tour (js/tutorial.js).
+ * AS Forms web 1.1.0-web — Expenses | Timesheets | Settings + guided tour (js/tutorial.js).
+ * 1.1.0-web: the new Android features live in their own files and plug in through `AsApp`
+ * (exported at the bottom): mileage (js/mileage-ui.js), Sync and Backup + cloud + archives
+ * (js/sync-ui.js), splash / keyboard / previews (js/ui-110.js). See CODE_MAP.md.
  * Days worked lives inside Timesheets → Completed (tally years Mar–Feb); Settings is a list of
  * banner buttons opening sub-pages; installable PWA (manifest + sw.js, see pwa.js).
  */
@@ -111,11 +114,12 @@
     if (badge) badge.classList.toggle('hidden', !AsStorage.shouldShowBackupReminder());
   }
 
-  function scheduleFolderSync() {
-    try {
-      if (globalThis.AsFolderSync) AsFolderSync.scheduleSync();
-    } catch (_) {}
-  }
+  /**
+   * 1.1.0-web: the data-folder option is gone (Aidan: no local folder on web). Every save fires
+   * an "as-data-changed" event from storage.js and cloud sync follows that, so this is a no-op
+   * kept so the many old call sites stay simple.
+   */
+  function scheduleFolderSync() {}
 
 
   /**
@@ -261,6 +265,9 @@
     new MutationObserver(onOverlayMaybeChanged).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
   }
 
+  /** Views added by the 1.1.0-web modules: name → selector (AsApp.registerView). */
+  const extraViews = {};
+
   function showView(name) {
     $$('.view').forEach((v) => v.classList.add('hidden'));
     nav.current = name;
@@ -284,7 +291,7 @@
       'ts-edit': '#view-ts-edit',
       'ts-entry': '#view-ts-entry',
     };
-    const el = $(map[name]);
+    const el = $(map[name] || extraViews[name]);
     if (el) el.classList.remove('hidden');
     document.body.classList.toggle('on-tab-root', TAB_VIEWS.has(name));
     window.scrollTo(0, 0);
@@ -297,12 +304,19 @@
     $$('.bottom-nav button').forEach((b) => {
       b.classList.toggle('on', b.getAttribute('data-nav') === tab);
     });
+    updateListHeaders();
   }
 
+  /** Shared top bar (1.1.0-web, Android HomeTopBar): title + subtitle follow the tab. */
   function updateListHeaders() {
     const s = AsStorage.getSettings();
-    $('#expenses-header-sub').textContent = s.displayName + ' → ' + (s.expenseTo || s.sendTo);
-    $('#timesheets-header-sub').textContent = s.displayName + ' → ' + s.timesheetTo;
+    const tab = state.tab;
+    const title = tab === 'timesheets' ? 'Timesheets' : tab === 'settings' ? 'Settings' : 'Expenses';
+    const sub = tab === 'timesheets' ? s.displayName + ' → ' + s.timesheetTo
+      : tab === 'settings' ? '' : s.displayName + ' → ' + (s.expenseTo || s.sendTo);
+    const t = $('#top-bar-title'); if (t) t.textContent = title;
+    const st = $('#top-bar-sub'); if (st) { st.textContent = sub; st.classList.toggle('hidden', !sub); }
+    const imp = $('#top-bar-import'); if (imp) imp.classList.toggle('hidden', tab === 'settings');
   }
 
   // ——— Expenses list ———
@@ -320,10 +334,15 @@
     const filtered = all.filter((c) =>
       state.expenseChip === 'completed' ? c.completed : !c.completed
     );
+    // 1.1.0-web: mileage claims join the list, nested under the expense claim with the same job
+    const allMileage = await AsStorage.listMileage();
+    const mileage = allMileage.filter((m) => (state.expenseChip === 'completed' ? m.completed : !m.completed));
+    state.listMileage = mileage;
+    if (globalThis.AsArchiveBanner) AsArchiveBanner($('#archive-chip'));
     const list = $('#claim-list');
     const empty = $('#claim-empty');
     list.innerHTML = '';
-    if (!filtered.length) {
+    if (!filtered.length && !mileage.length) {
       empty.classList.remove('hidden');
       empty.innerHTML = state.expenseChip === 'completed'
         ? 'No completed claims yet.'
@@ -333,10 +352,16 @@
     empty.classList.add('hidden');
 
     if (state.expenseChip === 'completed') {
-      renderExpenseYears(list, filtered);
+      renderExpenseYears(list, filtered, mileage);
     } else {
-      filtered.forEach((c) => list.appendChild(claimCard(c)));
+      AsMileage.groupJobs(filtered, mileage).forEach((g) => list.appendChild(jobCard(g)));
     }
+  }
+
+  /** One list row: an expense card with its mileage nested underneath, or mileage on its own. */
+  function jobCard(group) {
+    if (group.expense) return claimCard(group.expense, group.mileage);
+    return globalThis.AsMileageUi ? AsMileageUi.soloCard(group.mileage[0]) : document.createElement('div');
   }
 
   // ——— Expenses → Completed: tally years (Mar–Feb) with category totals (Android ExpenseYearComponents) ———
@@ -383,10 +408,19 @@
     return btn;
   }
 
-  function renderExpenseYears(list, claims) {
+  function renderExpenseYears(list, claims, mileage) {
     const lines = expenseLineAmounts(claims);
     expenseTallyLines = lines;
+    // Mileage-only claims get a year too: add placeholder rows so their year banner exists
     const groups = AsExpenseTally.groupByTallyYear(claims, (c) => AsExpenseTally.parseIso(c.dateFrom) || AsExpenseTally.parseIso(c.dateTo), lines);
+    const yearOf = (iso) => { const d = AsExpenseTally.parseIso(iso); return d ? AsYearPeriods.startYearOf(d.y, d.m) : null; };
+    for (const m of mileage || []) {
+      const y = yearOf(m.dateFrom);
+      if (y != null && !groups.some((g) => g.period.startMarchYear === y)) {
+        groups.push({ period: AsOffshoreDays.periodStartingMarch(y), items: [], totals: {}, total: 0, isCurrent: y === AsYearPeriods.startYearOf(new Date().getFullYear(), new Date().getMonth() + 1) });
+      }
+    }
+    groups.sort((a, b) => b.period.startMarchYear - a.period.startMarchYear);
     for (const g of groups) {
       const y = g.period.startMarchYear;
       const open = state.expYearOpen[y] != null ? state.expYearOpen[y] : g.isCurrent;
@@ -399,21 +433,22 @@
         open,
         onToggle: () => { state.expYearOpen[y] = !open; refreshClaimList(); },
       }));
+      const ym = (mileage || []).filter((m) => yearOf(m.dateFrom) === y);
       if (open) {
-        section.appendChild(expenseBanner(g));
-        if (!n) {
+        section.appendChild(expenseBanner(g, ym));
+        if (!n && !ym.length) {
           const p = document.createElement('p');
           p.className = 'empty small';
           p.textContent = 'No completed claims in this year yet.';
           section.appendChild(p);
         }
-        g.items.forEach((c) => section.appendChild(claimCard(c)));
+        AsMileage.groupJobs(g.items, ym).forEach((grp) => section.appendChild(jobCard(grp)));
       }
       list.appendChild(section);
     }
   }
 
-  function expenseBanner(g) {
+  function expenseBanner(g, yearMileage) {
     const el = document.createElement('div');
     el.className = 'exp-banner';
     const y = g.period.startMarchYear;
@@ -427,11 +462,21 @@
           '<span class="lbl">' + c.label + '</span></button>';
       }).join('') +
       '</div>' +
+      mileageBannerLine(yearMileage) +
       '<p class="exp-total">Total ' + escapeHtml(AsExpenseTally.formatMoney(g.total)) + '</p>';
     el.querySelectorAll('.exp-tile').forEach((b) => {
       b.addEventListener('click', () => showExpenseBreakdown(Number(b.dataset.year), b.dataset.cat));
     });
     return el;
+  }
+
+  /** "Mileage 312 mi · £171.60" line in a Completed year banner (Android ExpenseYearComponents). */
+  function mileageBannerLine(ms) {
+    if (!ms || !ms.length) return '';
+    const js = ms.flatMap((m) => m.journeys || []);
+    const amount = ms.reduce((sum, m) => sum + AsMileage.totalAmount(m.journeys, m.ratePence || 55), 0);
+    return '<p class="exp-mileage">Mileage ' + escapeHtml(AsMileage.formatMiles(AsMileage.totalMiles(js))) + ' · ' +
+      escapeHtml(AsMileage.formatPounds(amount)) + '</p>';
   }
 
   function showExpenseBreakdown(startMarchYear, category) {
@@ -457,42 +502,72 @@
     root.onclick = (e) => { if (e.target === root) close(); };
   }
 
-  function claimCard(c) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'card';
-    btn.innerHTML =
+  /** "11/10/2026" from "2026-10-11" (1.1.0-web: dates are never shown as raw ISO). */
+  function ukDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || '?');
+  }
+
+  /**
+   * Expense card. 1.1.0-web: linked mileage claims (same job number) are drawn as an indented
+   * sub-card with a job total, and swipes act on the expense AND its mileage together.
+   * Active: right = Complete, left = Delete. Completed: left = Reopen, right = Delete.
+   */
+  function claimCard(c, linkedMileage) {
+    const ms = linkedMileage || [];
+    const btn = document.createElement('div');
+    btn.className = 'card job-card';
+    btn.setAttribute('role', 'button');
+    btn.tabIndex = 0;
+    const expenseTotal = claimTotal(c);
+    let html =
       '<p class="title">' + escapeHtml(c.jobNo || 'No job') + '</p>' +
-      '<p class="meta">' + escapeHtml(c.dateFrom || '?') + ' → ' + escapeHtml(c.dateTo || '?') +
+      '<p class="meta">' + escapeHtml(ukDate(c.dateFrom)) + ' → ' + escapeHtml(ukDate(c.dateTo)) +
       ' · ' + (c.lines || []).length + ' line(s)</p>' +
-      '<p class="money">' + money(claimTotal(c)) + '</p>';
-    btn.addEventListener('click', () => openClaim(c.id));
-    const canComplete = !c.completed;
+      '<p class="money">' + money(expenseTotal) + '</p>';
+    if (ms.length && globalThis.AsMileageUi) {
+      html += ms.map((m) => AsMileageUi.subCardHtml(m)).join('');
+      const milesAmount = ms.reduce((sum, m) => sum + AsMileage.totalAmount(m.journeys, m.ratePence || 55), 0);
+      html += '<p class="job-total">Job total ' + money(expenseTotal + milesAmount) + '</p>';
+    }
+    btn.innerHTML = html;
+    btn.addEventListener('click', (ev) => {
+      const sub = ev.target.closest('[data-mileage-id]');
+      if (sub && globalThis.AsMileageUi) AsMileageUi.openClaim(sub.getAttribute('data-mileage-id'));
+      else openClaim(c.id);
+    });
+    btn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') openClaim(c.id); });
+    const setDone = async (done) => {
+      const claim = await AsStorage.getClaim(c.id);
+      if (!claim) return;
+      claim.completed = done;
+      claim.completedAt = done ? Date.now() : null;
+      await AsStorage.putClaim(claim);
+      for (const m of ms) {
+        const mm = await AsStorage.getMileage(m.id);
+        if (mm) await AsStorage.putMileage(AsMileageUi.withCompleted(mm, done));
+      }
+      toast(done ? 'Marked complete' : 'Reopened');
+      await refreshClaimList();
+    };
     return wrapSwipeRow(btn, {
       onDelete: async () => {
         // Keep receipt files until the Undo window has passed
         const snap = await AsStorage.softDeleteClaim(c.id);
-        scheduleFolderSync();
+        const mSnaps = [];
+        for (const m of ms) { mSnaps.push(await AsStorage.getMileage(m.id)); await AsStorage.deleteMileage(m.id); }
         await refreshClaimList();
-        toastUndo('Claim deleted', async () => {
+        toastUndo(ms.length ? 'Job deleted' : 'Claim deleted', async () => {
           if (snap) await AsStorage.putClaim(snap);
-          scheduleFolderSync();
+          for (const m of mSnaps) if (m) await AsStorage.putMileage(m);
           await refreshClaimList();
         });
         if (state.pendingUndo) {
           state.pendingUndo.onExpire = async () => { await AsStorage.purgeClaimReceipts(snap); };
         }
       },
-      onComplete: canComplete ? async () => {
-        const claim = await AsStorage.getClaim(c.id);
-        if (!claim) return;
-        claim.completed = true;
-        claim.completedAt = Date.now();
-        await AsStorage.putClaim(claim);
-        toast('Marked complete');
-        scheduleFolderSync();
-        await refreshClaimList();
-      } : null,
+      onComplete: !c.completed ? () => setDone(true) : null,
+      onReopen: c.completed ? () => setDone(false) : null,
     });
   }
 
@@ -529,11 +604,12 @@
     $('#claim-title').textContent = claim.jobNo || 'Claim';
     $('#claim-route-header').textContent = (s.displayName) + ' → ' + (s.expenseTo || s.sendTo);
     $('#claim-job-digits').value = digitsOnly(claim.jobNo);
-    $('#claim-from').value = claim.dateFrom || '';
+    $('#claim-from').value = claim.dateFrom || ''; // <input type=date> shows it in the phone's own dd/mm/yyyy style
     $('#claim-to').value = claim.dateTo || '';
     $('#export-status').textContent = '';
     $('#claim-completed-toggle').checked = !!claim.completed;
     renderLines(claim);
+    if (globalThis.AsMileageUi) AsMileageUi.renderClaimMileage(claim);
     setNav('expenses');
     showView('claim');
   }
@@ -561,7 +637,7 @@
         '<div class="line-card-body">' +
         '<p class="title"><span class="cat-tag cat-' + parts.category.toLowerCase() + '">' + escapeHtml(catLabel) + '</span> ' +
         escapeHtml(parts.detail || (parts.category === 'MISC' ? 'Line ' + (idx + 1) : '')) + '</p>' +
-        '<p class="meta">' + escapeHtml(line.date || '') + fx + '</p>' +
+        '<p class="meta">' + escapeHtml(line.date ? ukDate(line.date) : '') + fx + '</p>' +
         '<p class="money">' + money(lineTotal(line)) + '</p>' +
         '</div><div class="line-thumbs"></div>';
       const thumbs = btn.querySelector('.line-thumbs');
@@ -979,9 +1055,11 @@
     }
     if (state.pendingReceipt) {
       if (line.receiptId) { await AsStorage.deleteReceipt(line.receiptId); AsAttachments.forget(line.receiptId); }
-      const meta = await AsStorage.putReceipt(state.pendingReceipt.blob, {
-        name: state.pendingReceipt.name,
-        type: state.pendingReceipt.type,
+      // 1.1.0-web: big photos are shrunk to ≤1600 px JPEG first (js/image-shrink.js)
+      const small = await AsImageShrink.shrink(state.pendingReceipt.blob, state.pendingReceipt.name);
+      const meta = await AsStorage.putReceipt(small.blob, {
+        name: small.name,
+        type: small.shrunk ? small.type : state.pendingReceipt.type,
       });
       line.receiptId = meta.id;
       line.receiptMeta = meta;
@@ -993,9 +1071,11 @@
     }
     if (state.pendingStatement) {
       if (line.statementId) { await AsStorage.deleteReceipt(line.statementId); AsAttachments.forget(line.statementId); }
-      const meta = await AsStorage.putReceipt(state.pendingStatement.blob, {
-        name: state.pendingStatement.name,
-        type: state.pendingStatement.type,
+      // 1.1.0-web: big photos are shrunk to ≤1600 px JPEG first (js/image-shrink.js)
+      const small = await AsImageShrink.shrink(state.pendingStatement.blob, state.pendingStatement.name);
+      const meta = await AsStorage.putReceipt(small.blob, {
+        name: small.name,
+        type: small.shrunk ? small.type : state.pendingStatement.type,
       });
       line.statementId = meta.id;
       line.statementMeta = meta;
@@ -1125,8 +1205,11 @@
       status.textContent = 'Building zip for send…';
     }
     try {
-      const blob = await AsExport.buildClaimZipBlob(claim);
-      const filename = AsExport.safeName(claim.jobNo || 'claim') + '.zip';
+      // 1.1.0-web: one zip for the whole job — expense form, receipts and any linked mileage form
+      const linked = globalThis.AsMileageUi ? await AsMileageUi.linkedTo(claim) : [];
+      const built = await AsExport.buildJobZip(claim, linked);
+      const blob = built.blob;
+      const filename = built.name;
       const email = AsExport.buildExpenseEmail(claim, filename);
 
       // Auto-start download so the zip is in Downloads before they open mail.
@@ -1259,6 +1342,16 @@
     btn.addEventListener('click', () => openTimesheet(t.id));
     const canComplete = !t.completed;
     return wrapSwipeRow(btn, {
+      // 1.1.0-web: Completed rows swipe left to Reopen (back to Active), like Android
+      onReopen: t.completed ? async () => {
+        const ts = await AsStorage.getTimesheet(t.id);
+        if (!ts) return;
+        ts.completed = false;
+        ts.completedAt = null;
+        await AsStorage.putTimesheet(ts);
+        toast('Reopened');
+        await refreshTsList();
+      } : null,
       onDelete: async () => {
         const snap = await AsStorage.getTimesheet(t.id);
         await AsStorage.deleteTimesheet(t.id);
@@ -1736,6 +1829,8 @@
         (d.key === selected ? ' checked' : '') + ' /> ' + escapeHtml(d.label);
       box.appendChild(lab);
     });
+    box.onchange = updateEntryJobVisibility;
+    updateEntryJobVisibility();
   }
 
   async function openEntry(entryId) {
@@ -1768,14 +1863,21 @@
       toast('End day must be ≥ start day');
       return;
     }
-    const jobRaw = $('#entry-job-digits').value.trim();
+    const dayTypeEl = $('input[name="dayType"]:checked');
+    const dayType = dayTypeEl ? dayTypeEl.value : 'OFFICE';
+    // 1.1.0-web (Android DayType.needsJobNumber): only Office / Offshore need a project number.
+    // Holiday, Roster Leave, Training and Sick are plain date ranges shown as ticks.
+    const needsJob = dayTypeNeedsJob(dayType);
+    const jobRaw = needsJob ? $('#entry-job-digits').value.trim() : '';
     const job = jobRaw ? normalizeJob(jobRaw) : '';
+    if (needsJob && !job) {
+      toast('Enter a project number');
+      return;
+    }
     if (job && !isValidJob(job)) {
       toast('Job must be P + digits');
       return;
     }
-    const dayTypeEl = $('input[name="dayType"]:checked');
-    const dayType = dayTypeEl ? dayTypeEl.value : 'OFFICE';
 
     for (const other of ts.entries || []) {
       if (other.id === state.entryId) continue;
@@ -1795,6 +1897,18 @@
     toast('Entry saved');
     scheduleFolderSync();
     await openTimesheet(ts.id);
+  }
+
+  /** Office and Offshore need a project number; the other day types don't. */
+  function dayTypeNeedsJob(dayType) {
+    return dayType === 'OFFICE' || dayType === 'OFFSHORE';
+  }
+
+  /** Show the project-number box only for day types that need one. */
+  function updateEntryJobVisibility() {
+    const el = $('input[name="dayType"]:checked');
+    const row = $('#entry-job-row');
+    if (row) row.classList.toggle('hidden', !dayTypeNeedsJob(el ? el.value : 'OFFICE'));
   }
 
   async function deleteEntry() {
@@ -2381,18 +2495,8 @@
     $('#sb-profile-sub').textContent = 'Name on forms: ' + (s.displayName || 'not set');
     $('#sb-email-sub').textContent = 'Send-to addresses, email templates';
     $('#sb-emails-sub').textContent = 'Expenses: ' + (s.expenseTo || s.sendTo) + ' · Timesheets: ' + s.timesheetTo;
-    $('#sb-backup-sub').textContent = AsStorage.shouldShowBackupReminder() ? 'Reminder: no backup in 28 days' : lastBackupText().replace('Last backup:', 'Last backup');
     $('#sb-about-sub').textContent = versionLabel() + ' · OCR info';
-    let folder = 'Sync to a folder (Chrome / Edge on a computer)';
-    try {
-      if (globalThis.AsFolderSync && AsFolderSync.isSupported()) {
-        const name = await AsFolderSync.folderName();
-        folder = name ? 'Saving to ' + name : 'No data folder chosen yet';
-      } else {
-        folder = 'Not available in this browser — use Backup & restore';
-      }
-    } catch (_) { /* ignore */ }
-    $('#sb-folder-sub').textContent = folder;
+    if (globalThis.AsSyncUi) AsSyncUi.refreshSubtitle();
     const ps = AsPwa.state();
     $('#sb-install-sub').textContent = ps.standalone ? 'Installed — you are using the app'
       : ps.ios ? 'iPhone / iPad: Share → Add to Home Screen'
@@ -2403,13 +2507,13 @@
 
   function showSettings() {
     setNav('settings');
-    $('#settings-header-sub').textContent = (AsStorage.getSettings().displayName || 'Stored in this browser') + ' · ' + versionLabel();
     refreshSettingsSubtitles();
     showView('settings');
   }
 
   function showProfile() {
     $('#settings-name').value = AsStorage.getSettings().displayName;
+    if (globalThis.AsMileageUi) AsMileageUi.fillProfile();
     showView('set-profile');
   }
 
@@ -2418,13 +2522,6 @@
     showView('set-email');
   }
 
-  function showFolder() {
-    $('#folder-status').textContent = '';
-    showView('set-folder');
-    refreshBackupFolderUi();
-    const s = AsStorage.getSettings();
-    if (!s.folderHintSeen) AsStorage.saveSettings({ folderHintSeen: true });
-  }
 
   function showImportPage() { showView('set-import'); }
 
@@ -2510,51 +2607,13 @@
     showView('templates');
   }
 
-  async function refreshBackupFolderUi() {
-    const supported = globalThis.AsFolderSync && AsFolderSync.isSupported();
-    const hint = $('#folder-support-hint');
-    const connected = $('#folder-connected');
-    const choose = $('#btn-folder-choose');
-    const syncBtn = $('#btn-folder-sync');
-    const restore = $('#btn-folder-restore');
-    const disconnect = $('#btn-folder-disconnect');
-    const autoRow = $('#folder-autosync-row');
-    const autoChk = $('#chk-folder-autosync');
-    if (!supported) {
-      hint.hidden = false;
-      hint.textContent = (globalThis.AsFolderSync && AsFolderSync.supportHint())
-        || 'Folder sync needs Chrome or Edge on desktop. Use Export/Import backup zip on this browser.';
-      choose.disabled = true;
-      syncBtn.disabled = true;
-      restore.disabled = true;
-      disconnect.disabled = true;
-      autoChk.disabled = true;
-      connected.textContent = 'Folder sync unavailable in this browser.';
-      return;
-    }
-    hint.hidden = true;
-    choose.disabled = false;
-    restore.disabled = false;
-    autoChk.disabled = false;
-    const name = await AsFolderSync.folderName();
-    const s = AsStorage.getSettings();
-    autoChk.checked = s.folderAutoSync !== false;
-    if (name) {
-      connected.textContent = 'Connected folder: ' + name;
-      syncBtn.disabled = false;
-      disconnect.disabled = false;
-    } else {
-      connected.textContent = 'No data folder connected.';
-      syncBtn.disabled = true;
-      disconnect.disabled = true;
-    }
-  }
 
   function showBackup() {
     $('#backup-status').textContent = '';
     $('#backup-last').textContent = lastBackupText();
     updateBackupBanner();
     showView('backup');
+    if (globalThis.AsSyncUi) AsSyncUi.render(); // 1.1.0-web cloud card + archive row
   }
 
   // ——— Timesheet Preview + Open file (Android 1.0.0) ———
@@ -2745,7 +2804,8 @@
       });
     });
 
-    $('#btn-new-claim').addEventListener('click', createClaim);
+    // 1.1.0-web: "+ New" asks Expense claim or Mileage claim (js/mileage-ui.js)
+    $('#btn-new-claim').addEventListener('click', () => (globalThis.AsMileageUi ? AsMileageUi.newChooser(createClaim) : createClaim()));
     $('#btn-import-claims').addEventListener('click', () => $('#claim-import-files').click());
     $('#claim-import-files').addEventListener('change', async (ev) => {
       const files = ev.target.files;
@@ -2917,14 +2977,14 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       AsStorage.saveSettings({
         displayName: $('#settings-name').value.trim() || AsEmailTemplates.DEFAULT_NAME,
       });
-      toast('Name saved');
-      scheduleFolderSync();
+      if (globalThis.AsMileageUi && !AsMileageUi.saveProfileFields()) return; // bad postcode: stay
+      toast('Saved');
+      AsStorage.notifyChanged('prefs');
       updateListHeaders();
       refreshSettingsSubtitles();
     });
     $('#btn-goto-profile').addEventListener('click', showProfile);
     $('#btn-goto-email').addEventListener('click', showEmailHub);
-    $('#btn-goto-folder').addEventListener('click', showFolder);
     $('#btn-goto-import').addEventListener('click', showImportPage);
     $('#btn-goto-install').addEventListener('click', showInstallPage);
     $('#btn-goto-about').addEventListener('click', showAbout);
@@ -3028,83 +3088,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       }
     });
 
-    $('#btn-folder-choose').addEventListener('click', async () => {
-      const st = $('#folder-status');
-      st.classList.remove('error');
-      try {
-        const handle = await AsFolderSync.chooseFolder();
-        AsStorage.saveSettings({ folderAutoSync: true });
-        st.textContent = 'Connected: ' + handle.name;
-        toast('Data folder connected');
-        await refreshBackupFolderUi();
-        st.textContent = 'Syncing…';
-        const result = await AsFolderSync.syncNow();
-        AsStorage.markBackupSuccess();
-        updateBackupBanner();
-        st.textContent = 'Synced to ' + result.folderName;
-        toast('Synced to folder');
-      } catch (e) {
-        if (e && e.name === 'AbortError') {
-          st.textContent = '';
-          return;
-        }
-        console.error(e);
-        st.classList.add('error');
-        st.textContent = e.message || String(e);
-      }
-    });
-    $('#btn-folder-sync').addEventListener('click', async () => {
-      const st = $('#folder-status');
-      st.classList.remove('error');
-      st.textContent = 'Syncing…';
-      try {
-        const result = await AsFolderSync.syncNow();
-        AsStorage.markBackupSuccess();
-        updateBackupBanner();
-        st.textContent = 'Synced to ' + result.folderName +
-          ' (' + result.claimCount + ' claims, ' + result.timesheetCount + ' timesheets)';
-        toast('Synced to folder');
-      } catch (e) {
-        if (e && e.name === 'AbortError') {
-          st.textContent = '';
-          return;
-        }
-        console.error(e);
-        st.classList.add('error');
-        st.textContent = e.message || String(e);
-      }
-    });
-    $('#btn-folder-restore').addEventListener('click', async () => {
-      if (!confirm('Replace all data in this browser with the folder contents?')) return;
-      const st = $('#folder-status');
-      st.classList.remove('error');
-      st.textContent = 'Restoring from folder…';
-      try {
-        const result = await AsFolderSync.restoreFromFolder({ forcePick: true });
-        st.textContent = 'Restored from ' + result.folderName;
-        toast('Restored from folder');
-        updateListHeaders();
-        await refreshBackupFolderUi();
-      } catch (e) {
-        if (e && e.name === 'AbortError') {
-          st.textContent = '';
-          return;
-        }
-        console.error(e);
-        st.classList.add('error');
-        st.textContent = e.message || String(e);
-      }
-    });
-    $('#btn-folder-disconnect').addEventListener('click', async () => {
-      await AsFolderSync.disconnectFolder();
-      $('#folder-status').textContent = 'Disconnected (files on disk were not deleted)';
-      toast('Folder disconnected');
-      await refreshBackupFolderUi();
-    });
-    $('#chk-folder-autosync').addEventListener('change', (ev) => {
-      AsStorage.saveSettings({ folderAutoSync: !!ev.target.checked });
-      toast(ev.target.checked ? 'Auto-sync on' : 'Auto-sync off');
-    });
+    // 1.1.0-web: Data folder wiring removed (no local-folder option on web).
   }
 
 
@@ -3215,12 +3199,28 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     wireTour();
     AsPwa.register();
     AsStorage.saveSettings(AsStorage.getSettings());
+    // 1.1.0-web modules (mileage, Sync and Backup, splash, keyboard, previews) hook in here
+    for (const fn of bootHooks) { try { fn(); } catch (e) { console.error(e); } }
     updateListHeaders();
-    await promptDisplayNameIfNeeded();
     await showExpenses();
+    if (globalThis.AsUi110) AsUi110.splashDone(); // splash glides into the top bar
+    await promptDisplayNameIfNeeded();
+    updateListHeaders();
     refreshInstallUi();
+    if (globalThis.AsSyncUi) AsSyncUi.afterBoot();
     await offerTutorial();
   }
+
+  // ——— 1.1.0-web plug-in API for js/mileage-ui.js, js/sync-ui.js, js/ui-110.js ———
+  const bootHooks = [];
+  globalThis.AsApp = {
+    $, $$, state, toast, toastUndo, escapeHtml, money, claimTotal, normalizeJob, digitsOnly, isValidJob,
+    ukDate, ukShort, showView, setNav, navBack, wrapSwipeRow, showEmailPreview, openSheet,
+    showExpenses, refreshClaimList, openClaim, showSettings, updateListHeaders, refreshSettingsSubtitles,
+    updateBackupBanner, lastBackupText, versionLabel, showTimesheets: () => showTimesheets(),
+    registerView(name, selector) { extraViews[name] = selector; },
+    onBoot(fn) { bootHooks.push(fn); },
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
