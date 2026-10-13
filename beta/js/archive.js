@@ -32,15 +32,12 @@
   const claimYear = (claim) => Number(String(claim.dateFrom || '').slice(0, 4)) || null;
   const dueYears = (years, today) => Array.from(new Set(years)).filter((y) => y && isYearDue(y, today)).sort((a, b) => a - b);
 
-  /** Warning text for Clear (kept word-for-word from Android). */
+  /** Warning text for Clear (approved trim #50). */
   function clearWarning(local, thisYears, otherYears) {
     const here = local ? 'browser' : 'cloud folder';
     const other = local ? 'cloud' : 'browser';
     const only = thisYears.filter((y) => !otherYears.includes(y)).sort();
-    if (only.length) {
-      return 'Warning: these are the only copies of your archived receipts for ' + only.join(', ') + '. ' +
-        'There is no ' + other + ' copy and the images have been removed from this browser, so they can\'t be recovered once cleared.';
-    }
+    if (only.length) return 'Only copy of ' + only.join(', ') + " receipts. Can't be undone.";
     return 'Deletes the receipt archive zips (' + thisYears.slice().sort().join(', ') + ') from your ' + here + '. The ' + other + ' copies are kept.';
   }
 
@@ -173,7 +170,11 @@
     } finally {
       running = false;
     }
-    try { localStorage.setItem(STATE_KEY + ':err', result.errors[0] || ''); } catch (_) {}
+    try {
+      // Only touch storage when there is something to say (keeps quiet passes write-free)
+      if (result.errors[0]) localStorage.setItem(STATE_KEY + ':err', result.errors[0]);
+      else localStorage.removeItem(STATE_KEY + ':err');
+    } catch (_) {}
     return result;
   }
 
@@ -245,6 +246,8 @@
   function scheduleAuto(ms) {
     clearTimeout(autoTimer);
     autoTimer = setTimeout(() => {
+      // Wait while the guided tour is open (the tour must not change saved data)
+      if (global.AsTutorial && global.AsTutorial.isOpen()) { scheduleAuto(10000); return; }
       const on = global.AsStorage.getSettings().autoArchive !== false;
       runPass(on).catch((e) => console.warn('archive', e));
     }, ms == null ? 5000 : ms);

@@ -345,8 +345,8 @@
     if (!filtered.length && !mileage.length) {
       empty.classList.remove('hidden');
       empty.innerHTML = state.expenseChip === 'completed'
-        ? 'No completed claims yet.'
-        : 'No active claims. Tap <strong>+ New</strong> to start.';
+        ? 'No completed claims'
+        : 'Tap <strong>+ New</strong> to start a claim.';
       return;
     }
     empty.classList.add('hidden');
@@ -815,7 +815,7 @@
     // Job is claim-level only — ignore OCR job suggestions
     $('#ocr-suggest-note').textContent = bits.length
       ? ('Found: ' + bits.join(', ') + '. Edit if needed, then tap Use these.')
-      : 'Nothing useful found — you can still type the line yourself.';
+      : "Couldn't read receipt";
     sg.classList.remove('hidden');
     const alone = $('#btn-ocr-rescan-alone');
     if (alone) alone.classList.add('hidden');
@@ -863,13 +863,13 @@
   async function runReceiptOcr(blob, name) {
     if (!blob || !globalThis.AsReceiptOcr) return;
     const token = ++state.ocrToken;
-    showOcrStatus('Reading receipt…', false);
+    showOcrStatus('Reading…', false);
     try {
       const result = await AsReceiptOcr.readReceipt(blob, {
         name: name || '',
         onProgress: (msg) => {
           if (token !== state.ocrToken) return;
-          showOcrStatus(msg || 'Reading receipt…', false);
+          showOcrStatus(msg || 'Reading…', false);
         },
       });
       if (token !== state.ocrToken) return;
@@ -878,7 +878,7 @@
       if (AsReceiptParse && AsReceiptParse.hasUsefulSuggestions(parsed)) {
         fillOcrSuggest(parsed);
       } else {
-        showOcrStatus('Could not read useful details from this receipt. You can fill the fields yourself — the attachment is still fine.', true);
+        showOcrStatus("Couldn't read receipt", true);
         const alone = $('#btn-ocr-rescan-alone');
         if (alone) alone.classList.remove('hidden');
       }
@@ -891,7 +891,7 @@
         return;
       }
       console.warn('OCR', e);
-      showOcrStatus((e && e.message) || 'Could not read this receipt. You can still type the details.', true);
+      showOcrStatus((e && e.message) || "Couldn't read receipt", true);
       const alone = $('#btn-ocr-rescan-alone');
       if (alone) alone.classList.remove('hidden');
     }
@@ -963,7 +963,7 @@
     }));
     const info = document.createElement('div');
     info.className = 'att-info';
-    info.innerHTML = '<span class="att-name"></span><span class="hint">Tap the preview to view full screen</span>';
+    info.innerHTML = '<span class="att-name"></span>';
     info.querySelector('.att-name').textContent = row ? (row.name || label) : label + ' missing — attach it again';
     wrap.appendChild(info);
     box.appendChild(wrap);
@@ -1143,7 +1143,7 @@
   async function doExportDocx() {
     const status = $('#export-status');
     status.classList.remove('error');
-    status.textContent = 'Filling Word form…';
+    status.textContent = 'Building zip…';
     try {
       const claim = await AsStorage.getClaim(state.claimId);
       const s = AsStorage.getSettings();
@@ -1202,7 +1202,7 @@
     const status = $('#export-status');
     if (status) {
       status.classList.remove('error');
-      status.textContent = 'Building zip for send…';
+      status.textContent = 'Building zip…';
     }
     try {
       // 1.1.0-web: one zip for the whole job — expense form, receipts and any linked mileage form
@@ -1214,16 +1214,16 @@
 
       // Auto-start download so the zip is in Downloads before they open mail.
       AsExport.downloadBlob(blob, filename);
-      if (status) status.textContent = 'Prepared ' + filename + ' — download first, then Open mail app and attach';
+      if (status) status.textContent = 'Prepared ' + filename;
 
       showEmailPreview({
-        title: 'Send to Invoice',
+        title: 'Send',
         to: email.to,
         subject: email.subject,
         body: email.body,
         filename: filename,
         attachmentNote:
-          'Browsers cannot auto-attach files to mailto. Download the zip first, then open your mail app and attach it yourself.',
+          'Attach the downloaded zip in your mail app.',
         onDownload: () => {
           AsExport.downloadBlob(blob, filename);
           toast('Downloaded ' + filename);
@@ -1283,8 +1283,8 @@
     if (!filtered.length) {
       empty.classList.remove('hidden');
       empty.innerHTML = state.tsChip === 'completed'
-        ? 'No completed timesheets yet.'
-        : 'No active timesheets. Tap <strong>+ New</strong> and pick a month.';
+        ? 'No completed timesheets'
+        : 'Tap <strong>+ New</strong> to add a month.';
       return;
     }
     empty.classList.add('hidden');
@@ -1926,7 +1926,7 @@
   async function doExportOdt() {
     const status = $('#ts-export-status');
     status.classList.remove('error');
-    status.textContent = 'Filling timesheet.odt…';
+    status.textContent = 'Building…';
     try {
       const ts = await AsStorage.getTimesheet(state.tsId);
       const name = await AsExport.exportTimesheetOdt(ts);
@@ -1954,16 +1954,16 @@
       const email = AsExport.buildTimesheetEmail(ts, filename);
 
       AsExport.downloadBlob(blob, filename);
-      if (status) status.textContent = 'Prepared ' + filename + ' — download first, then Open mail app and attach';
+      if (status) status.textContent = 'Prepared ' + filename;
 
       showEmailPreview({
-        title: 'Send to Timesheets',
+        title: 'Send',
         to: email.to,
         subject: email.subject,
         body: email.body,
         filename: filename,
         attachmentNote:
-          'Browsers cannot auto-attach files to mailto. Download the .odt first, then open your mail app and attach it yourself.',
+          'Attach the downloaded .odt in your mail app.',
         onDownload: () => {
           AsExport.downloadBlob(blob, filename);
           toast('Downloaded ' + filename);
@@ -2168,7 +2168,7 @@
         '(from ' + escapeHtml(opts.fileName || 'zip') + '). ' +
         'Skip this file or replace the existing claim?</p>' +
         (opts.showBatch
-          ? '<p class="hint">More conflicts may follow — you can Skip all or Replace all.</p>'
+          ? ''
           : '') +
         '<div class="actions">' +
         '<button type="button" class="btn primary" data-choice="replace">Replace</button>' +
@@ -2492,10 +2492,10 @@
 
   async function refreshSettingsSubtitles() {
     const s = AsStorage.getSettings();
-    $('#sb-profile-sub').textContent = 'Name on forms: ' + (s.displayName || 'not set');
-    $('#sb-email-sub').textContent = 'Send-to addresses, email templates';
+    $('#sb-profile-sub').textContent = s.displayName || 'Not set';
+    
     $('#sb-emails-sub').textContent = 'Expenses: ' + (s.expenseTo || s.sendTo) + ' · Timesheets: ' + s.timesheetTo;
-    $('#sb-about-sub').textContent = versionLabel() + ' · OCR info';
+    $('#sb-about-sub').textContent = versionLabel();
     if (globalThis.AsSyncUi) AsSyncUi.refreshSubtitle();
     const ps = AsPwa.state();
     $('#sb-install-sub').textContent = ps.standalone ? 'Installed — you are using the app'
@@ -3071,7 +3071,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       const file = ev.target.files && ev.target.files[0];
       ev.target.value = '';
       if (!file) return;
-      if (!confirm('This replaces claims and timesheets in this browser. Continue?')) return;
+      if (!confirm('Replaces all claims, timesheets and receipts in this browser.')) return;
       const st = $('#backup-status');
       st.classList.remove('error');
       st.textContent = 'Importing…';
@@ -3104,7 +3104,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       root.innerHTML =
         '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="welcome-name-title">' +
         '<h2 id="welcome-name-title">Welcome to AS Forms</h2>' +
-        '<p class="hint">Enter the name that should appear on expense claims and timesheets. Data stays in this browser only.</p>' +
+        '<p class="hint">Your name for forms.</p>' +
         '<label class="field" style="display:block;margin:12px 0">' +
         'Display name' +
         '<input type="text" id="welcome-name-input" maxlength="80" autocomplete="name" placeholder="Your name" ' +

@@ -5,6 +5,7 @@
  *    650 ms glide + 350 ms reveal). Respects "reduce motion".
  *  - Keyboard-safe inputs: when a field gets focus or the on-screen keyboard resizes the
  *    visible area, the field is scrolled into the middle of what is still visible.
+ *  - Swipe back: drag from the left edge on a Settings sub-page = ← Back.
  *  - Review & export: lists every file that will go in the job zip (with sizes); tap one to
  *    preview it (photos/PDFs as they are, Word forms drawn as a table). Download zip or Send —
  *    Send only opens a prepared email; nothing is ever sent automatically.
@@ -73,6 +74,28 @@
         keepFocusedVisible();
       });
     }
+  }
+
+  // ——— Swipe back on Settings sub-pages (Android: back gesture) ———
+  // Start within 28 px of the left edge and drag right ≥ 80 px (mostly sideways) → same as ← Back.
+  function wireSwipeBack() {
+    let start = null;
+    const backBtn = () => {
+      const v = Array.from(document.querySelectorAll('.view')).find((x) => !x.classList.contains('hidden'));
+      return v ? v.querySelector('.back-btn[data-back="settings"], .back-btn[data-back="set-email"]') : null;
+    };
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      start = e.touches.length === 1 && t.clientX <= 28 && backBtn() && !document.querySelector('.sheet-backdrop, #modal-root.modal-backdrop')
+        ? { x: t.clientX, y: t.clientY } : null;
+    }, { passive: true });
+    document.addEventListener('touchend', (e) => {
+      if (!start) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - start.x, dy = Math.abs(t.clientY - start.y);
+      start = null;
+      if (dx >= 80 && dy < dx * 0.6) { const b = backBtn(); if (b) b.click(); }
+    }, { passive: true });
   }
 
   // ——— Review & export ———
@@ -201,6 +224,7 @@
   function wire() {
     injectView();
     wireKeyboard();
+    wireSwipeBack();
     const $ = A().$;
     $('#btn-review-back').onclick = () => {
       if (st.expenseId) A().openClaim(st.expenseId); else global.AsMileageUi.openClaim(st.mileageId);

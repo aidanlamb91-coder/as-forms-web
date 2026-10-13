@@ -50,7 +50,7 @@
       <div id="journey-list" class="card-list"></div>
       <p id="journey-empty" class="empty hidden">No journeys yet.</p>
       <div class="panel"><p class="money-row"><span>Total</span><strong id="mileage-total">0 mi · £0.00</strong></p>
-        <div class="btn-row"><button type="button" class="btn primary" id="btn-mileage-export">Review &amp; export</button></div>
+        <div class="btn-row"><button type="button" class="btn primary" id="btn-mileage-export">Export</button></div>
       </div>
     </section>
     <section id="view-journey" class="view hidden">
@@ -70,13 +70,13 @@
         <div class="chip-row" id="journey-to-chips"></div>
         <div class="calc-row">
           <button type="button" class="btn secondary" id="btn-journey-calc">Calculate</button>
-          <label class="miles-field">One-way miles <input type="number" id="journey-miles" inputmode="decimal" min="0" step="0.1" required /></label>
+          <label class="miles-field">Miles (one way) <input type="number" id="journey-miles" inputmode="decimal" min="0" step="0.1" required /></label>
         </div>
         <p class="status" id="journey-calc-status" role="status"></p>
         <label class="check-row"><input type="checkbox" id="journey-return" /> <span>Return trip</span></label>
         <label>Purpose of visit <input type="text" id="journey-purpose" maxlength="120" /></label>
         <div class="chip-row" id="journey-purpose-chips"></div>
-        <p class="money-row"><span>Claimed</span><strong id="journey-claimed">0 mi · £0.00</strong></p>
+        <p class="money-row"><span>Amount</span><strong id="journey-claimed">0 mi · £0.00</strong></p>
         <button type="submit" class="btn primary">Save journey</button>
       </form>
     </section>`;
@@ -136,8 +136,8 @@
   function newChooser(createExpense) {
     const sh = A().openSheet(
       '<div class="sheet" role="dialog" aria-label="New claim"><h2>New</h2>' +
-      '<button type="button" class="settings-banner" data-new="expense"><span class="sb-text"><span class="sb-title">Expense claim</span><span class="sb-sub">Receipts and the expense form</span></span></button>' +
-      '<button type="button" class="settings-banner" data-new="mileage"><span class="sb-text"><span class="sb-title">Mileage claim</span><span class="sb-sub">Journeys and the mileage form</span></span></button>' +
+      '<button type="button" class="settings-banner" data-new="expense"><span class="sb-text"><span class="sb-title">Expense claim</span></span></button>' +
+      '<button type="button" class="settings-banner" data-new="mileage"><span class="sb-text"><span class="sb-title">Mileage claim</span></span></button>' +
       '<div class="actions"><button type="button" class="btn ghost" data-close>Cancel</button></div></div>');
     sh.el.querySelector('[data-new="expense"]').onclick = () => { sh.close(); createExpense(); };
     sh.el.querySelector('[data-new="mileage"]').onclick = () => { sh.close(); createClaim(''); };
@@ -339,7 +339,7 @@
         const out = await locationPostcode();
         b.disabled = false;
         b.textContent = '📍 Use my location';
-        if (out.postcode) { input.value = out.postcode; st.draft[which + 'Label'] = 'Current location'; } else A().toast(out.message);
+        if (out.postcode) { input.value = out.postcode; st.draft[which + 'Label'] = 'Current location'; A().toast('Approximate — check it'); } else A().toast(out.message);
         return;
       }
       input.value = b.dataset.pc;
@@ -350,7 +350,7 @@
   /** Browser location → nearest postcode (postcodes.io). Needs HTTPS + the user's permission. */
   function locationPostcode() {
     return new Promise((resolve) => {
-      if (!navigator.geolocation) return resolve({ message: 'Location isn\'t available in this browser.' });
+      if (!navigator.geolocation) return resolve({ message: 'Location unavailable' });
       navigator.geolocation.getCurrentPosition(async (pos) => {
         try {
           const pc = await M().reversePostcode(pos.coords.latitude, pos.coords.longitude);
@@ -358,7 +358,7 @@
         } catch (_) {
           resolve({ message: "Couldn't look up the postcode — type it instead." });
         }
-      }, (err) => resolve({ message: err && err.code === 1 ? 'Location permission was refused.' : 'Couldn\'t get your location.' }),
+      }, (err) => resolve({ message: err && err.code === 1 ? 'Location off' : 'Location unavailable' }),
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
     });
   }
@@ -377,7 +377,7 @@
     const r = await M().roadMiles($('#journey-from').value, $('#journey-to').value);
     if (r.ok) {
       $('#journey-miles').value = String(r.miles);
-      status.textContent = 'Road distance ' + M().formatMiles(r.miles) + ' one way.';
+      status.textContent = '';
       updateClaimed(await S().getMileage(st.claimId));
     } else {
       status.classList.add('error');
@@ -391,8 +391,8 @@
     const $ = A().$;
     const from = M().normalizePostcode($('#journey-from').value);
     const to = M().normalizePostcode($('#journey-to').value);
-    if (!M().isValidPostcode(from)) { A().toast('Check the From postcode'); return; }
-    if (!M().isValidPostcode(to)) { A().toast('Check the To postcode'); return; }
+    if (!M().isValidPostcode(from)) { A().toast('From: not a UK postcode'); return; }
+    if (!M().isValidPostcode(to)) { A().toast('To: not a UK postcode'); return; }
     const miles = M().round1(Number($('#journey-miles').value));
     if (!(miles > 0)) { A().toast('Enter the miles'); return; }
     const projRaw = $('#journey-project').value.trim();
@@ -497,13 +497,12 @@
   function yearStartSheet() {
     const cur = global.AsYearPeriods.startMonth();
     const opts = Array.from({ length: 12 }, (_, i) => i + 1).map((m) =>
-      '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + global.AsYearPeriods.monthName(m) + '</option>').join('');
+      '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + global.AsYearPeriods.monthName(m) + ' (' + global.AsYearPeriods.monthsLabel(m) + ')</option>').join('');
     const sh = A().openSheet('<div class="sheet" role="dialog" aria-label="Year starts in"><h2>Year starts in</h2>' +
       '<label>Month <select id="year-start-month">' + opts + '</select></label>' +
-      '<p class="hint" id="year-start-label">' + esc(global.AsYearPeriods.monthsLabel(cur)) + '</p>' +
+      '<p class="hint">Groups Days worked and Completed totals.</p>' +
       '<div class="actions"><button type="button" class="btn primary" id="year-start-save">Save</button><button type="button" class="btn ghost" data-close>Cancel</button></div></div>');
     const sel = sh.el.querySelector('#year-start-month');
-    sel.onchange = () => { sh.el.querySelector('#year-start-label').textContent = global.AsYearPeriods.monthsLabel(Number(sel.value)); };
     sh.el.querySelector('#year-start-save').onclick = () => {
       S().saveSettings({ yearStartMonth: Number(sel.value) });
       S().notifyChanged('prefs');
@@ -514,7 +513,7 @@
   }
   function refreshYearSub() {
     const el = document.getElementById('sb-year-start-sub');
-    if (el) el.textContent = global.AsYearPeriods.monthName(global.AsYearPeriods.startMonth()) + ' (' + global.AsYearPeriods.monthsLabel() + ')';
+    if (el) el.textContent = global.AsYearPeriods.monthName(global.AsYearPeriods.startMonth()) + '';
   }
 
   // ——— Wiring ———
@@ -539,7 +538,7 @@
       await openClaim(m.id);
     };
     $('#btn-mileage-delete').onclick = async () => {
-      if (!confirm('Delete this mileage claim?')) return;
+      if (!confirm('Delete this mileage claim? Includes all journeys.')) return;
       await S().deleteMileage(st.claimId);
       A().toast('Mileage deleted');
       await A().showExpenses();

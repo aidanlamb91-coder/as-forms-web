@@ -183,8 +183,8 @@
    * Never throws: returns { ok:true, miles, metres } or { ok:false, message }.
    */
   async function roadMiles(from, to, fetchFn) {
-    if (!isValidPostcode(from)) return { ok: false, message: 'Check the From postcode.' };
-    if (!isValidPostcode(to)) return { ok: false, message: 'Check the To postcode.' };
+    if (!isValidPostcode(from)) return { ok: false, message: 'From: not a UK postcode' };
+    if (!isValidPostcode(to)) return { ok: false, message: 'To: not a UK postcode' };
     try {
       const a = await lookupPostcode(from, fetchFn);
       if (!a) return { ok: false, message: 'Postcode ' + normalizePostcode(from) + ' not found. Enter miles manually.' };

@@ -25,7 +25,7 @@
   function refreshSubtitle() {
     const el = document.getElementById('sb-backup-sub');
     const s = C().status();
-    const text = !s.connected ? 'Google Drive, OneDrive, backup zip'
+    const text = !s.connected ? 'Not connected'
       : s.needsSignIn ? s.label + ' · sign in again'
         : s.label + ' · ' + (s.lastSyncAt ? 'synced ' + ago(s.lastSyncAt) : 'not synced yet');
     if (el) el.textContent = text;
@@ -44,7 +44,7 @@
     if (!card) return;
     const s = C().status();
     if (!s.connected) {
-      card.innerHTML = '<p class="hint">Sync with the Android app through your own cloud storage.</p>' +
+      card.innerHTML =
         Object.entries(C().KINDS).map(([k, v]) => {
           const ok = global.AsCloudConfig.isConfigured(k);
           return '<button type="button" class="provider-row" data-connect="' + k + '"' + (ok ? '' : ' disabled') + '>' +
@@ -95,7 +95,7 @@
     else if (r && r.error) A().toast(r.error);
   }
   async function replace() {
-    if (!confirm('Replace everything in this browser with the cloud backup? This browser\'s changes since the last sync are lost.')) return;
+    if (!confirm('Replaces all claims, timesheets and receipts in this browser.')) return;
     const r = await C().replaceWithCloud();
     if (r.ok) { A().toast('Restored from cloud'); await A().refreshClaimList(); } else A().toast(r.error);
     render();
