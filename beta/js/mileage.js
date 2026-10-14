@@ -28,7 +28,21 @@
     return Math.round((Number(v) + Number.EPSILON) * f * (1 + Number.EPSILON)) / f;
   }
   const round1 = (v) => roundHalfUp(v, 1);
-  const metresToMiles = (m) => round1(m / METRES_PER_MILE);
+  /**
+   * Calculate-button rounding (same rule as Android MileageMath.ROUND_UP_ABOVE): road miles become
+   * a WHOLE mile. If the part after the decimal point is MORE than this, round up; if it is this
+   * or less, round down. 23.31 → 24, 23.3 → 23, 23.0 → 23. Change the rule here only.
+   * Miles typed by hand never go through this.
+   */
+  const ROUND_UP_ABOVE = 0.3;
+  const EPSILON = 1e-9; // so 23.3 (really 23.300000000000001) still counts as "0.3 or less"
+  function roundCalculatedMiles(miles) {
+    if (!(miles > 0)) return 0;
+    const whole = Math.floor(miles);
+    return miles - whole > ROUND_UP_ABOVE + EPSILON ? whole + 1 : whole;
+  }
+  /** Road distance (metres) → whole one-way miles, worked out from the unrounded distance. */
+  const metresToMiles = (m) => roundCalculatedMiles(m / METRES_PER_MILE);
   /** One-way miles, doubled for a return trip. */
   const claimedMiles = (oneWay, returnTrip) => round1(returnTrip ? Number(oneWay || 0) * 2 : Number(oneWay || 0));
   const journeyMiles = (j) => claimedMiles(j.oneWayMiles, j.returnTrip);
@@ -265,7 +279,7 @@
 
   global.AsMileage = {
     RATE_PENCE, ROWS_PER_SHEET, METRES_PER_MILE, PURPOSE_CHIPS,
-    round1, metresToMiles, claimedMiles, journeyMiles, amount, totalMiles, totalAmount,
+    round1, ROUND_UP_ABOVE, roundCalculatedMiles, metresToMiles, claimedMiles, journeyMiles, amount, totalMiles, totalAmount,
     formatMiles, formatMilesPlain, formatPounds, formatRate,
     normalizePostcode, isValidPostcode, compactPostcode,
     jobKey, sameJob, groupJobs,
