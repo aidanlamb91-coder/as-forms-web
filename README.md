@@ -1,6 +1,6 @@
 # AS Forms — Web (GitHub Pages)
 
-Stable **0.3.15-web** at site root (timesheet default `timesheet@andrewssurvey.com` + migration of the old `Timesheets@` default, export/send help behind `?`, completion switches beside save, OCR + foreign FX, swipe/undo, import, calendar, folder sync, timesheet autofill, backup reminder, bank statements).
+Stable **1.1.0-web** at site root (promoted 14 Oct 2026; previous **0.3.15-web** kept at `/old-0.3.15/` and tag `web-0.3.15-root`). Older notes: 0.3.15-web (timesheet default `timesheet@andrewssurvey.com` + migration of the old `Timesheets@` default, export/send help behind `?`, completion switches beside save, OCR + foreign FX, swipe/undo, import, calendar, folder sync, timesheet autofill, backup reminder, bank statements).
 
 - https://aidanlamb91-coder.github.io/as-forms-web/?v=0.3.15-web
 - **Beta 1.1.0-web** (Android 1.1.0 parity) at `/beta/`: https://aidanlamb91-coder.github.io/as-forms-web/beta/ — root stays on 0.3.15-web until approved.
