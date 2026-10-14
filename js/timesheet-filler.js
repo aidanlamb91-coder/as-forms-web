@@ -157,70 +157,39 @@
     }
   }
 
-  function fillDayRowUpper(row, day, fill) {
+  const Layout = () => global.AsTimesheetLayout;
+
+  /** Fill one template day row from a TimesheetLayout row (upper: desc cell 3; lower: desc cell 2). */
+  function fillDayRow(row, r) {
     const cells = logicalCells(row);
-    if (cells.length < 10) throw new Error('Day ' + day + ' row needs >= 10 logical cells');
-    if (!fill) {
-      setCellText(cells[1], '');
-      setCellText(cells[3], '');
-      for (let ci = 4; ci <= 9; ci++) clearTypeCell(cells[ci]);
-    } else {
-      setCellText(cells[1], fill.jobNo || '');
-      setCellText(cells[3], fill.description || '');
-      for (const type of DAY_TYPES) {
-        const ci = upperCol(type);
-        if (type === fill.dayType) setTick(cells[ci]);
-        else clearTypeCell(cells[ci]);
-      }
-    }
+    if (cells.length < 10) throw new Error('Day ' + r.day + ' row needs >= 10 logical cells');
+    const descCell = r.half === 'UPPER' ? 3 : 2;
+    setCellText(cells[1], r.jobNo || '');
+    setCellText(cells[descCell], r.description || '');
+    r.ticks.forEach(function (pair, i) {
+      const cell = cells[Layout().FIRST_TYPE_CELL + i];
+      if (pair[1]) setTick(cell);
+      else clearTypeCell(cell);
+    });
   }
 
-  function fillDayRowLower(row, day, fill) {
-    const cells = logicalCells(row);
-    if (cells.length < 10) throw new Error('Day ' + day + ' row needs >= 10 logical cells');
-    if (!fill) {
-      setCellText(cells[1], '');
-      setCellText(cells[2], '');
-      for (let ci = 4; ci <= 9; ci++) clearTypeCell(cells[ci]);
-    } else {
-      setCellText(cells[1], fill.jobNo || '');
-      setCellText(cells[2], fill.description || '');
-      for (const type of DAY_TYPES) {
-        const ci = lowerCol(type);
-        if (type === fill.dayType) setTick(cells[ci]);
-        else clearTypeCell(cells[ci]);
-      }
-    }
-  }
-
+  /** TOTALS row uses the lower-half column order (Office, Offshore, Roster, Annual, Training, Sick). */
   function fillTotalsRow(row, totals) {
     const cells = logicalCells(row);
     if (cells.length < 10) throw new Error('TOTALS row needs >= 10 logical cells');
-    setCellText(cells[4], String(totals[DayType.OFFICE] || 0));
-    setCellText(cells[5], String(totals[DayType.OFFSHORE] || 0));
-    setCellText(cells[6], String(totals[DayType.ROSTER_LEAVE] || 0));
-    setCellText(cells[7], String(totals[DayType.ANNUAL_LEAVE] || 0));
-    setCellText(cells[8], String(totals[DayType.TRAINING] || 0));
-    setCellText(cells[9], String(totals[DayType.SICK] || 0));
+    Layout().LOWER_COLUMNS.forEach(function (type, i) {
+      setCellText(cells[Layout().FIRST_TYPE_CELL + i], String(totals[type] || 0));
+    });
   }
 
-  function fillDaysTable(table, data) {
+  /** Fill Table1 from the shared TimesheetLayout sheet (same model as the in-app Preview). */
+  function fillDaysTable(table, sheet) {
     let rows = childElements(table, TABLE_NS, 'table-row');
     if (rows.length < 34) throw new Error('Timesheet table needs >= 34 rows (got ' + rows.length + ')');
-
-    const byDay = {};
-    for (const d of data.days || []) byDay[d.dayOfMonth] = d;
-    const lastDay = daysInMonth(data.year, data.month);
-    const totals = {};
-    for (const t of DAY_TYPES) totals[t] = 0;
-
-    for (let day = 1; day <= lastDay; day++) {
-      const fill = byDay[day] || null;
-      if (fill) totals[fill.dayType] = (totals[fill.dayType] || 0) + 1;
-      if (day <= 16) fillDayRowUpper(rows[day], day, fill);
-      else fillDayRowLower(rows[day + 1], day, fill);
+    const lastDay = sheet.daysInMonth;
+    for (const r of sheet.rows) {
+      fillDayRow(r.day <= 16 ? rows[r.day] : rows[r.day + 1], r);
     }
-
     if (lastDay < 31) {
       for (let day = 31; day >= lastDay + 1; day--) {
         const rowIdx = day <= 16 ? day : day + 1;
@@ -228,7 +197,7 @@
       }
       rows = childElements(table, TABLE_NS, 'table-row');
     }
-    fillTotalsRow(rows[rows.length - 1], totals);
+    fillTotalsRow(rows[rows.length - 1], sheet.totals);
   }
 
   function serializeXml(doc) {
@@ -243,24 +212,11 @@
   }
 
   function expandEntriesToDays(entries, year, month) {
-    const last = daysInMonth(year, month);
-    const byDay = {};
-    for (const e of entries || []) {
-      const start = Math.max(1, Math.min(e.startDay, last));
-      const end = Math.max(start, Math.min(e.endDay, last));
-      for (let d = start; d <= end; d++) {
-        byDay[d] = {
-          dayOfMonth: d,
-          jobNo: e.jobNumber || e.jobNo || '',
-          description: e.description || '',
-          dayType: e.dayType || DayType.OFFICE,
-        };
-      }
-    }
-    return Object.keys(byDay).map(Number).sort((a, b) => a - b).map((d) => byDay[d]);
+    return Layout().expandEntriesToDays(entries, year, month);
   }
 
   async function loadTemplateBytes() {
+    if (global.__asTimesheetTemplateBytes) return global.__asTimesheetTemplateBytes; // node tests
     const res = await fetch(TEMPLATE_URL);
     if (!res.ok) throw new Error('Could not load timesheet.odt (' + res.status + '). Serve via HTTP.');
     return await res.arrayBuffer();
@@ -295,12 +251,8 @@
     const month = data.month;
     const name = data.name || DEFAULT_NAME;
     const days = data.days || expandEntriesToDays(data.entries, year, month);
-    const last = daysInMonth(year, month);
-    for (const d of days) {
-      if (d.dayOfMonth < 1 || d.dayOfMonth > last) {
-        throw new Error('Day ' + d.dayOfMonth + ' not in month ' + month + '/' + year);
-      }
-    }
+    // Shared grid model (also drives the in-app Preview); throws for days outside the month.
+    const sheet = Layout().build({ name, year, month, days });
 
     const templateBuf = await loadTemplateBytes();
     const zip = await JSZip.loadAsync(templateBuf);
@@ -323,7 +275,7 @@
 
     const tables = doc.getElementsByTagNameNS(TABLE_NS, 'table');
     if (!tables.length) throw new Error('Expected timesheet table');
-    fillDaysTable(tables[0], { year, month, days });
+    fillDaysTable(tables[0], sheet);
 
     entries['content.xml'] = new TextEncoder().encode(serializeXml(doc));
     return writeOdtBlob(entries);
@@ -343,5 +295,6 @@
     fillTimesheet,
     upperCol,
     lowerCol,
+    buildSheet: (data) => Layout().build(data),
   };
-})(window);
+})(typeof window !== 'undefined' ? window : globalThis);

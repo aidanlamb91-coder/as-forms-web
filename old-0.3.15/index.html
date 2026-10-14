@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0D0D0D" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>AS Forms</title>
+  <link rel="stylesheet" href="css/app.css?v=0.3.15-web" />
+</head>
+<body>
+  <div id="app">
+    <div id="backup-reminder" class="backup-banner hidden" role="status">
+      <div class="backup-banner-text">
+        <strong>No backup in 4 weeks</strong>
+        <span>Export a backup so you can restore if site data is cleared.</span>
+      </div>
+      <div class="backup-banner-actions">
+        <button type="button" class="btn primary" id="btn-backup-reminder-export">Export backup</button>
+        <button type="button" class="btn ghost" id="btn-backup-reminder-dismiss">Dismiss</button>
+      </div>
+    </div>
+    <!-- EXPENSES LIST -->
+    <section id="view-expenses" class="view">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>AS Forms</h1>
+            <p class="sub" id="expenses-header-sub">Expenses</p>
+          </div>
+        </div>
+      </header>
+      <div class="chips" role="tablist">
+        <button type="button" class="chip on" data-expense-chip="active">Active</button>
+        <button type="button" class="chip" data-expense-chip="completed">Completed</button>
+      </div>
+      <div class="toolbar">
+        <h2>Expense claims</h2>
+        <div class="btn-row inline">
+          <button type="button" class="btn secondary" id="btn-import-claims">Import…</button>
+          <button type="button" class="btn primary" id="btn-new-claim">+ New</button>
+        </div>
+      </div>
+      <input type="file" id="claim-import-files" accept=".zip,application/zip,application/x-zip-compressed" multiple hidden />
+      <div id="claim-list" class="card-list" aria-live="polite"></div>
+      <p id="claim-empty" class="empty hidden">No claims yet. Tap <strong>+ New</strong> to start.</p>
+    </section>
+
+    <!-- TIMESHEETS LIST -->
+    <section id="view-timesheets" class="view hidden">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>AS Forms</h1>
+            <p class="sub" id="timesheets-header-sub">Timesheets</p>
+          </div>
+        </div>
+      </header>
+      <div class="chips" role="tablist">
+        <button type="button" class="chip on" data-ts-chip="active">Active</button>
+        <button type="button" class="chip" data-ts-chip="completed">Completed</button>
+      </div>
+      <div class="toolbar">
+        <h2>Timesheets</h2>
+        <div class="btn-row inline">
+          <button type="button" class="btn secondary" id="btn-import-ts">Import…</button>
+          <button type="button" class="btn primary" id="btn-new-ts">+ New</button>
+        </div>
+      </div>
+      <input type="file" id="ts-import-files" accept=".odt,.docx,application/vnd.oasis.opendocument.text,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden />
+      <div id="ts-list" class="card-list" aria-live="polite"></div>
+      <p id="ts-empty" class="empty hidden">No timesheets yet. Tap <strong>+ New</strong> and pick a month.</p>
+    </section>
+
+    <!-- DAYS WORKED -->
+    <section id="view-days" class="view hidden">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>Days worked</h1>
+            <p class="sub">From completed timesheets</p>
+          </div>
+        </div>
+      </header>
+      <div id="days-content"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view hidden">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-logo" src="templates/as-logo.jpg" alt="" width="36" height="36"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="brand-mark" style="display:none">AS</span>
+          <div>
+            <h1>Settings</h1>
+            <p class="sub">Local browser only</p>
+          </div>
+        </div>
+      </header>
+      <form id="form-settings-name" class="panel">
+        <label>
+          Display name
+          <input type="text" id="settings-name" maxlength="80" autocomplete="name" placeholder="Your name" />
+        </label>
+        <button type="submit" class="btn primary">Save name</button>
+      </form>
+      <ul class="settings-list">
+        <li><button type="button" id="btn-goto-emails">Destination emails <span class="chev">›</span></button></li>
+        <li><button type="button" id="btn-goto-templates">Email templates <span class="chev">›</span></button></li>
+        <li><button type="button" id="btn-goto-backup">Backup <span id="backup-settings-badge" class="badge warn hidden">!</span> <span class="chev">›</span></button></li>
+      </ul>
+      <div class="panel">
+        <h2>About</h2>
+        <p class="hint" id="about-version">AS Forms <strong>0.3.15-web</strong></p>
+        <p class="hint">Free static browser app. Data stays in this browser (IndexedDB / localStorage). No auto-send email.</p>
+        <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app (first load still needs network for those assets).</p>
+        <p class="hint">Send to Invoice / Timesheets cannot auto-attach via mailto (browser limit). <strong>Download</strong> the file first, then <strong>Open mail app</strong> and attach it yourself. No Microsoft sign-in (no MSAL), no paid APIs.</p>
+      </div>
+    </section>
+
+    <!-- DESTINATION EMAILS -->
+    <section id="view-emails" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <h1>Destination emails</h1>
+      </header>
+      <form id="form-emails" class="panel">
+        <label>
+          Expense / Invoice
+          <input type="email" id="settings-expense-to" maxlength="120" />
+        </label>
+        <label>
+          Timesheets
+          <input type="email" id="settings-timesheet-to" maxlength="120" />
+        </label>
+        <p class="hint">Used in list headers, Word “Please Send to”, and Send preview To:.</p>
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+    </section>
+
+    <!-- EMAIL TEMPLATES -->
+    <section id="view-templates" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <h1>Email templates</h1>
+      </header>
+      <form id="form-templates" class="panel">
+        <h3>Expense / Invoice</h3>
+        <label>Subject <input type="text" id="tpl-expense-subject" /></label>
+        <label>Body <textarea id="tpl-expense-body"></textarea></label>
+        <h3>Timesheet</h3>
+        <label>Subject <input type="text" id="tpl-timesheet-subject" /></label>
+        <label>Body <textarea id="tpl-timesheet-body"></textarea></label>
+        <p class="hint" id="tpl-help"></p>
+        <button type="submit" class="btn primary">Save templates</button>
+      </form>
+    </section>
+
+    <!-- BACKUP -->
+    <section id="view-backup" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="settings">← Back</button>
+        <h1>Backup</h1>
+      </header>
+      <div class="panel">
+        <p class="hint">Data still lives in this browser for speed. A data folder (Chrome/Edge) or backup zip is your durable copy if site data is cleared.</p>
+
+        <h2 class="section-title">Data folder</h2>
+        <p class="hint" id="folder-support-hint" hidden></p>
+        <p class="hint" id="folder-connected">No data folder connected.</p>
+        <div class="btn-row" id="folder-controls">
+          <button type="button" class="btn primary" id="btn-folder-choose">Choose data folder…</button>
+          <button type="button" class="btn secondary" id="btn-folder-sync" disabled>Sync now</button>
+          <button type="button" class="btn secondary" id="btn-folder-restore">Restore from folder…</button>
+          <button type="button" class="btn ghost" id="btn-folder-disconnect" disabled>Disconnect folder</button>
+        </div>
+        <label class="check-row" id="folder-autosync-row">
+          <input type="checkbox" id="chk-folder-autosync" />
+          <span>Auto-sync after saves and exports (when a folder is connected)</span>
+        </label>
+
+        <h2 class="section-title">Backup zip</h2>
+        <p class="hint">Works in every browser. Export a zip with all claims, timesheets, settings, and receipt files. Import replaces everything in this browser.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-backup-export">Export backup zip</button>
+          <button type="button" class="btn secondary" id="btn-backup-import">Import backup…</button>
+        </div>
+        <input type="file" id="backup-import-file" accept=".zip,application/zip" hidden />
+        <p id="backup-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- CLAIM EDIT -->
+    <section id="view-claim" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="expenses">← Back</button>
+        <h1 id="claim-title">Claim</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-claim" title="Delete claim">🗑</button>
+      </header>
+      <p class="hint-line" id="claim-route-header"></p>
+      <form id="form-claim" class="panel">
+        <label>
+          Job number
+          <div class="job-prefix">
+            <span class="pfx">P</span>
+            <input type="text" id="claim-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="" required />
+          </div>
+        </label>
+        <div class="grid-2">
+          <label>Date from <input type="date" id="claim-from" required /></label>
+          <label>Date to <input type="date" id="claim-to" required /></label>
+        </div>
+        <div class="save-row">
+          <button type="submit" class="btn primary">Save claim</button>
+          <label class="toggle-control" for="claim-completed-toggle">
+            <span>Completed</span>
+            <input type="checkbox" id="claim-completed-toggle" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
+      </form>
+      <div class="toolbar">
+        <h2>Line items <span id="line-count" class="badge">0</span></h2>
+        <button type="button" class="btn primary" id="btn-add-line">+ Line</button>
+      </div>
+      <div id="line-list" class="card-list"></div>
+      <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt (and optional bank statement for foreign claims).</p>
+      <div class="panel export-panel">
+        <div class="section-heading">
+          <h2>Export &amp; send</h2>
+          <button type="button" class="help-btn" data-help-target="claim-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
+        </div>
+        <p class="hint attach-help hidden" id="claim-export-help">Download zip matches Android: filled <code>ExpenseClaim_YYYY-MM-DD.docx</code> plus receipts named by line number (<code>1.jpg</code>, <code>2.pdf</code>…). Named after the project number (e.g. <code>P5503.zip</code>). No JSON. Optional Word-only download below. <strong>Send to Invoice</strong> builds the zip, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded zip yourself.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-export-zip">Download zip</button>
+          <button type="button" class="btn secondary" id="btn-export-docx">Download Word only</button>
+          <button type="button" class="btn accent" id="btn-send-invoice">Send to Invoice…</button>
+        </div>
+        <p id="export-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- LINE EDIT -->
+    <section id="view-line" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" id="btn-line-back">← Back</button>
+        <h1 id="line-title">Line item</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-line" title="Delete line">🗑</button>
+      </header>
+      <form id="form-line" class="panel">
+        <label>Date <input type="date" id="line-date" required /></label>
+        <label>Description <input type="text" id="line-desc" maxlength="200" required /></label>
+        <label>Foreign currency (optional) <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
+        <div class="grid-3">
+          <label>£ Net <input type="number" id="line-net" step="0.01" min="0" inputmode="decimal" /></label>
+          <label>£ VAT <input type="number" id="line-vat" step="0.01" min="0" inputmode="decimal" /></label>
+          <label>£ Total <input type="number" id="line-total" step="0.01" min="0" inputmode="decimal" /></label>
+        </div>
+        <p class="hint">If Total is blank, Net + VAT is used on export.</p>
+        <fieldset class="receipt-box">
+          <legend>
+            <span>Receipt</span>
+            <button type="button" class="help-btn" data-help-target="receipt-help" aria-label="Receipt help" aria-expanded="false">?</button>
+          </legend>
+          <p class="hint attach-help hidden" id="receipt-help">Attach a photo or PDF. The app reads it on this device and suggests the date, merchant, and amounts for you to confirm.</p>
+          <input type="file" id="line-receipt" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
+          <div id="receipt-preview" class="receipt-preview hidden"></div>
+          <div id="ocr-status" class="ocr-status hidden" role="status" aria-live="polite">
+            <span id="ocr-status-text">Reading receipt…</span>
+            <button type="button" class="btn ghost" id="btn-ocr-cancel">Cancel</button>
+          </div>
+          <div id="ocr-suggest" class="ocr-suggest hidden">
+            <p class="ocr-suggest-title">Suggested from receipt</p>
+            <p class="hint" id="ocr-suggest-note">Check these, edit if needed, then tap Use these.</p>
+            <label>Date <input type="date" id="ocr-date" /></label>
+            <label>Description <input type="text" id="ocr-desc" maxlength="200" /></label>
+            <label>Foreign currency <input type="text" id="ocr-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
+            <div class="grid-3">
+              <label>£ Net <input type="number" id="ocr-net" step="0.01" min="0" inputmode="decimal" /></label>
+              <label>£ VAT <input type="number" id="ocr-vat" step="0.01" min="0" inputmode="decimal" /></label>
+              <label>£ Total <input type="number" id="ocr-total" step="0.01" min="0" inputmode="decimal" /></label>
+            </div>
+            <div class="btn-row" style="margin-top:8px">
+              <button type="button" class="btn primary" id="btn-ocr-apply">Use these</button>
+              <button type="button" class="btn secondary" id="btn-ocr-dismiss">Dismiss</button>
+              <button type="button" class="btn ghost" id="btn-ocr-rescan">Scan again</button>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:8px">
+            <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
+            <button type="button" class="btn ghost hidden" id="btn-ocr-rescan-alone">Scan receipt again</button>
+          </div>
+        </fieldset>
+        <fieldset class="receipt-box">
+          <legend>
+            <span>Bank statement (optional)</span>
+            <button type="button" class="help-btn" data-help-target="statement-help" aria-label="Bank statement help" aria-expanded="false">?</button>
+          </legend>
+          <p class="hint attach-help hidden" id="statement-help">For foreign claims, attach a statement photo or PDF. Export combines two photos into one image; otherwise both files are included separately. OCR reads only the receipt.</p>
+          <input type="file" id="line-statement" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
+          <div id="statement-preview" class="receipt-preview hidden"></div>
+          <button type="button" class="btn ghost" id="btn-clear-statement">Remove statement</button>
+        </fieldset>
+        <button type="submit" class="btn primary">Save line</button>
+      </form>
+    </section>
+
+    <!-- NEW TIMESHEET DIALOG (as view) -->
+    <section id="view-ts-new" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="timesheets">← Back</button>
+        <h1>New timesheet</h1>
+      </header>
+      <form id="form-ts-new" class="panel">
+        <div class="grid-2">
+          <label>Month
+            <select id="ts-new-month"></select>
+          </label>
+          <label>Year
+            <select id="ts-new-year"></select>
+          </label>
+        </div>
+        <button type="submit" class="btn primary">Create</button>
+      </form>
+    </section>
+
+    <!-- TIMESHEET EDIT -->
+    <section id="view-ts-edit" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" data-back="timesheets">← Back</button>
+        <h1 id="ts-title">Timesheet</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-ts" title="Delete">🗑</button>
+      </header>
+      <p class="hint-line" id="ts-route-header"></p>
+      <form id="form-ts-meta" class="panel">
+        <div class="grid-2">
+          <label>Month <select id="ts-edit-month"></select></label>
+          <label>Year <select id="ts-edit-year"></select></label>
+        </div>
+        <div class="save-row">
+          <button type="submit" class="btn primary">Save month/year</button>
+          <label class="toggle-control" for="ts-completed-toggle">
+            <span>Completed</span>
+            <input type="checkbox" id="ts-completed-toggle" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
+      </form>
+      <div class="toolbar">
+        <h2>Entries <span id="ts-entry-count" class="badge">0</span></h2>
+        <button type="button" class="btn primary" id="btn-add-entry">+ Entry</button>
+      </div>
+      <div id="ts-entry-list" class="card-list"></div>
+      <p id="ts-entry-empty" class="empty hidden">No entries. Add date-range blocks (Office / Offshore / Holiday / …).</p>
+      <div class="panel">
+        <div class="section-heading">
+          <h2>Export &amp; send</h2>
+          <button type="button" class="help-btn" data-help-target="timesheet-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
+        </div>
+        <p class="hint attach-help hidden" id="timesheet-export-help"><strong>Send to Timesheets</strong> builds the .odt, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded .odt yourself.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-export-odt">Download timesheet.odt</button>
+          <button type="button" class="btn accent" id="btn-send-timesheets">Send to Timesheets…</button>
+        </div>
+        <p id="ts-export-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- ENTRY EDIT -->
+    <section id="view-ts-entry" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost" id="btn-entry-back">← Back</button>
+        <h1 id="entry-title">Entry</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-entry" title="Delete">🗑</button>
+      </header>
+      <form id="form-ts-entry" class="panel">
+        <p class="hint" id="entry-day-hint" style="margin-bottom:6px">Valid days for this timesheet month: 1–31</p>
+        <div class="entry-dates">
+          <div class="grid-2">
+            <label>Start day <input type="number" id="entry-start" min="1" max="31" inputmode="numeric" required /></label>
+            <label>End day <input type="number" id="entry-end" min="1" max="31" inputmode="numeric" required /></label>
+          </div>
+          <button type="button" class="btn secondary" id="btn-pick-dates" title="Pick a date range on the calendar">📅 Pick dates…</button>
+        </div>
+        <div id="entry-cal" class="entry-cal hidden" aria-label="Date range calendar" hidden>
+          <div class="entry-cal-head">
+            <strong id="entry-cal-title">Month</strong>
+            <span class="hint" id="entry-cal-status">Tap start, then end</span>
+          </div>
+          <div class="entry-cal-weekdays" aria-hidden="true">
+            <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+          </div>
+          <div class="entry-cal-grid" id="entry-cal-grid"></div>
+          <div class="entry-cal-actions">
+            <button type="button" class="btn ghost" id="btn-cal-clear">Clear</button>
+            <button type="button" class="btn primary" id="btn-cal-done">Done</button>
+          </div>
+        </div>
+        <label>
+          Project (job)
+          <div class="job-prefix">
+            <span class="pfx">P</span>
+            <input type="text" id="entry-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="" />
+          </div>
+        </label>
+        <label>Description <input type="text" id="entry-desc" maxlength="200" /></label>
+        <p class="hint" style="margin-bottom:6px">Day type (one only)</p>
+        <div class="day-type-grid" id="entry-day-types"></div>
+        <button type="submit" class="btn primary">Save entry</button>
+      </form>
+    </section>
+  </div>
+
+  <nav class="bottom-nav" aria-label="Main">
+    <div class="inner">
+      <button type="button" class="on" data-nav="expenses"><span class="ico">£</span>Expenses</button>
+      <button type="button" data-nav="timesheets"><span class="ico">⏱</span>Timesheets</button>
+      <button type="button" data-nav="days"><span class="ico">📅</span>Days worked</button>
+      <button type="button" data-nav="settings"><span class="ico">⚙</span>Settings</button>
+    </div>
+  </nav>
+
+  <div id="modal-root" class="hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="lib/jszip.min.js?v=0.3.15-web"></script>
+  <script src="js/email-templates.js?v=0.3.15-web"></script>
+  <script src="js/offshore-days.js?v=0.3.15-web"></script>
+  <script src="js/storage.js?v=0.3.15-web"></script>
+  <script src="js/docx-filler.js?v=0.3.15-web"></script>
+  <script src="js/timesheet-filler.js?v=0.3.15-web"></script>
+  <script src="js/timesheet-reader.js?v=0.3.15-web"></script>
+  <script src="js/expense-zip-reader.js?v=0.3.15-web"></script>
+  <script src="js/image-merge.js?v=0.3.15-web"></script>
+  <script src="js/export.js?v=0.3.15-web"></script>
+  <script src="js/folder-sync.js?v=0.3.15-web"></script>
+  <script src="js/receipt-parse.js?v=0.3.15-web"></script>
+  <script src="js/receipt-ocr.js?v=0.3.15-web"></script>
+  <script src="js/app.js?v=0.3.15-web"></script>
+</body>
+</html>

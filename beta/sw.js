@@ -8,7 +8,7 @@
  */
 const VERSION = '1.1.0-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
-const BUILD = 4;
+const BUILD = 5;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';

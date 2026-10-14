@@ -56,6 +56,7 @@
           index: idx + 1,
           date: line.date,
           jobNo: line.jobNo,
+          category: global.AsExpenseCategory ? global.AsExpenseCategory.splitLine(line).category : undefined,
           description: line.description,
           foreignCurrency: line.foreignCurrency || '',
           net: line.net,
@@ -102,7 +103,7 @@
     return (claim.lines || []).map((l) => ({
       date: l.date,
       jobNo: claimJob, // always claim-level (Android toLineData)
-      description: l.description,
+      description: global.AsExpenseCategory ? global.AsExpenseCategory.lineText(l) : l.description,
       foreignCurrency: l.foreignCurrency || '',
       net: l.net,
       vat: l.vat,
@@ -130,14 +131,50 @@
    * When receipt + bank statement both present: merge to one tall JPEG when possible;
    * else write N.1.ext (receipt) and N.2.ext (statement).
    */
+  /** Expense-only zip (kept for older callers): the Word form + numbered receipts. */
   async function buildClaimZipBlob(claim) {
+    const zip = new JSZip();
+    await addExpenseToZip(zip, claim);
+    return zip.generateAsync({ type: 'blob' });
+  }
+
+  /**
+   * 1.1.0-web combined job zip (Android MileageRepository.buildJobExport):
+   *   ExpenseClaim_<date>.docx + numbered receipts (when there is an expense claim)
+   *   MileageClaim_<date>.docx for each linked mileage claim.
+   * Name: "P5503.zip" with an expense claim, "P5520_Mileage.zip" for mileage on its own.
+   * Returns { blob, name, entries:[{ name, size }] } so Review & export can list the contents.
+   */
+  async function buildJobZip(expense, mileageClaims) {
     if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
+    const zip = new JSZip();
+    if (expense) await addExpenseToZip(zip, expense);
+    const s = AsStorage.getSettings();
+    const used = new Set();
+    for (const m of mileageClaims || []) {
+      let name = global.AsMileage.docxFileName(m);
+      if (used.has(name)) name = name.replace(/\.docx$/, '_' + String(m.id).slice(-4) + '.docx');
+      used.add(name);
+      zip.file(name, await global.AsMileageDocx.fill(global.AsMileageDocx.claimToForm(m, s)));
+    }
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+    // Read sizes back from the finished zip (what the user will actually send)
+    const back = await JSZip.loadAsync(blob);
+    const entries = [];
+    for (const n of Object.keys(back.files)) {
+      if (back.files[n].dir) continue;
+      const b = await back.files[n].async('uint8array');
+      entries.push({ name: n, size: b.length, file: back.files[n] });
+    }
+    const name = expense ? safeName(expense.jobNo || 'claim') + '.zip' : global.AsMileage.soloZipName(mileageClaims[0]);
+    return { blob, name, entries };
+  }
+
+  async function addExpenseToZip(zip, claim) {
     syncLinesJobFromClaim(claim);
     const filledDocx = await fillClaimDocxBlob(claim);
     const dateFrom = claim.dateFrom || new Date().toISOString().slice(0, 10);
     const docxName = 'ExpenseClaim_' + dateFrom + '.docx';
-
-    const zip = new JSZip();
     zip.file(docxName, filledDocx);
 
     const lines = claim.lines || [];
@@ -176,7 +213,6 @@
         zip.file(String(lineNumber) + ext, stmt.blob);
       }
     }
-    return zip.generateAsync({ type: 'blob' });
   }
 
   async function exportClaimZip(claim) {
@@ -318,152 +354,43 @@
    * Build the portable backup package shared by zip download and folder sync.
    * Returns { snapshot, receiptEntries: [{ path, blob }] }.
    */
+  /**
+   * 1.1.0-web: the backup manifest + receipt list in Android's format (js/backup-format.js),
+   * so Android and web can restore each other's backups.
+   */
   async function buildBackupPackage() {
     const s = AsStorage.getSettings();
     const claims = await AsStorage.listClaims();
     const timesheets = await AsStorage.listTimesheets();
-
-    const claimSnaps = [];
-    const lineSnaps = [];
-    for (const c of claims) {
-      const fromMs = c.dateFrom ? Date.parse(c.dateFrom + 'T00:00:00') : 0;
-      const toMs = c.dateTo ? Date.parse(c.dateTo + 'T00:00:00') : 0;
-      claimSnaps.push({
-        id: c.id,
-        jobNumber: c.jobNo || '',
-        dateFromMillis: fromMs,
-        dateToMillis: toMs,
-        dateFrom: c.dateFrom,
-        dateTo: c.dateTo,
-        completed: !!c.completed,
-        completedAtMillis: c.completedAt || null,
-        exportDocumentUri: null,
-        exportFileName: null,
-        exportFolderKind: c.completed ? 'Archive' : 'Active',
-        createdAtMillis: c.createdAt || 0,
-        updatedAtMillis: c.updatedAt || 0,
-      });
-      (c.lines || []).forEach((line, idx) => {
-        let receiptPath = null;
-        if (line.receiptId) {
-          const ext = line.receiptMeta && line.receiptMeta.name && line.receiptMeta.name.includes('.')
-            ? line.receiptMeta.name.slice(line.receiptMeta.name.lastIndexOf('.'))
-            : '.bin';
-          receiptPath = 'receipts/' + c.id + '/line_' + line.id + ext;
-        }
-        let statementPath = null;
-        if (line.statementId) {
-          const sext = line.statementMeta && line.statementMeta.name && line.statementMeta.name.includes('.')
-            ? line.statementMeta.name.slice(line.statementMeta.name.lastIndexOf('.'))
-            : '.bin';
-          statementPath = 'receipts/' + c.id + '/line_' + line.id + '_stmt' + sext;
-        }
-        lineSnaps.push({
-          id: line.id,
-          claimId: c.id,
-          sortOrder: idx,
-          dateMillis: line.date ? Date.parse(line.date + 'T00:00:00') : null,
-          date: line.date,
-          jobNo: line.jobNo || '',
-          description: line.description || '',
-          foreignCurrency: line.foreignCurrency || '',
-          net: line.net,
-          vat: line.vat,
-          total: line.total,
-          receiptBackupPath: receiptPath,
-          receiptDisplayName: line.receiptMeta ? line.receiptMeta.name : null,
-          receiptMime: line.receiptMeta ? line.receiptMeta.type : null,
-          statementBackupPath: statementPath,
-          statementDisplayName: line.statementMeta ? line.statementMeta.name : null,
-          statementMime: line.statementMeta ? line.statementMeta.type : null,
-        });
-      });
-    }
-
+    const mileage = AsStorage.listMileage ? await AsStorage.listMileage() : [];
+    const { snapshot, files } = AsBackupFormat.toSnapshot({
+      settings: s, claims, timesheets, mileage, appVersion: AsStorage.APP_VERSION,
+    });
     const receiptEntries = [];
-    for (const c of claims) {
-      for (const line of c.lines || []) {
-        const snap = lineSnaps.find((l) => l.id === line.id && l.claimId === c.id);
-        if (!snap) continue;
-        if (line.receiptId && snap.receiptBackupPath) {
-          const rcpt = await AsStorage.getReceipt(line.receiptId);
-          if (rcpt && rcpt.blob) {
-            receiptEntries.push({ path: snap.receiptBackupPath, blob: rcpt.blob });
-          }
-        }
-        if (line.statementId && snap.statementBackupPath) {
-          const stmt = await AsStorage.getReceipt(line.statementId);
-          if (stmt && stmt.blob) {
-            receiptEntries.push({ path: snap.statementBackupPath, blob: stmt.blob });
-          }
-        }
-      }
+    for (const f of files) {
+      const r = await AsStorage.getReceipt(f.receiptId);
+      if (r && r.blob) receiptEntries.push({ path: f.path, blob: r.blob });
     }
-
-    const tsSnaps = [];
-    const entrySnaps = [];
-    for (const t of timesheets) {
-      tsSnaps.push({
-        id: t.id,
-        year: t.year,
-        month: t.month,
-        completed: !!t.completed,
-        completedAtMillis: t.completedAt || null,
-        exportDocumentUri: null,
-        exportFileName: null,
-        exportFolderKind: t.completed ? 'Archive' : 'Active',
-        createdAtMillis: t.createdAt || 0,
-        updatedAtMillis: t.updatedAt || 0,
-      });
-      for (const e of t.entries || []) {
-        entrySnaps.push({
-          id: e.id,
-          timesheetId: t.id,
-          startDay: e.startDay,
-          endDay: e.endDay,
-          jobNumber: e.jobNumber || '',
-          description: e.description || '',
-          dayType: e.dayType || 'OFFICE',
-        });
-      }
-    }
-
-    const snapshot = {
-      schemaVersion: 1,
-      exportedAtMillis: Date.now(),
-      appVersionName: AsStorage.APP_VERSION,
-      prefs: {
-        displayName: s.displayName,
-        expenseSubject: s.expenseSubject,
-        expenseBody: s.expenseBody,
-        timesheetSubject: s.timesheetSubject,
-        timesheetBody: s.timesheetBody,
-        accountPromptDone: true,
-        exportFolderTreeUri: null,
-        expenseTo: s.expenseTo,
-        timesheetTo: s.timesheetTo,
-      },
-      claims: claimSnaps,
-      lineItems: lineSnaps,
-      timesheets: tsSnaps,
-      timesheetEntries: entrySnaps,
-    };
-    return { snapshot, receiptEntries, claims, timesheets };
+    return { snapshot, receiptEntries, claims, timesheets, mileage };
   }
 
-  /** Full backup zip compatible with Android schema (web-adapted ids as strings). */
-  async function exportBackupZip() {
+  /** The whole backup as one zip Blob (same bytes go to the cloud as AS-Forms-backup.zip). */
+  async function buildBackupZipBlob() {
     if (typeof JSZip === 'undefined') throw new Error('JSZip not loaded');
     const { snapshot, receiptEntries } = await buildBackupPackage();
     const zip = new JSZip();
-    for (const entr of receiptEntries) {
-      zip.file(entr.path, entr.blob);
-    }
-    zip.file('as-forms-backup.json', JSON.stringify(snapshot, null, 2));
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const name = 'as-forms-backup-' + new Date().toISOString().slice(0, 10) + '.zip';
+    zip.file(AsBackupFormat.MANIFEST_NAME, JSON.stringify(snapshot, null, 2));
+    for (const e of receiptEntries) zip.file(e.path, e.blob);
+    return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+  }
+
+  /** Download backup: the one storage option kept on web besides the cloud. */
+  async function exportBackupZip() {
+    const blob = await buildBackupZipBlob();
+    const name = 'AS-Forms-backup-' + AsBackupFormat.millisToIso(Date.now()) + '.zip'; // same name Android suggests
     downloadBlob(blob, name);
     if (AsStorage.markBackupSuccess) AsStorage.markBackupSuccess();
+    AsStorage.saveSettings({ lastLocalBackupSize: blob.size, lastLocalBackupName: name, lastLocalBackupAt: Date.now() });
     return name;
   }
 
@@ -474,6 +401,7 @@
     await AsStorage.importBackup(snapshot, receiptBlobs || {});
   }
 
+  /** Restore from a backup zip (a File, Blob or ArrayBuffer — Android's or the web's). */
   async function importBackupZip(file) {
     const zip = await JSZip.loadAsync(file);
     const manifestFile = zip.file('as-forms-backup.json');
@@ -491,6 +419,7 @@
     downloadBlob,
     exportClaimZip,
     buildClaimZipBlob,
+    buildJobZip,
     fillClaimDocxBlob,
     syncLinesJobFromClaim,
     exportFilledDocx,
@@ -504,6 +433,7 @@
     tryShare,
     buildBackupPackage,
     exportBackupZip,
+    buildBackupZipBlob,
     importBackupParts,
     importBackupZip,
     claimFolderName,

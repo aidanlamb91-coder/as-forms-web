@@ -1,16 +1,22 @@
 /**
- * IndexedDB + localStorage for AS Forms web 0.3.15-web.
- * Claims, timesheets, receipts/statements in IDB; settings in localStorage.
+ * IndexedDB + localStorage for AS Forms web.
+ * Claims, timesheets, mileage claims, receipts/statements live in IndexedDB (the browser's
+ * database); settings live in localStorage.
+ *
+ * 1.1.0-web: adds the `mileage` store (DB version 4), Profile fields (Home postcode, CC,
+ * mileage rate, saved places, Year starts in), whole-number ids (so backups match Android),
+ * and an "as-data-changed" event after every save/delete so cloud sync can follow up.
  */
 (function (global) {
   const DB_NAME = 'as-forms-web';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   const STORE_CLAIMS = 'claims';
   const STORE_TIMESHEETS = 'timesheets';
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
+  const STORE_MILEAGE = 'mileage';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '0.3.15-web';
+  const APP_VERSION = '1.1.0-web';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -33,6 +39,16 @@
       // Backup reminder (ms epoch); null/0 = never backed up
       lastBackupAt: null,
       backupReminderDismissedAt: null,
+      // 1.1.0-web Profile (same fields as Android's backup prefs)
+      yearStartMonth: 3,
+      homePostcode: '',
+      ccEngine: '',
+      mileageRatePence: 55,
+      savedPlaces: [],
+      // 1.1.0-web archive: build AS-Forms-YYYY.zip automatically when a year is due
+      autoArchive: true,
+      lastLocalBackupSize: 0,
+      lastLocalBackupName: '',
     };
   }
 
@@ -56,6 +72,9 @@
         if (!db.objectStoreNames.contains(STORE_META)) {
           db.createObjectStore(STORE_META, { keyPath: 'key' });
         }
+        if (!db.objectStoreNames.contains(STORE_MILEAGE)) {
+          db.createObjectStore(STORE_MILEAGE, { keyPath: 'id' });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -71,8 +90,25 @@
     });
   }
 
-  function uid(prefix) {
-    return (prefix || 'id') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  /**
+   * New record id. 1.1.0-web: a whole number as text (e.g. "1760380000000123") so the backup
+   * matches Android, which needs numeric ids. The prefix argument is kept for old callers.
+   */
+  let uidLast = 0;
+  function uid(_prefix) {
+    let n = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    if (n <= uidLast) n = uidLast + 1;
+    uidLast = n;
+    return String(n);
+  }
+
+  /** Tell the rest of the app (cloud sync, archive) that saved data changed. */
+  let quiet = 0;
+  function notifyChanged(kind) {
+    if (quiet) return;
+    try {
+      global.dispatchEvent(new CustomEvent('as-data-changed', { detail: { kind } }));
+    } catch (_) { /* old browsers / tests */ }
   }
 
   /** Old default 'Timesheets@andrewssurvey.com' (any case) → new default; other addresses untouched. */
@@ -133,6 +169,7 @@
     const tx = db.transaction(storeName, 'readwrite');
     tx.objectStore(storeName).put(row);
     await txDone(tx);
+    if (storeName !== STORE_META && storeName !== STORE_RECEIPTS) notifyChanged(storeName);
     return row;
   }
 
@@ -169,6 +206,7 @@
       }
     }
     await txDone(tx);
+    notifyChanged('claims');
   }
 
   // ——— Timesheets ———
@@ -202,6 +240,39 @@
     const tx = db.transaction(STORE_TIMESHEETS, 'readwrite');
     tx.objectStore(STORE_TIMESHEETS).delete(id);
     await txDone(tx);
+    notifyChanged('timesheets');
+  }
+
+  // ——— Mileage claims (1.1.0-web) ———
+  // { id, jobNo, unlinked, ratePence, completed, completedAt, dismissed:[keys],
+  //   journeys:[{ id, date, projectNumber, fromPostcode, toPostcode, fromLabel, toLabel,
+  //               purpose, oneWayMiles, returnTrip, sortOrder }], createdAt, updatedAt }
+  async function listMileage() {
+    const rows = await listAll(STORE_MILEAGE);
+    rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return rows;
+  }
+  async function getMileage(id) { return getById(STORE_MILEAGE, id); }
+  async function putMileage(m) {
+    const now = Date.now();
+    const M = global.AsMileage;
+    const row = {
+      ...m,
+      completed: !!m.completed,
+      completedAt: m.completed ? (m.completedAt || now) : null,
+      journeys: m.journeys || [],
+      updatedAt: now,
+      createdAt: m.createdAt || now,
+    };
+    if (M) Object.assign(row, M.claimDates(row));
+    return putRow(STORE_MILEAGE, row);
+  }
+  async function deleteMileage(id) {
+    const db = await openDb();
+    const tx = db.transaction(STORE_MILEAGE, 'readwrite');
+    tx.objectStore(STORE_MILEAGE).delete(id);
+    await txDone(tx);
+    notifyChanged('mileage');
   }
 
   async function findTimesheetByYearMonth(year, month, excludeId) {
@@ -294,10 +365,11 @@
 
   async function clearAllData() {
     const db = await openDb();
-    const tx = db.transaction([STORE_CLAIMS, STORE_TIMESHEETS, STORE_RECEIPTS], 'readwrite');
+    const tx = db.transaction([STORE_CLAIMS, STORE_TIMESHEETS, STORE_RECEIPTS, STORE_MILEAGE], 'readwrite');
     tx.objectStore(STORE_CLAIMS).clear();
     tx.objectStore(STORE_TIMESHEETS).clear();
     tx.objectStore(STORE_RECEIPTS).clear();
+    tx.objectStore(STORE_MILEAGE).clear();
     await txDone(tx);
   }
 
@@ -305,113 +377,64 @@
    * Replace-all import from backup snapshot + receipt map { path: Blob }.
    * Snapshot uses web-friendly shape (string ids OK).
    */
+  /** Category + composed description for a backup / import line (category carried or inferred). */
+  function categoryFields(l) {
+    const C = global.AsExpenseCategory;
+    if (!C) return { description: l.description || '' };
+    const [category, detail] = C.fromImport(l.category, l.description || '');
+    return { category, description: C.composeForStorage(category, detail) };
+  }
+
+  /**
+   * Replace everything in this browser with a backup (Android's or the web's — same format,
+   * see js/backup-format.js). receiptBlobs = { "receipts/1/line_2.jpg": Blob, ... }.
+   */
   async function importBackup(snapshot, receiptBlobs) {
-    await clearAllData();
-    if (snapshot.prefs) {
+    const F = global.AsBackupFormat;
+    const data = F.fromSnapshot(snapshot); // throws on an unknown schema before anything is wiped
+    quiet++;
+    try {
+      await clearAllData();
+      const p = data.prefs || {};
+      const d = defaultSettings();
+      const pick = (v, def) => (v == null || v === '' ? def : v);
       saveSettings({
-        displayName: snapshot.prefs.displayName || defaultSettings().displayName,
-        expenseTo: snapshot.prefs.expenseTo || defaultSettings().expenseTo,
-        timesheetTo: migrateTimesheetTo(snapshot.prefs.timesheetTo || defaultSettings().timesheetTo),
-        expenseSubject: snapshot.prefs.expenseSubject || defaultSettings().expenseSubject,
-        expenseBody: snapshot.prefs.expenseBody || defaultSettings().expenseBody,
-        timesheetSubject: snapshot.prefs.timesheetSubject || defaultSettings().timesheetSubject,
-        timesheetBody: snapshot.prefs.timesheetBody || defaultSettings().timesheetBody,
+        displayName: pick(p.displayName, d.displayName),
+        expenseTo: pick(p.expenseTo, d.expenseTo),
+        timesheetTo: migrateTimesheetTo(pick(p.timesheetTo, d.timesheetTo)),
+        expenseSubject: pick(p.expenseSubject, d.expenseSubject),
+        expenseBody: pick(p.expenseBody, d.expenseBody),
+        timesheetSubject: pick(p.timesheetSubject, d.timesheetSubject),
+        timesheetBody: pick(p.timesheetBody, d.timesheetBody),
+        yearStartMonth: global.AsYearPeriods ? global.AsYearPeriods.normalizeMonth(p.yearStartMonth) : (p.yearStartMonth || 3),
+        homePostcode: pick(p.homePostcode, getSettings().homePostcode || ''),
+        ccEngine: pick(p.ccEngine, getSettings().ccEngine || ''),
+        mileageRatePence: Number(p.mileageRatePence) || getSettings().mileageRatePence || 55,
+        savedPlaces: Array.isArray(p.savedPlaces) ? p.savedPlaces : (getSettings().savedPlaces || []),
       });
-    }
-
-    const claimIdMap = {};
-    for (const c of snapshot.claims || []) {
-      const id = c.id != null ? String(c.id) : uid('claim');
-      claimIdMap[c.id] = id;
-      const lines = (snapshot.lineItems || [])
-        .filter((l) => String(l.claimId) === String(c.id))
-        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-
-      const webLines = [];
-      for (const l of lines) {
-        let receiptId = null;
-        let receiptMeta = null;
-        let statementId = null;
-        let statementMeta = null;
-        if (l.receiptBackupPath && receiptBlobs[l.receiptBackupPath]) {
-          const blob = receiptBlobs[l.receiptBackupPath];
-          receiptMeta = await putReceipt(blob, {
-            name: l.receiptDisplayName || 'receipt',
-            type: l.receiptMime || blob.type,
-          });
-          receiptId = receiptMeta.id;
+      const blobs = receiptBlobs || {};
+      for (const c of data.claims) {
+        for (const l of c.lines) {
+          if (l.receiptPath && blobs[l.receiptPath]) {
+            const b = blobs[l.receiptPath];
+            l.receiptMeta = await putReceipt(b, { name: l.receiptName || 'receipt', type: l.receiptMime || b.type });
+            l.receiptId = l.receiptMeta.id;
+          }
+          if (l.statementPath && blobs[l.statementPath]) {
+            const b = blobs[l.statementPath];
+            l.statementMeta = await putReceipt(b, { name: l.statementName || 'statement', type: l.statementMime || b.type });
+            l.statementId = l.statementMeta.id;
+          }
+          ['receiptPath', 'receiptName', 'receiptMime', 'statementPath', 'statementName', 'statementMime'].forEach((k) => delete l[k]);
         }
-        if (l.statementBackupPath && receiptBlobs[l.statementBackupPath]) {
-          const blob = receiptBlobs[l.statementBackupPath];
-          statementMeta = await putReceipt(blob, {
-            name: l.statementDisplayName || 'statement',
-            type: l.statementMime || blob.type,
-          });
-          statementId = statementMeta.id;
-        }
-        const dateIso = l.date || (l.dateMillis
-          ? new Date(l.dateMillis).toISOString().slice(0, 10)
-          : '');
-        webLines.push({
-          id: l.id != null ? String(l.id) : uid('line'),
-          date: dateIso,
-          jobNo: l.jobNo || '',
-          description: l.description || '',
-          foreignCurrency: l.foreignCurrency || '',
-          net: l.net,
-          vat: l.vat,
-          total: l.total,
-          receiptId,
-          receiptMeta,
-          statementId,
-          statementMeta,
-        });
+        await putRow(STORE_CLAIMS, { ...c, name: getSettings().displayName });
       }
-
-      const dateFrom = c.dateFrom || (c.dateFromMillis
-        ? new Date(c.dateFromMillis).toISOString().slice(0, 10) : '');
-      const dateTo = c.dateTo || (c.dateToMillis
-        ? new Date(c.dateToMillis).toISOString().slice(0, 10) : '');
-
-      await putClaim({
-        id,
-        jobNo: c.jobNumber || c.jobNo || '',
-        name: getSettings().displayName,
-        dateFrom,
-        dateTo,
-        completed: !!c.completed,
-        completedAt: c.completedAtMillis || c.completedAt || null,
-        lines: webLines,
-        createdAt: c.createdAtMillis || c.createdAt || Date.now(),
-        updatedAt: c.updatedAtMillis || c.updatedAt || Date.now(),
-      });
+      for (const t of data.timesheets) await putRow(STORE_TIMESHEETS, t);
+      for (const m of data.mileage) await putRow(STORE_MILEAGE, m);
+    } finally {
+      quiet--;
     }
-
-    const tsIdMap = {};
-    for (const t of snapshot.timesheets || []) {
-      const id = t.id != null ? String(t.id) : uid('ts');
-      tsIdMap[t.id] = id;
-      const entries = (snapshot.timesheetEntries || [])
-        .filter((e) => String(e.timesheetId) === String(t.id))
-        .map((e) => ({
-          id: e.id != null ? String(e.id) : uid('tse'),
-          startDay: e.startDay,
-          endDay: e.endDay,
-          jobNumber: e.jobNumber || e.jobNo || '',
-          description: e.description || '',
-          dayType: e.dayType || 'OFFICE',
-        }));
-      await putTimesheet({
-        id,
-        year: t.year,
-        month: t.month,
-        completed: !!t.completed,
-        completedAt: t.completedAtMillis || t.completedAt || null,
-        entries,
-        createdAt: t.createdAtMillis || t.createdAt || Date.now(),
-        updatedAt: t.updatedAtMillis || t.updatedAt || Date.now(),
-      });
-    }
+    notifyChanged('import');
   }
 
 
@@ -445,6 +468,7 @@
     const tx = db.transaction(STORE_CLAIMS, 'readwrite');
     tx.objectStore(STORE_CLAIMS).delete(id);
     await txDone(tx);
+    notifyChanged('claims');
     return claim;
   }
 
@@ -478,6 +502,11 @@
     putTimesheet,
     deleteTimesheet,
     findTimesheetByYearMonth,
+    listMileage,
+    getMileage,
+    putMileage,
+    deleteMileage,
+    notifyChanged,
     putReceipt,
     getReceipt,
     deleteReceipt,
