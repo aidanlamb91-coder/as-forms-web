@@ -8,15 +8,19 @@
  * and an "as-data-changed" event after every save/delete so cloud sync can follow up.
  */
 (function (global) {
-  const DB_NAME = 'as-forms-web';
+  // 1.2.1-web: names are scoped per copy (main site / beta) — see js/app-scope.js
+  const DB_NAME = globalThis.AsScope ? globalThis.AsScope.db('as-forms-web') : 'as-forms-web';
   const DB_VERSION = 4;
   const STORE_CLAIMS = 'claims';
   const STORE_TIMESHEETS = 'timesheets';
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const STORE_MILEAGE = 'mileage';
-  const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '1.1.0-web';
+  const SETTINGS_KEY = globalThis.AsScope ? globalThis.AsScope.key('as-forms-settings') : 'as-forms-settings';
+  const APP_VERSION = '1.2.2-web';
+  // 1.2.1-web Other forms: where Payroll and HR forms are addressed (editable in Destination emails)
+  const DEFAULT_PAYROLL_TO = 'jillian.robertson@andrewssurvey.com';
+  const DEFAULT_HR_TO = 'jillian.robertson@andrewssurvey.com';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -47,6 +51,8 @@
       savedPlaces: [],
       // 1.1.0-web archive: build AS-Forms-YYYY.zip automatically when a year is due
       autoArchive: true,
+      payrollTo: DEFAULT_PAYROLL_TO,
+      hrTo: DEFAULT_HR_TO,
       lastLocalBackupSize: 0,
       lastLocalBackupName: '',
     };
@@ -56,7 +62,9 @@
 
   function openDb() {
     if (dbPromise) return dbPromise;
-    dbPromise = new Promise((resolve, reject) => {
+    // wait for the beta's one-time copy of the main site's data (js/app-scope.js) before opening
+    const scopeReady = (globalThis.AsScope && globalThis.AsScope.ready) || Promise.resolve();
+    dbPromise = scopeReady.then(() => new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = (ev) => {
         const db = req.result;
@@ -78,7 +86,7 @@
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
-    });
+    }));
     return dbPromise;
   }
 
@@ -131,16 +139,31 @@
       if (parsed.sendTo && !parsed.expenseTo) parsed.expenseTo = parsed.sendTo;
       // 0.3.15-web: migrate old default timesheet address
       if (parsed.timesheetTo != null) parsed.timesheetTo = migrateTimesheetTo(parsed.timesheetTo);
-      return { ...defaults, ...parsed, sendTo: parsed.expenseTo || parsed.sendTo || defaults.expenseTo };
+      return withSessionName({ ...defaults, ...parsed, sendTo: parsed.expenseTo || parsed.sendTo || defaults.expenseTo });
     } catch {
-      return { ...defaults };
+      return withSessionName({ ...defaults });
     }
+  }
+
+  // 1.2.2-web "Remember name only" off: the name lives in memory for this session only
+  // (js/lock-core.js). It is never written to localStorage, and reads give the session name.
+  const nameIsSessionOnly = () => !!(globalThis.AsLock && !globalThis.AsLock.rememberName());
+  function withSessionName(s) {
+    if (nameIsSessionOnly()) s.displayName = globalThis.AsLock.sessionName();
+    return s;
   }
 
   function saveSettings(partial) {
     const next = { ...getSettings(), ...partial };
     if (partial.expenseTo != null) next.sendTo = partial.expenseTo;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    const stored = { ...next };
+    if (nameIsSessionOnly()) {
+      if (partial.displayName != null) globalThis.AsLock.setSessionName(partial.displayName);
+      stored.displayName = '';
+      stored.namePromptSeen = true; // ask at export time instead of at start-up
+      next.displayName = globalThis.AsLock.sessionName();
+    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
     return next;
   }
 
@@ -411,6 +434,8 @@
         ccEngine: pick(p.ccEngine, getSettings().ccEngine || ''),
         mileageRatePence: Number(p.mileageRatePence) || getSettings().mileageRatePence || 55,
         savedPlaces: Array.isArray(p.savedPlaces) ? p.savedPlaces : (getSettings().savedPlaces || []),
+        payrollTo: pick(p.payrollTo, getSettings().payrollTo || DEFAULT_PAYROLL_TO),
+        hrTo: pick(p.hrTo, getSettings().hrTo || DEFAULT_HR_TO),
       });
       const blobs = receiptBlobs || {};
       for (const c of data.claims) {
@@ -483,6 +508,8 @@
   global.AsStorage = {
     uid,
     APP_VERSION,
+    DEFAULT_PAYROLL_TO,
+    DEFAULT_HR_TO,
     markBackupSuccess,
     dismissBackupReminder,
     shouldShowBackupReminder,

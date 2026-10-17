@@ -18,7 +18,8 @@
  *   With automatic archiving off, nothing happens until the user taps Archive now.
  */
 (function (global) {
-  const STATE_KEY = 'as-forms-archive';
+  // 1.2.1-web: names are scoped per copy (main site / beta) — see js/app-scope.js
+  const STATE_KEY = globalThis.AsScope ? globalThis.AsScope.key('as-forms-archive') : 'as-forms-archive';
   const META_PREFIX = 'archive:';
   const NAME_RE = /^AS-Forms-(\d{4})\.zip$/;
   const F = () => global.AsBackupFormat;

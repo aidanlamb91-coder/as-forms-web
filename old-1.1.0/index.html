@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0D0D0D" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="AS Forms" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="application-name" content="AS Forms" />
+  <title>AS Forms</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="css/app.css?v=1.1.0-web" />
+  <link rel="stylesheet" href="css/tutorial.css?v=1.1.0-web" />
+</head>
+<body>
+  <!-- 1.1.0-web opening animation (js/ui-110.js): the logo shrinks into the top bar, then the app
+       is revealed in a circle growing from the logo (top-left). Removed after ~1 s. -->
+  <div id="splash" aria-hidden="true"><img id="splash-logo" src="img/as_logo.png" alt="" /></div>
+  <div id="app">
+    <!-- 1.1.0-web shared top bar (Android HomeTopBar): one bar above the three tabs; the logo
+         never moves. Title / subtitle follow the tab. The cloud icon uploads now when tapped. -->
+    <header id="home-top-bar" class="home-top-bar">
+      <img id="top-bar-logo" class="top-bar-logo" src="img/as_logo.png" alt="AS" width="64" height="32" />
+      <div class="top-bar-text">
+        <h1 id="top-bar-title">Expenses</h1>
+        <p id="top-bar-sub" class="sub"></p>
+      </div>
+      <button type="button" id="top-bar-cloud" class="icon-btn cloud-badge hidden" aria-label="Upload to cloud now" title="Upload now">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 10.1A7 7 0 0 0 6.1 8.6 5.5 5.5 0 0 0 6.5 19.5h12.4a4.7 4.7 0 0 0 .5-9.4zM13 13v4h-2v-4H8l4-4 4 4h-3z"/></svg>
+        <span class="cloud-dot hidden" id="top-bar-cloud-dot"></span>
+      </button>
+    </header>
+    <div id="backup-reminder" class="backup-banner hidden" role="status">
+      <div class="backup-banner-text">
+        <strong>No backup in 28 days</strong>
+        
+      </div>
+      <div class="backup-banner-actions">
+        <button type="button" class="btn primary" id="btn-backup-reminder-export">Export backup</button>
+        <button type="button" class="btn ghost" id="btn-backup-reminder-dismiss">Dismiss</button>
+      </div>
+    </div>
+    <div id="update-bar" class="update-bar hidden" role="status">
+      <span>New version available</span>
+      <button type="button" class="btn primary" id="btn-update-reload">Reload</button>
+    </div>
+    <div id="install-banner" class="install-banner hidden" role="region" aria-label="Install AS Forms">
+      <img src="icons/icon-192.png" alt="" width="40" height="40" />
+      <div class="install-banner-text">
+        <strong>Add AS Forms to your Home Screen</strong>
+        <span>Opens like an app and works offline.</span>
+      </div>
+      <button type="button" class="btn primary" id="btn-install-banner">Install</button>
+      <button type="button" class="icon-btn" id="btn-install-banner-dismiss" aria-label="Dismiss">✕</button>
+    </div>
+    <div id="tour-banner" class="install-banner tour-banner hidden" role="region" aria-label="New: take the tour">
+      <span class="tour-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-2 5.5v9l7-4.5-7-4.5z"/></g></svg></span>
+      <div class="install-banner-text">
+        <strong>New: take the tour</strong>
+        <span>A 1-minute practice run. Nothing is saved.</span>
+      </div>
+      <button type="button" class="btn primary" id="btn-tour-banner">Start</button>
+      <button type="button" class="icon-btn" id="btn-tour-banner-dismiss" aria-label="Dismiss">✕</button>
+    </div>
+    <!-- EXPENSES LIST -->
+    <section id="view-expenses" class="view">
+      <div class="chips" role="tablist">
+        <button type="button" class="chip on" data-expense-chip="active">Active</button>
+        <button type="button" class="chip" data-expense-chip="completed">Completed</button>
+      </div>
+      <div class="toolbar">
+        <h2>Expense claims</h2>
+        <div class="btn-row inline">
+          <button type="button" class="btn secondary" id="btn-import-claims">Import…</button>
+          <button type="button" class="btn primary" id="btn-new-claim">+ New</button>
+        </div>
+      </div>
+      <input type="file" id="claim-import-files" accept=".zip,application/zip,application/x-zip-compressed" multiple hidden />
+      <button type="button" id="archive-chip" class="archive-chip hidden"></button>
+      <div id="claim-list" class="card-list" aria-live="polite"></div>
+      <p id="claim-empty" class="empty hidden">Tap <strong>+ New</strong> to start a claim.</p>
+    </section>
+
+    <!-- TIMESHEETS LIST -->
+    <section id="view-timesheets" class="view hidden">
+      <div class="chips" role="tablist">
+        <button type="button" class="chip on" data-ts-chip="active">Active</button>
+        <button type="button" class="chip" data-ts-chip="completed">Completed</button>
+      </div>
+      <div class="toolbar">
+        <h2>Timesheets</h2>
+        <div class="btn-row inline">
+          <button type="button" class="btn secondary" id="btn-import-ts">Import…</button>
+          <button type="button" class="btn primary" id="btn-new-ts">+ New</button>
+        </div>
+      </div>
+      <input type="file" id="ts-import-files" accept=".odt,.docx,application/vnd.oasis.opendocument.text,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden />
+      <div id="ts-list" class="card-list" aria-live="polite"></div>
+      <p id="ts-empty" class="empty hidden">Tap <strong>+ New</strong> to add a month.</p>
+    </section>
+
+    <!-- SETTINGS (banner list → sub-pages, Android 1.0.0) -->
+    <section id="view-settings" class="view hidden">
+      <div class="settings-banners">
+        <button type="button" class="settings-banner" id="btn-goto-profile"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4.4 0-8 2.2-8 5v1.5h16V19c0-2.8-3.6-5-8-5z"/></g></svg></span><span class="sb-text"><span class="sb-title">Profile</span><span class="sb-sub" id="sb-profile-sub">Name on forms</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-year-start"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2zm-2 7v10h14V9H5zm2 2h4v4H7v-4z"/></g></svg></span><span class="sb-text"><span class="sb-title">Year starts in</span><span class="sb-sub" id="sb-year-start-sub">March</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-email"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm9 7.2L4.4 7H4v.9l8 5.4 8-5.4V7h-.4L12 12.2z"/></g></svg></span><span class="sb-text"><span class="sb-title">Email &amp; addresses</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-backup"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 3a9 9 0 1 1-8.5 6h2.2A7 7 0 1 0 12 5V8L7.5 4.5 12 1v2zm-1 5h2v4.6l3.2 1.9-1 1.7L11 13.7V8z"/></g></svg></span><span class="sb-text"><span class="sb-title">Sync and Backup <span id="backup-settings-badge" class="badge warn hidden">!</span></span><span class="sb-sub" id="sb-backup-sub"></span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-import"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3V3zM4 18h16v3H4v-3z"/></g></svg></span><span class="sb-text"><span class="sb-title">Import</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-install"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M7 1h10a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zm0 3v15h10V4H7zm4 2h2v5.2l1.8-1.8 1.4 1.4L12 14l-4.2-4.2 1.4-1.4L11 11.2V6z"/></g></svg></span><span class="sb-text"><span class="sb-title">Install app</span><span class="sb-sub" id="sb-install-sub">Add AS Forms to your Home Screen</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-settings-tutorial"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-2 5.5v9l7-4.5-7-4.5z"/></g></svg></span><span class="sb-text"><span class="sb-title">Tutorial</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-about"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 8v7h2v-7h-2zm0-3v2h2V7h-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">About</span><span class="sb-sub" id="sb-about-sub">1.1.0-web</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+      </div>
+    </section>
+
+    <section id="view-set-profile" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Profile</h1>
+      </header>
+      <form id="form-settings-name" class="panel">
+        <label>
+          Name on forms
+          <input type="text" id="settings-name" maxlength="80" autocomplete="name" placeholder="Your name" />
+        </label>
+        <!-- 1.1.0-web mileage profile (same fields as Android ProfileScreen) -->
+        <label>
+          Home postcode
+          <input type="text" id="settings-home-postcode" maxlength="9" autocomplete="postal-code" autocapitalize="characters" />
+        </label>
+        <div class="grid-2">
+          <label>CC of engine <input type="text" id="settings-cc" inputmode="numeric" maxlength="8" placeholder="cc" /></label>
+          <label>Mileage rate <input type="number" id="settings-rate" inputmode="numeric" min="1" max="200" step="1" placeholder="p / mile" /></label>
+        </div>
+        <p class="hint" id="profile-error"></p>
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+      <h2 class="section-title pad">Saved places</h2>
+      <div id="saved-places" class="card-list"></div>
+      <div class="pad"><button type="button" class="btn secondary" id="btn-add-place">+ Add place</button></div>
+    </section>
+
+    <section id="view-set-email" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Email &amp; addresses</h1>
+      </header>
+      <div class="settings-banners">
+        <button type="button" class="settings-banner" id="btn-goto-emails"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></g></svg></span><span class="sb-text"><span class="sb-title">Destination emails</span><span class="sb-sub" id="sb-emails-sub">Expenses and timesheets addresses</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="settings-banner" id="btn-goto-templates"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M5 3h10l4 4v14H5V3zm9 1.5V8h3.5L14 4.5zM8 11h8v1.6H8V11zm0 3.4h8V16H8v-1.6zm0 3.4h5v1.6H8v-1.6z"/></g></svg></span><span class="sb-text"><span class="sb-title">Email templates</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+      </div>
+      
+    </section>
+
+
+    <section id="view-set-import" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Import</h1>
+      </header>
+      <div class="panel">
+        <h2 class="section-title">Old timesheets</h2>
+        <p class="hint">Filled .odt or .docx timesheets → Completed.</p>
+        <button type="button" class="btn primary" id="btn-settings-import-ts">Import timesheets…</button>
+        <h2 class="section-title">Expense zips</h2>
+        <p class="hint">Expense zips (e.g. P5503.zip) → Completed claims.</p>
+        <button type="button" class="btn primary" id="btn-settings-import-claims">Import expense zips…</button>
+        <p class="hint">To move <em>everything</em> (all claims, timesheets and settings) use Backup &amp; restore instead.</p>
+      </div>
+    </section>
+
+    <section id="view-set-install" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Install app</h1>
+      </header>
+      <div class="panel" id="install-panel">
+        <div class="install-hero">
+          <img src="icons/icon-192.png" alt="" width="64" height="64" />
+          <div>
+            <h2>AS Forms on your Home Screen</h2>
+            <p class="hint">Opens full-screen like an app, starts instantly and works offline (including receipt reading).</p>
+          </div>
+        </div>
+        <p class="status ok hidden" id="install-standalone-note">✓ You are using the installed app.</p>
+        <div id="install-actions">
+          <button type="button" class="btn primary" id="btn-install-app">Install app</button>
+          <p class="hint" id="install-hint"></p>
+        </div>
+        <p class="hint"><strong>iPhone / iPad:</strong> the Home Screen app keeps its own storage, separate from Safari. Anything entered in Safari will not appear in the Home Screen app — use <strong>Backup &amp; restore</strong> to move it (Export backup in Safari, Restore backup in the app).</p>
+      </div>
+    </section>
+
+    <section id="view-set-about" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>About</h1>
+      </header>
+      <div class="panel">
+        <p class="hint" id="about-version">AS Forms <strong>1.1.0-web</strong></p>
+        <p class="hint">Data stays in this browser.</p>
+        <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app and kept for offline use after the first visit.</p>
+        <p class="hint">Installed on iPhone? The Home Screen app's data is separate from Safari's — use Backup &amp; restore to move it.</p>
+        <p class="hint" id="about-offline"></p>
+        <button type="button" class="btn secondary" id="btn-about-replay-tour">Replay tour</button>
+      </div>
+    </section>
+
+    <!-- DESTINATION EMAILS -->
+    <section id="view-emails" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="set-email">← Back</button>
+        <h1>Destination emails</h1>
+      </header>
+      <form id="form-emails" class="panel">
+        <label>
+          Expense / Invoice
+          <input type="email" id="settings-expense-to" maxlength="120" />
+        </label>
+        <label>
+          Timesheets
+          <input type="email" id="settings-timesheet-to" maxlength="120" />
+        </label>
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+    </section>
+
+    <!-- EMAIL TEMPLATES -->
+    <section id="view-templates" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="set-email">← Back</button>
+        <h1>Email templates</h1>
+      </header>
+      <form id="form-templates" class="panel">
+        <h3>Expense / Invoice</h3>
+        <label>Subject <input type="text" id="tpl-expense-subject" /></label>
+        <label>Body <textarea id="tpl-expense-body"></textarea></label>
+        <h3>Timesheet</h3>
+        <label>Subject <input type="text" id="tpl-timesheet-subject" /></label>
+        <label>Body <textarea id="tpl-timesheet-body"></textarea></label>
+        <p class="hint" id="tpl-help"></p>
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+    </section>
+
+    <!-- BACKUP & RESTORE -->
+    <!-- 1.1.0-web Sync and Backup (Android CloudSettingsScreen 1.1.0 layout), filled by js/sync-ui.js -->
+    <section id="view-backup" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="settings">← Back</button>
+        <h1>Sync and Backup</h1>
+      </header>
+      <h2 class="section-title pad">Cloud sync</h2>
+      <div class="panel" id="cloud-card"></div>
+      <h2 class="section-title pad">Archive</h2>
+      <div class="panel" id="archive-card">
+        <p class="hint">One zip per year; archivable from 1 Jan two years on.</p>
+        <label class="toggle-control wide" for="chk-auto-archive">
+          <span>Archive old receipts automatically</span>
+          <input type="checkbox" id="chk-auto-archive" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <div class="archive-row">
+          <div class="archive-col" id="archive-col-local"><span class="k">Local</span><span class="v" id="archive-size-local">…</span><button type="button" class="btn ghost small" id="btn-archive-clear-local">Clear</button></div>
+          <div class="archive-col" id="archive-col-cloud"><span class="k">Cloud</span><span class="v" id="archive-size-cloud">…</span><button type="button" class="btn ghost small" id="btn-archive-clear-cloud">Clear</button></div>
+        </div>
+        <div class="btn-row"><button type="button" class="btn secondary" id="btn-archive-now">Archive now</button></div>
+        <p id="archive-info" class="status" role="status"></p>
+      </div>
+      <h2 class="section-title pad">Backup file</h2>
+      <div class="panel">
+        <p class="hint" id="backup-last">Last backup: never</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-backup-export">Download backup</button>
+          <button type="button" class="btn secondary" id="btn-backup-import">Restore backup…</button>
+        </div>
+        <input type="file" id="backup-import-file" accept=".zip,application/zip" hidden />
+        <p id="backup-status" class="status" role="status"></p>
+        
+      </div>
+    </section>
+
+    <!-- CLAIM EDIT -->
+    <section id="view-claim" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="expenses">← Back</button>
+        <h1 id="claim-title">Claim</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-claim" title="Delete claim">🗑</button>
+      </header>
+      <p class="hint-line" id="claim-route-header"></p>
+      <form id="form-claim" class="panel">
+        <label>
+          Job number
+          <div class="job-prefix">
+            <span class="pfx">P</span>
+            <input type="text" id="claim-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="" required />
+          </div>
+        </label>
+        <div class="grid-2">
+          <label>From <input type="date" id="claim-from" required /></label>
+          <label>To <input type="date" id="claim-to" required /></label>
+        </div>
+        <div class="save-row">
+          <button type="submit" class="btn primary">Save claim</button>
+          <label class="toggle-control" for="claim-completed-toggle">
+            <span>Completed</span>
+            <input type="checkbox" id="claim-completed-toggle" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
+      </form>
+      <div class="toolbar">
+        <h2>Line items <span id="line-count" class="badge">0</span></h2>
+        <button type="button" class="btn primary" id="btn-add-line">+ Line</button>
+      </div>
+      <div id="line-list" class="card-list"></div>
+      <p id="line-empty" class="empty hidden">No lines yet. Add a line, then attach a receipt (and optional bank statement for foreign claims).</p>
+      <!-- 1.1.0-web: linked mileage (same job number) + Review & export (zip contents, tap to preview) -->
+      <div class="toolbar">
+        <h2>Mileage <span id="claim-mileage-count" class="badge">0</span></h2>
+        <button type="button" class="btn secondary" id="btn-claim-add-mileage">+ Mileage</button>
+      </div>
+      <div id="claim-mileage" class="card-list"></div>
+      <div class="panel export-panel">
+        <h2>Export &amp; send</h2>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-review-export">Export</button>
+          <button type="button" class="btn accent" id="btn-send-invoice">Send</button>
+          <button type="button" class="btn secondary hidden" id="btn-export-zip">Download zip</button>
+          <button type="button" class="btn secondary hidden" id="btn-export-docx">Download Word only</button>
+        </div>
+        <p id="export-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- LINE EDIT -->
+    <section id="view-line" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" id="btn-line-back">← Back</button>
+        <h1 id="line-title">Line item</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-line" title="Delete line">🗑</button>
+      </header>
+      <form id="form-line" class="panel">
+        <label>Date <input type="date" id="line-date" required /></label>
+        <div class="field-block">
+          <span class="field-label" id="line-cat-label">Category</span>
+          <div class="cat-chips" id="line-cat-chips" role="radiogroup" aria-labelledby="line-cat-label">
+            <button type="button" class="cat-chip" data-cat="TRAVEL" role="radio" aria-checked="false">Travel</button>
+            <button type="button" class="cat-chip" data-cat="FOOD" role="radio" aria-checked="false">Food</button>
+            <button type="button" class="cat-chip" data-cat="EQUIPMENT" role="radio" aria-checked="false">Equipment</button>
+            <button type="button" class="cat-chip" data-cat="TRAINING" role="radio" aria-checked="false">Training</button>
+            <button type="button" class="cat-chip on" data-cat="MISC" role="radio" aria-checked="true">Misc</button>
+          </div>
+        </div>
+        <label>Description
+          <div class="desc-prefix">
+            <span class="pfx" id="line-desc-prefix" aria-hidden="true">Misc - </span>
+            <input type="text" id="line-desc" maxlength="200" placeholder="e.g. Taxi to heliport" aria-describedby="line-desc-hint" />
+          </div>
+        </label>
+        <p class="hint" id="line-desc-hint">The Word form shows “<span id="line-desc-sample">Misc - …</span>”.</p>
+        <label>Foreign currency (optional) <input type="text" id="line-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
+        <div class="grid-3">
+          <label>£ Net <input type="number" id="line-net" step="0.01" min="0" inputmode="decimal" /></label>
+          <label>£ VAT <input type="number" id="line-vat" step="0.01" min="0" inputmode="decimal" /></label>
+          <label>£ Total <input type="number" id="line-total" step="0.01" min="0" inputmode="decimal" /></label>
+        </div>
+        <p class="hint">If Total is blank, Net + VAT is used on export.</p>
+        <fieldset class="receipt-box">
+          <legend>
+            <span>Receipt</span>
+            <button type="button" class="help-btn" data-help-target="receipt-help" aria-label="Receipt help" aria-expanded="false">?</button>
+          </legend>
+          <input type="file" id="line-receipt" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
+          <div id="receipt-preview" class="receipt-preview hidden"></div>
+          <div id="ocr-status" class="ocr-status hidden" role="status" aria-live="polite">
+            <span id="ocr-status-text">Reading…</span>
+            <button type="button" class="btn ghost" id="btn-ocr-cancel">Cancel</button>
+          </div>
+          <div id="ocr-suggest" class="ocr-suggest hidden">
+            <p class="ocr-suggest-title">Suggested from receipt</p>
+            <p class="hint" id="ocr-suggest-note">Check these, edit if needed, then tap Use these.</p>
+            <label>Date <input type="date" id="ocr-date" /></label>
+            <label>Description <input type="text" id="ocr-desc" maxlength="200" /></label>
+            <p class="hint hidden" id="ocr-cat-note"></p>
+            <label>Foreign currency <input type="text" id="ocr-fx" maxlength="40" placeholder="e.g. €12.50" /></label>
+            <div class="grid-3">
+              <label>£ Net <input type="number" id="ocr-net" step="0.01" min="0" inputmode="decimal" /></label>
+              <label>£ VAT <input type="number" id="ocr-vat" step="0.01" min="0" inputmode="decimal" /></label>
+              <label>£ Total <input type="number" id="ocr-total" step="0.01" min="0" inputmode="decimal" /></label>
+            </div>
+            <div class="btn-row" style="margin-top:8px">
+              <button type="button" class="btn primary" id="btn-ocr-apply">Use these</button>
+              <button type="button" class="btn secondary" id="btn-ocr-dismiss">Dismiss</button>
+              <button type="button" class="btn ghost" id="btn-ocr-rescan">Scan again</button>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:8px">
+            <button type="button" class="btn ghost danger" id="btn-clear-receipt">Remove receipt</button>
+            <button type="button" class="btn ghost hidden" id="btn-ocr-rescan-alone">Scan receipt again</button>
+          </div>
+        </fieldset>
+        <fieldset class="receipt-box">
+          <legend>
+            <span>Bank statement (optional)</span>
+            <button type="button" class="help-btn" data-help-target="statement-help" aria-label="Bank statement help" aria-expanded="false">?</button>
+          </legend>
+          <p class="hint attach-help hidden" id="statement-help">For foreign-currency claims. Two photos are merged on export.</p>
+          <input type="file" id="line-statement" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" />
+          <div id="statement-preview" class="receipt-preview hidden"></div>
+          <button type="button" class="btn ghost" id="btn-clear-statement">Remove statement</button>
+        </fieldset>
+        <button type="submit" class="btn primary">Save line</button>
+      </form>
+    </section>
+
+    <!-- NEW TIMESHEET DIALOG (as view) -->
+    <section id="view-ts-new" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="timesheets">← Back</button>
+        <h1>New timesheet</h1>
+      </header>
+      <form id="form-ts-new" class="panel">
+        <div class="grid-2">
+          <label>Month
+            <select id="ts-new-month"></select>
+          </label>
+          <label>Year
+            <select id="ts-new-year"></select>
+          </label>
+        </div>
+        <button type="submit" class="btn primary">Create</button>
+      </form>
+    </section>
+
+    <!-- TIMESHEET EDIT -->
+    <section id="view-ts-edit" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="timesheets">← Back</button>
+        <h1 id="ts-title">Timesheet</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-ts" title="Delete">🗑</button>
+      </header>
+      <p class="hint-line" id="ts-route-header"></p>
+      <form id="form-ts-meta" class="panel">
+        <div class="grid-2">
+          <label>Month <select id="ts-edit-month"></select></label>
+          <label>Year <select id="ts-edit-year"></select></label>
+        </div>
+        <div class="save-row">
+          <button type="submit" class="btn primary">Save month/year</button>
+          <label class="toggle-control" for="ts-completed-toggle">
+            <span>Completed</span>
+            <input type="checkbox" id="ts-completed-toggle" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
+      </form>
+      <div class="ts-file-row">
+        <button type="button" class="btn secondary" id="btn-ts-preview">Preview</button>
+        <button type="button" class="btn secondary" id="btn-ts-open-file">Open file</button>
+      </div>
+      <div class="toolbar">
+        <h2>Entries <span id="ts-entry-count" class="badge">0</span></h2>
+        <button type="button" class="btn primary" id="btn-add-entry">+ Entry</button>
+      </div>
+      <div id="ts-entry-list" class="card-list"></div>
+      <p id="ts-entry-empty" class="empty hidden">No entries. Add date-range blocks (Office / Offshore / Holiday / …).</p>
+      <div class="panel">
+        <div class="section-heading">
+          <h2>Export &amp; send</h2>
+          <button type="button" class="help-btn" data-help-target="timesheet-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
+        </div>
+        <p class="hint attach-help hidden" id="timesheet-export-help"><strong>Send to Timesheets</strong> builds the .odt, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded .odt yourself.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="btn-export-odt">Download timesheet.odt</button>
+          <button type="button" class="btn accent" id="btn-send-timesheets">Send</button>
+        </div>
+        <p id="ts-export-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- TIMESHEET PREVIEW (read-only, Android 1.0.0) -->
+    <section id="view-ts-preview" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" data-back="ts-edit">← Back</button>
+        <h1 id="tsp-title">Preview</h1>
+        <button type="button" class="btn secondary" id="btn-tsp-open-file">Open file</button>
+      </header>
+      <p class="tsp-month" id="tsp-month"></p>
+      <p class="tsp-summary" id="tsp-summary"></p>
+      <p class="hint pad" id="tsp-hint">Read-only — exactly what Export puts in the .odt. Pinch or double-tap to zoom.</p>
+      <div class="tsp-viewport" id="tsp-viewport">
+        <div class="tsp-zoom" id="tsp-content"></div>
+      </div>
+      <div class="tsp-zoom-btns">
+        <button type="button" class="btn ghost" id="btn-tsp-zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" class="btn ghost" id="btn-tsp-zoom-fit">Fit</button>
+        <button type="button" class="btn ghost" id="btn-tsp-zoom-in" aria-label="Zoom in">+</button>
+      </div>
+    </section>
+
+    <!-- ENTRY EDIT -->
+    <section id="view-ts-entry" class="view hidden">
+      <header class="topbar">
+        <button type="button" class="btn ghost back-btn" id="btn-entry-back">← Back</button>
+        <h1 id="entry-title">Entry</h1>
+        <button type="button" class="btn danger ghost" id="btn-delete-entry" title="Delete">🗑</button>
+      </header>
+      <form id="form-ts-entry" class="panel">
+        <p class="hint" id="entry-day-hint" style="margin-bottom:6px">Valid days for this timesheet month: 1–31</p>
+        <div class="entry-dates">
+          <div class="grid-2">
+            <label>Start day <input type="number" id="entry-start" min="1" max="31" inputmode="numeric" required /></label>
+            <label>End day <input type="number" id="entry-end" min="1" max="31" inputmode="numeric" required /></label>
+          </div>
+          <button type="button" class="btn secondary" id="btn-pick-dates" title="Pick a date range on the calendar">📅 Pick dates…</button>
+        </div>
+        <div id="entry-cal" class="entry-cal hidden" aria-label="Date range calendar" hidden>
+          <div class="entry-cal-head">
+            <strong id="entry-cal-title">Month</strong>
+            <span class="hint" id="entry-cal-status">Tap start, then end</span>
+          </div>
+          <div class="entry-cal-weekdays" aria-hidden="true">
+            <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+          </div>
+          <div class="entry-cal-grid" id="entry-cal-grid"></div>
+          <div class="entry-cal-actions">
+            <button type="button" class="btn ghost" id="btn-cal-clear">Clear</button>
+            <button type="button" class="btn primary" id="btn-cal-done">Done</button>
+          </div>
+        </div>
+        <label id="entry-job-row">
+          Project number
+          <div class="job-prefix">
+            <span class="pfx">P</span>
+            <input type="text" id="entry-job-digits" inputmode="numeric" pattern="[0-9]*" placeholder="" />
+          </div>
+        </label>
+        <label>Description <input type="text" id="entry-desc" maxlength="200" /></label>
+        <p class="hint" style="margin-bottom:6px">Day type (one only)</p>
+        <div class="day-type-grid" id="entry-day-types"></div>
+        <button type="submit" class="btn primary">Save entry</button>
+      </form>
+    </section>
+  </div>
+
+  <nav class="bottom-nav" aria-label="Main">
+    <div class="inner">
+      <button type="button" class="on" data-nav="expenses"><span class="ico">£</span>Expenses</button>
+      <button type="button" data-nav="timesheets"><span class="ico">⏱</span>Timesheets</button>
+      <button type="button" data-nav="settings"><span class="ico">⚙</span>Settings</button>
+    </div>
+  </nav>
+
+  <div id="modal-root" class="hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="lib/jszip.min.js?v=1.1.0-web"></script>
+  <script src="js/email-templates.js?v=1.1.0-web"></script>
+  <script src="js/expense-category.js?v=1.1.0-web"></script>
+  <script src="js/year-periods.js?v=1.1.0-web"></script>
+  <script src="js/offshore-days.js?v=1.1.0-web"></script>
+  <script src="js/expense-tally.js?v=1.1.0-web"></script>
+  <script src="js/days-worked-summary.js?v=1.1.0-web"></script>
+  <script src="js/storage.js?v=1.1.0-web"></script>
+  <script src="js/docx-filler.js?v=1.1.0-web"></script>
+  <script src="js/timesheet-layout.js?v=1.1.0-web"></script>
+  <script src="js/timesheet-filler.js?v=1.1.0-web"></script>
+  <script src="js/timesheet-reader.js?v=1.1.0-web"></script>
+  <script src="js/expense-zip-reader.js?v=1.1.0-web"></script>
+  <script src="js/image-merge.js?v=1.1.0-web"></script>
+  <script src="js/export.js?v=1.1.0-web"></script>
+  <script src="js/mileage.js?v=1.1.0-web"></script>
+  <script src="js/mileage-docx.js?v=1.1.0-web"></script>
+  <script src="js/backup-format.js?v=1.1.0-web"></script>
+  <script src="js/image-shrink.js?v=1.1.0-web"></script>
+  <script src="js/cloud-config.js?v=1.1.0-web"></script>
+  <script src="js/token-refresh.js?v=1.1.0-web"></script>
+  <script src="js/cloud.js?v=1.1.0-web"></script>
+  <script src="js/archive.js?v=1.1.0-web"></script>
+  <script src="js/receipt-parse.js?v=1.1.0-web"></script>
+  <script src="js/receipt-ocr.js?v=1.1.0-web"></script>
+  <script src="js/summary-pdf.js?v=1.1.0-web"></script>
+  <script src="js/hold-swipe.js?v=1.1.0-web"></script>
+  <script src="js/tab-swipe.js?v=1.1.0-web"></script>
+  <script src="js/year-picker.js?v=1.1.0-web"></script>
+  <script src="js/zoom-view.js?v=1.1.0-web"></script>
+  <script src="js/attachments.js?v=1.1.0-web"></script>
+  <script src="js/timesheet-preview.js?v=1.1.0-web"></script>
+  <script src="js/pwa.js?v=1.1.0-web"></script>
+  <script src="js/tutorial.js?v=1.1.0-web"></script>
+  <script src="js/app.js?v=1.1.0-web"></script>
+  <script src="js/mileage-ui.js?v=1.1.0-web"></script>
+  <script src="js/sync-ui.js?v=1.1.0-web"></script>
+  <script src="js/ui-110.js?v=1.1.0-web"></script>
+</body>
+</html>

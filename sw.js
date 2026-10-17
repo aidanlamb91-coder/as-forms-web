@@ -6,9 +6,9 @@
  * Root (stable) and /beta/ have separate scopes on the same origin. Cache names carry the
  * scope path so neither ever deletes the other's caches, and the root worker ignores /beta/.
  */
-const VERSION = '1.1.0-web';
+const VERSION = '1.2.2-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
-const BUILD = 5;
+const BUILD = 3;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';
@@ -73,11 +73,27 @@ const SHELL = [
   'img/as_logo.png',
   'img/ic_google_drive.png',
   'img/ic_onedrive.png',
+  // 1.2.1-web Other forms
+  'js/app-scope.js',
+  'js/uk-date.js',
+  'js/lock-core.js',
+  'js/lock-ui.js',
+  'js/forms-crypto.js',
+  'js/forms-rules.js',
+  'js/forms-docx.js',
+  'js/forms-pdf.js',
+  'js/forms-search.js',
+  'js/forms-store.js',
+  'js/forms-library.js',
+  'js/forms-ui.js',
+  'js/profile-121.js',
+  'data/forms-summaries.bin',
 ];
 
 // Large, rarely-changing files: cached best-effort (a failure here never blocks the install).
 const VENDOR = [
   'vendor/jspdf/jspdf.umd.min.js',
+  'vendor/pdf-lib/pdf-lib.min.js',
   'vendor/pdfjs/pdf.min.js',
   'vendor/pdfjs/pdf.worker.min.js',
   'vendor/tesseract/tesseract.min.js',
@@ -128,6 +144,10 @@ function inScope(url) {
   if (!url.pathname.startsWith(SCOPE_PATH)) return false;
   // The stable root app must never serve the beta app's files (and vice versa beta is its own scope).
   if (url.pathname.startsWith(SCOPE_PATH + 'beta/')) return false;
+  // Rollback copies (/old-1.1.0/, /old-0.3.15/ …) are their own apps: never answer for them with this shell
+  if (/^old-[^/]+\//.test(url.pathname.slice(SCOPE_PATH.length))) return false;
+  // 1.2.1-web: the encrypted forms library is always fetched fresh (the app keeps its own copies)
+  if (url.pathname.startsWith(SCOPE_PATH + 'forms/')) return false;
   return true;
 }
 

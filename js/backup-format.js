@@ -159,7 +159,8 @@
       exportedAtMillis: now || Date.now(),
       appVersionName: appVersion || '',
       prefs: {
-        displayName: str(s.displayName),
+        // 1.2.2-web: with "Remember name only" off the name isn't kept, so it isn't backed up either
+        displayName: global.AsLock && !global.AsLock.rememberName() ? '' : str(s.displayName),
         expenseSubject: str(s.expenseSubject),
         expenseBody: str(s.expenseBody),
         timesheetSubject: str(s.timesheetSubject),
@@ -172,6 +173,9 @@
         ccEngine: str(s.ccEngine),
         mileageRatePence: Number(s.mileageRatePence) || 55,
         savedPlaces: (s.savedPlaces || []).map((p, i) => ({ id: str(p.id, 'p' + i), name: str(p.name), postcode: str(p.postcode) })),
+        // 1.2.1-web Other forms addresses (same keys as Android 1.2.0)
+        payrollTo: str(s.payrollTo, 'jillian.robertson@andrewssurvey.com'),
+        hrTo: str(s.hrTo, 'jillian.robertson@andrewssurvey.com'),
       },
       claims: claimSnaps,
       lineItems: lineSnaps,
@@ -200,6 +204,7 @@
       expenseTo: p.expenseTo, timesheetTo: p.timesheetTo,
       yearStartMonth: p.yearStartMonth,
       homePostcode: p.homePostcode, ccEngine: p.ccEngine, mileageRatePence: p.mileageRatePence,
+      payrollTo: p.payrollTo, hrTo: p.hrTo,
       savedPlaces: Array.isArray(p.savedPlaces) ? p.savedPlaces : (typeof p.savedPlacesJson === 'string' ? safeJson(p.savedPlacesJson) : undefined),
     };
     const claims = (snap.claims || []).map((c) => {

@@ -1,0 +1,3230 @@
+/**
+ * AS Forms web 1.1.0-web — Expenses | Timesheets | Settings + guided tour (js/tutorial.js).
+ * 1.1.0-web: the new Android features live in their own files and plug in through `AsApp`
+ * (exported at the bottom): mileage (js/mileage-ui.js), Sync and Backup + cloud + archives
+ * (js/sync-ui.js), splash / keyboard / previews (js/ui-110.js). See CODE_MAP.md.
+ * Days worked lives inside Timesheets → Completed (tally years Mar–Feb); Settings is a list of
+ * banner buttons opening sub-pages; installable PWA (manifest + sw.js, see pwa.js).
+ */
+(function () {
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  const DAY_TYPE_UI = [
+    { key: 'OFFICE', label: 'Office' },
+    { key: 'OFFSHORE', label: 'Offshore' },
+    { key: 'ANNUAL_LEAVE', label: 'Holiday' },
+    { key: 'ROSTER_LEAVE', label: 'Roster Leave' },
+    { key: 'TRAINING', label: 'Training' },
+    { key: 'SICK', label: 'Sick' },
+  ];
+
+  const state = {
+    tab: 'expenses',
+    expenseChip: 'active',
+    tsChip: 'active',
+    claimId: null,
+    lineId: null,
+    tsId: null,
+    entryId: null,
+    pendingReceipt: null,
+    clearReceipt: false,
+    pendingStatement: null,
+    clearStatement: false,
+    ocrToken: 0,
+    lastOcrParsed: null,
+    pendingUndo: null,
+    backupBannerDismissedSession: false,
+    tsYearOpen: {}, // tally start-year → expanded? (current year open by default)
+    expYearOpen: {},
+    lineCategory: 'MISC',
+  };
+
+  const TAB_VIEWS = new Set(['expenses', 'timesheets', 'settings']);
+
+  function toast(msg) {
+    const el = $('#toast');
+    el.innerHTML = '';
+    el.textContent = msg;
+    el.classList.remove('hidden', 'toast-undo');
+    clearTimeout(toast._t);
+    if (state.pendingUndo && state.pendingUndo._timer) {
+      /* leave undo timer alone when showing plain toast over it */
+    }
+    toast._t = setTimeout(() => el.classList.add('hidden'), 2400);
+  }
+
+  function toastUndo(msg, onUndo, ms) {
+    const el = $('#toast');
+    const ttl = ms || 6500;
+    el.innerHTML = '';
+    el.classList.add('toast-undo');
+    el.classList.remove('hidden');
+    const span = document.createElement('span');
+    span.textContent = msg;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-undo-btn';
+    btn.textContent = 'Undo';
+    el.appendChild(span);
+    el.appendChild(btn);
+    clearTimeout(toast._t);
+    if (state.pendingUndo && state.pendingUndo._timer) {
+      clearTimeout(state.pendingUndo._timer);
+      // A second delete replaced the first toast: the first one can no longer be undone.
+      const prev = state.pendingUndo;
+      state.pendingUndo = null;
+      if (prev.onExpire) Promise.resolve().then(prev.onExpire).catch((e) => console.error(e));
+    }
+    let undone = false;
+    const finish = () => {
+      el.classList.add('hidden');
+      el.classList.remove('toast-undo');
+      el.innerHTML = '';
+    };
+    const timer = setTimeout(async () => {
+      if (!undone && state.pendingUndo && state.pendingUndo.onExpire) {
+        try { await state.pendingUndo.onExpire(); } catch (e) { console.error(e); }
+      }
+      state.pendingUndo = null;
+      finish();
+    }, ttl);
+    state.pendingUndo = { onUndo, onExpire: null, _timer: timer };
+    btn.addEventListener('click', async () => {
+      if (undone) return;
+      undone = true;
+      clearTimeout(timer);
+      state.pendingUndo = null;
+      finish();
+      try { await onUndo(); } catch (e) { console.error(e); toast('Undo failed'); }
+    });
+  }
+
+  // Quiet toasts from background folder sync (never blocks main actions)
+  globalThis.__asFolderSyncToast = function (msg) {
+    toast(msg);
+  };
+
+
+  function updateBackupBanner() {
+    const banner = $('#backup-reminder');
+    const badge = $('#backup-settings-badge');
+    const show = AsStorage.shouldShowBackupReminder() && !state.backupBannerDismissedSession;
+    if (banner) banner.classList.toggle('hidden', !show);
+    if (badge) badge.classList.toggle('hidden', !AsStorage.shouldShowBackupReminder());
+  }
+
+  /**
+   * 1.1.0-web: the data-folder option is gone (Aidan: no local folder on web). Every save fires
+   * an "as-data-changed" event from storage.js and cloud sync follows that, so this is a no-op
+   * kept so the many old call sites stay simple.
+   */
+  function scheduleFolderSync() {}
+
+
+  /**
+   * Safer swipe (Android 1.0.0): press and hold ~400 ms, then drag sideways.
+   * Right = red Delete, left = green Completed (when onComplete given). See hold-swipe.js.
+   */
+  function wrapSwipeRow(frontEl, opts) {
+    return AsHoldSwipe.wrap(frontEl, opts);
+  }
+
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function money(n) {
+    if (n == null || n === '' || Number.isNaN(Number(n))) return '—';
+    return '£' + Number(n).toFixed(2);
+  }
+
+  function lineTotal(line) {
+    if (line.total != null && line.total !== '') return Number(line.total) || 0;
+    return (Number(line.net) || 0) + (Number(line.vat) || 0);
+  }
+
+  function claimTotal(claim) {
+    return (claim.lines || []).reduce((s, l) => s + lineTotal(l), 0);
+  }
+
+  function normalizeJob(digitsOrFull) {
+    const t = String(digitsOrFull || '').trim();
+    const withoutP = t.replace(/^[Pp]/, '');
+    const digits = withoutP.replace(/\D/g, '');
+    return digits ? 'P' + digits : '';
+  }
+
+  function digitsOnly(job) {
+    return String(job || '').replace(/^[Pp]/, '').replace(/\D/g, '');
+  }
+
+  function isValidJob(j) {
+    return /^P[0-9]+$/.test(String(j || '').trim());
+  }
+
+  function numOrNull(v) {
+    if (v === '' || v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // ——— Browser / phone Back button support ———
+  // Tab roots sit on the base history entry; any sub-page adds ONE entry ({asSub}), and an open
+  // dialog / viewer adds one more ({overlay}). Hardware/gesture Back closes the dialog first,
+  // then acts like the page's own ← Back button.
+  const nav = { ignorePops: 0, queue: [], current: 'expenses' };
+  function histState() { return history.state || {}; }
+  function navRun(fn) {
+    if (nav.ignorePops > 0) nav.queue.push(fn);
+    else fn();
+  }
+  function navBack() {
+    nav.ignorePops++;
+    history.back();
+  }
+  function syncHistoryForView(name) {
+    navRun(() => {
+      const st = histState();
+      const sub = !TAB_VIEWS.has(name);
+      if (st.overlay) return; // resolved when the overlay closes
+      if (sub && !st.asSub) history.pushState({ asSub: true }, '');
+      else if (!sub && st.asSub) navBack();
+    });
+  }
+  function overlayOpen() {
+    const root = $('#modal-root');
+    return (globalThis.AsTutorial && AsTutorial.isOpen()) ||
+      (root && !root.classList.contains('hidden')) ||
+      (globalThis.AsAttachments && AsAttachments.isViewerOpen()) ||
+      !!document.querySelector('.sheet-backdrop');
+  }
+  function closeOverlays() {
+    if (globalThis.AsTutorial && AsTutorial.isOpen()) {
+      // 1.0.2: phone / browser Back = previous tour step (Skip on the first step).
+      // The popstate used up the tour's history entry, so put it back.
+      if (AsTutorial.canGoBack()) { AsTutorial.back(); reconcileHistory(); } else AsTutorial.skip();
+      return;
+    }
+    if (globalThis.AsAttachments && AsAttachments.isViewerOpen()) { AsAttachments.closeViewer(); return; }
+    const sheet = document.querySelector('.sheet-backdrop');
+    if (sheet) { sheet.remove(); return; }
+    const root = $('#modal-root');
+    if (root && !root.classList.contains('hidden')) {
+      // Prefer the dialog's own dismiss so pending promises resolve
+      const btn = root.querySelector('[data-close], #modal-close, [data-choice="skip"], #welcome-name-skip');
+      if (btn) btn.click();
+      else { root.className = 'hidden'; root.innerHTML = ''; }
+    }
+  }
+  function onOverlayMaybeChanged() {
+    navRun(() => {
+      const open = overlayOpen();
+      const st = histState();
+      if (open && !st.overlay) history.pushState({ asSub: !!st.asSub, overlay: true }, '');
+      else if (!open && st.overlay) navBack();
+    });
+  }
+  /** Make the history entry match what is on screen (after an overlay closed, etc.). */
+  function reconcileHistory() {
+    const st = histState();
+    const open = overlayOpen();
+    if (open) { if (!st.overlay) history.pushState({ asSub: !!st.asSub, overlay: true }, ''); return; }
+    if (st.overlay) { navBack(); return; }
+    const sub = !TAB_VIEWS.has(nav.current);
+    if (sub && !st.asSub) history.pushState({ asSub: true }, '');
+    else if (!sub && st.asSub) navBack();
+  }
+
+  function initHistory() {
+    if (histState().asSub || histState().overlay) history.replaceState({}, '');
+    window.addEventListener('popstate', () => {
+      if (nav.ignorePops > 0) {
+        nav.ignorePops--;
+        if (nav.ignorePops === 0) {
+          const q = nav.queue.splice(0);
+          q.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+          if (nav.ignorePops === 0) reconcileHistory();
+        }
+        return;
+      }
+      if (overlayOpen()) { closeOverlays(); return; }
+      const view = document.querySelector('.view:not(.hidden)');
+      const back = view && view.querySelector('.topbar .back-btn');
+      if (back) back.click();
+      else if (histState().asSub) history.replaceState({}, '');
+    });
+    const root = $('#modal-root');
+    if (root) new MutationObserver(onOverlayMaybeChanged).observe(root, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(onOverlayMaybeChanged).observe(document.body, { childList: true });
+    new MutationObserver(onOverlayMaybeChanged).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  /** Views added by the 1.1.0-web modules: name → selector (AsApp.registerView). */
+  const extraViews = {};
+
+  function showView(name) {
+    $$('.view').forEach((v) => v.classList.add('hidden'));
+    nav.current = name;
+    const map = {
+      expenses: '#view-expenses',
+      timesheets: '#view-timesheets',
+      settings: '#view-settings',
+      'set-profile': '#view-set-profile',
+      'set-email': '#view-set-email',
+      'set-folder': '#view-set-folder',
+      'set-import': '#view-set-import',
+      'set-install': '#view-set-install',
+      'set-about': '#view-set-about',
+      emails: '#view-emails',
+      templates: '#view-templates',
+      backup: '#view-backup',
+      'ts-preview': '#view-ts-preview',
+      claim: '#view-claim',
+      line: '#view-line',
+      'ts-new': '#view-ts-new',
+      'ts-edit': '#view-ts-edit',
+      'ts-entry': '#view-ts-entry',
+    };
+    const el = $(map[name] || extraViews[name]);
+    if (el) el.classList.remove('hidden');
+    document.body.classList.toggle('on-tab-root', TAB_VIEWS.has(name));
+    window.scrollTo(0, 0);
+    syncHistoryForView(name);
+    if (globalThis.__asRefreshInstallUi) __asRefreshInstallUi();
+  }
+
+  function setNav(tab) {
+    state.tab = tab;
+    $$('.bottom-nav button').forEach((b) => {
+      b.classList.toggle('on', b.getAttribute('data-nav') === tab);
+    });
+    updateListHeaders();
+  }
+
+  /** Shared top bar (1.1.0-web, Android HomeTopBar): title + subtitle follow the tab. */
+  function updateListHeaders() {
+    const s = AsStorage.getSettings();
+    const tab = state.tab;
+    const title = tab === 'timesheets' ? 'Timesheets' : tab === 'settings' ? 'Settings' : 'Expenses';
+    const sub = tab === 'timesheets' ? s.displayName + ' → ' + s.timesheetTo
+      : tab === 'settings' ? '' : s.displayName + ' → ' + (s.expenseTo || s.sendTo);
+    const t = $('#top-bar-title'); if (t) t.textContent = title;
+    const st = $('#top-bar-sub'); if (st) { st.textContent = sub; st.classList.toggle('hidden', !sub); }
+    const imp = $('#top-bar-import'); if (imp) imp.classList.toggle('hidden', tab === 'settings');
+  }
+
+  // ——— Expenses list ———
+  async function showExpenses() {
+    state.claimId = null;
+    state.lineId = null;
+    setNav('expenses');
+    updateListHeaders();
+    await refreshClaimList();
+    showView('expenses');
+  }
+
+  async function refreshClaimList() {
+    const all = await AsStorage.listClaims();
+    const filtered = all.filter((c) =>
+      state.expenseChip === 'completed' ? c.completed : !c.completed
+    );
+    // 1.1.0-web: mileage claims join the list, nested under the expense claim with the same job
+    const allMileage = await AsStorage.listMileage();
+    const mileage = allMileage.filter((m) => (state.expenseChip === 'completed' ? m.completed : !m.completed));
+    state.listMileage = mileage;
+    if (globalThis.AsArchiveBanner) AsArchiveBanner($('#archive-chip'));
+    const list = $('#claim-list');
+    const empty = $('#claim-empty');
+    list.innerHTML = '';
+    if (!filtered.length && !mileage.length) {
+      empty.classList.remove('hidden');
+      empty.innerHTML = state.expenseChip === 'completed'
+        ? 'No completed claims'
+        : 'Tap <strong>+ New</strong> to start a claim.';
+      return;
+    }
+    empty.classList.add('hidden');
+
+    if (state.expenseChip === 'completed') {
+      renderExpenseYears(list, filtered, mileage);
+    } else {
+      AsMileage.groupJobs(filtered, mileage).forEach((g) => list.appendChild(jobCard(g)));
+    }
+  }
+
+  /** One list row: an expense card with its mileage nested underneath, or mileage on its own. */
+  function jobCard(group) {
+    if (group.expense) return claimCard(group.expense, group.mileage);
+    return globalThis.AsMileageUi ? AsMileageUi.soloCard(group.mileage[0]) : document.createElement('div');
+  }
+
+  // ——— Expenses → Completed: tally years (Mar–Feb) with category totals (Android ExpenseYearComponents) ———
+  let expenseTallyLines = [];
+
+  /** Lines of completed claims as tally rows {date:{y,m,d}, category, total, claimId, claimLabel}. */
+  function expenseLineAmounts(claims) {
+    const out = [];
+    for (const c of claims) {
+      const fallback = AsExpenseTally.parseIso(c.dateFrom) || AsExpenseTally.parseIso(c.dateTo);
+      const label = (c.jobNo || 'No job') + ' · ' + ukShort(c.dateFrom) + ' – ' + ukShort(c.dateTo);
+      for (const l of c.lines || []) {
+        const date = AsExpenseTally.parseIso(l.date) || fallback;
+        if (!date) continue;
+        out.push({
+          date,
+          category: AsExpenseCategory.splitLine(l).category,
+          total: lineTotal(l),
+          claimId: c.id,
+          claimLabel: label,
+        });
+      }
+    }
+    return out;
+  }
+
+  function ukShort(iso) {
+    const d = AsExpenseTally.parseIso(iso);
+    if (!d) return '?';
+    return d.d + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.m - 1] + ' ' + d.y;
+  }
+
+  function yearToggle(opts) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'year-toggle' + (opts.open ? ' open' : '');
+    btn.setAttribute('aria-expanded', String(!!opts.open));
+    btn.innerHTML =
+      '<span class="yt-text"><span class="yt-title">' + escapeHtml(opts.title) + '</span>' +
+      '<span class="yt-sub">' + escapeHtml(opts.sub) + '</span></span>' +
+      '<span class="yt-chev" aria-hidden="true">⌄</span>';
+    btn.setAttribute('aria-label', opts.title + '. ' + opts.sub + '. ' + (opts.open ? 'Collapse' : 'Expand'));
+    btn.addEventListener('click', opts.onToggle);
+    return btn;
+  }
+
+  function renderExpenseYears(list, claims, mileage) {
+    const lines = expenseLineAmounts(claims);
+    expenseTallyLines = lines;
+    // Mileage-only claims get a year too: add placeholder rows so their year banner exists
+    const groups = AsExpenseTally.groupByTallyYear(claims, (c) => AsExpenseTally.parseIso(c.dateFrom) || AsExpenseTally.parseIso(c.dateTo), lines);
+    const yearOf = (iso) => { const d = AsExpenseTally.parseIso(iso); return d ? AsYearPeriods.startYearOf(d.y, d.m) : null; };
+    for (const m of mileage || []) {
+      const y = yearOf(m.dateFrom);
+      if (y != null && !groups.some((g) => g.period.startMarchYear === y)) {
+        groups.push({ period: AsOffshoreDays.periodStartingMarch(y), items: [], totals: {}, total: 0, isCurrent: y === AsYearPeriods.startYearOf(new Date().getFullYear(), new Date().getMonth() + 1) });
+      }
+    }
+    groups.sort((a, b) => b.period.startMarchYear - a.period.startMarchYear);
+    for (const g of groups) {
+      const y = g.period.startMarchYear;
+      const open = state.expYearOpen[y] != null ? state.expYearOpen[y] : g.isCurrent;
+      const n = g.items.length;
+      const section = document.createElement('div');
+      section.className = 'year-group' + (open ? ' open' : '');
+      section.appendChild(yearToggle({
+        title: g.period.label,
+        sub: (g.isCurrent ? 'This year · ' : '') + n + ' completed claim' + (n === 1 ? '' : 's'),
+        open,
+        onToggle: () => { state.expYearOpen[y] = !open; refreshClaimList(); },
+      }));
+      const ym = (mileage || []).filter((m) => yearOf(m.dateFrom) === y);
+      if (open) {
+        section.appendChild(expenseBanner(g, ym));
+        if (!n && !ym.length) {
+          const p = document.createElement('p');
+          p.className = 'empty small';
+          p.textContent = 'No completed claims in this year yet.';
+          section.appendChild(p);
+        }
+        AsMileage.groupJobs(g.items, ym).forEach((grp) => section.appendChild(jobCard(grp)));
+      }
+      list.appendChild(section);
+    }
+  }
+
+  function expenseBanner(g, yearMileage) {
+    const el = document.createElement('div');
+    el.className = 'exp-banner';
+    const y = g.period.startMarchYear;
+    el.innerHTML =
+      '<div class="exp-tiles" role="list">' +
+      AsExpenseCategory.CATEGORIES.map((c) => {
+        const amt = g.totals[c.key] || 0;
+        return '<button type="button" class="exp-tile" role="listitem" data-cat="' + c.key + '" data-year="' + y + '" ' +
+          'aria-label="' + c.label + ': ' + AsExpenseTally.formatMoney(amt) + '. Show breakdown">' +
+          '<span class="n">' + escapeHtml(AsExpenseTally.formatTile(amt)) + '</span>' +
+          '<span class="lbl">' + c.label + '</span></button>';
+      }).join('') +
+      '</div>' +
+      mileageBannerLine(yearMileage) +
+      '<p class="exp-total">Total ' + escapeHtml(AsExpenseTally.formatMoney(g.total)) + '</p>';
+    el.querySelectorAll('.exp-tile').forEach((b) => {
+      b.addEventListener('click', () => showExpenseBreakdown(Number(b.dataset.year), b.dataset.cat));
+    });
+    return el;
+  }
+
+  /** "Mileage 312 mi · £171.60" line in a Completed year banner (Android ExpenseYearComponents). */
+  function mileageBannerLine(ms) {
+    if (!ms || !ms.length) return '';
+    const js = ms.flatMap((m) => m.journeys || []);
+    const amount = ms.reduce((sum, m) => sum + AsMileage.totalAmount(m.journeys, m.ratePence || 55), 0);
+    return '<p class="exp-mileage">Mileage ' + escapeHtml(AsMileage.formatMiles(AsMileage.totalMiles(js))) + ' · ' +
+      escapeHtml(AsMileage.formatPounds(amount)) + '</p>';
+  }
+
+  function showExpenseBreakdown(startMarchYear, category) {
+    const period = AsOffshoreDays.periodStartingMarch(startMarchYear);
+    const months = AsExpenseTally.breakdown(expenseTallyLines, startMarchYear, category);
+    const label = AsExpenseCategory.labelOf(category);
+    const body = !months.length
+      ? '<p class="empty" style="margin:8px 0">No ' + escapeHtml(label) + ' lines in this period.</p>'
+      : months.map((m) =>
+        '<div class="breakdown-month"><h3 class="money-row"><span>' + escapeHtml(m.label) + '</span><span>' +
+        escapeHtml(AsExpenseTally.formatMoney(m.amount)) + '</span></h3><ul class="money-list">' +
+        m.rows.map((r) => '<li><span>' + escapeHtml(r.label) + '</span><span>' + escapeHtml(AsExpenseTally.formatMoney(r.amount)) + '</span></li>').join('') +
+        '</ul></div>').join('');
+    const root = $('#modal-root');
+    root.className = 'modal-backdrop';
+    root.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="exp-breakdown-title">' +
+      '<h2 id="exp-breakdown-title">' + escapeHtml(label + ' — ' + period.label) + '</h2>' +
+      '<div class="breakdown-body">' + body + '</div>' +
+      '<div class="actions"><button type="button" class="btn ghost" id="modal-close">Close</button></div></div>';
+    const close = () => { root.className = 'hidden'; root.innerHTML = ''; };
+    $('#modal-close', root).onclick = close;
+    root.onclick = (e) => { if (e.target === root) close(); };
+  }
+
+  /** "11/10/2026" from "2026-10-11" (1.1.0-web: dates are never shown as raw ISO). */
+  function ukDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || '?');
+  }
+
+  /**
+   * Expense card. 1.1.0-web: linked mileage claims (same job number) are drawn as an indented
+   * sub-card with a job total, and swipes act on the expense AND its mileage together.
+   * Active: right = Complete, left = Delete. Completed: left = Reopen, right = Delete.
+   */
+  function claimCard(c, linkedMileage) {
+    const ms = linkedMileage || [];
+    const btn = document.createElement('div');
+    btn.className = 'card job-card';
+    btn.setAttribute('role', 'button');
+    btn.tabIndex = 0;
+    const expenseTotal = claimTotal(c);
+    let html =
+      '<p class="title">' + escapeHtml(c.jobNo || 'No job') + '</p>' +
+      '<p class="meta">' + escapeHtml(ukDate(c.dateFrom)) + ' → ' + escapeHtml(ukDate(c.dateTo)) +
+      ' · ' + (c.lines || []).length + ' line(s)</p>' +
+      '<p class="money">' + money(expenseTotal) + '</p>';
+    if (ms.length && globalThis.AsMileageUi) {
+      html += ms.map((m) => AsMileageUi.subCardHtml(m)).join('');
+      const milesAmount = ms.reduce((sum, m) => sum + AsMileage.totalAmount(m.journeys, m.ratePence || 55), 0);
+      html += '<p class="job-total">Job total ' + money(expenseTotal + milesAmount) + '</p>';
+    }
+    btn.innerHTML = html;
+    btn.addEventListener('click', (ev) => {
+      const sub = ev.target.closest('[data-mileage-id]');
+      if (sub && globalThis.AsMileageUi) AsMileageUi.openClaim(sub.getAttribute('data-mileage-id'));
+      else openClaim(c.id);
+    });
+    btn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') openClaim(c.id); });
+    const setDone = async (done) => {
+      const claim = await AsStorage.getClaim(c.id);
+      if (!claim) return;
+      claim.completed = done;
+      claim.completedAt = done ? Date.now() : null;
+      await AsStorage.putClaim(claim);
+      for (const m of ms) {
+        const mm = await AsStorage.getMileage(m.id);
+        if (mm) await AsStorage.putMileage(AsMileageUi.withCompleted(mm, done));
+      }
+      toast(done ? 'Marked complete' : 'Reopened');
+      await refreshClaimList();
+    };
+    return wrapSwipeRow(btn, {
+      onDelete: async () => {
+        // Keep receipt files until the Undo window has passed
+        const snap = await AsStorage.softDeleteClaim(c.id);
+        const mSnaps = [];
+        for (const m of ms) { mSnaps.push(await AsStorage.getMileage(m.id)); await AsStorage.deleteMileage(m.id); }
+        await refreshClaimList();
+        toastUndo(ms.length ? 'Job deleted' : 'Claim deleted', async () => {
+          if (snap) await AsStorage.putClaim(snap);
+          for (const m of mSnaps) if (m) await AsStorage.putMileage(m);
+          await refreshClaimList();
+        });
+        if (state.pendingUndo) {
+          state.pendingUndo.onExpire = async () => { await AsStorage.purgeClaimReceipts(snap); };
+        }
+      },
+      onComplete: !c.completed ? () => setDone(true) : null,
+      onReopen: c.completed ? () => setDone(false) : null,
+    });
+  }
+
+  async function createClaim() {
+    const settings = AsStorage.getSettings();
+    const iso = new Date().toISOString().slice(0, 10);
+    const claim = {
+      id: AsStorage.uid('claim'),
+      jobNo: '',
+      name: settings.displayName,
+      sendTo: settings.expenseTo,
+      dateFrom: iso,
+      dateTo: iso,
+      completed: false,
+      lines: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await AsStorage.putClaim(claim);
+    toast('Claim created');
+    scheduleFolderSync();
+    await openClaim(claim.id);
+  }
+
+  async function openClaim(id) {
+    state.claimId = id;
+    state.lineId = null;
+    const claim = await AsStorage.getClaim(id);
+    if (!claim) {
+      toast('Claim not found');
+      return showExpenses();
+    }
+    const s = AsStorage.getSettings();
+    $('#claim-title').textContent = claim.jobNo || 'Claim';
+    $('#claim-route-header').textContent = (s.displayName) + ' → ' + (s.expenseTo || s.sendTo);
+    $('#claim-job-digits').value = digitsOnly(claim.jobNo);
+    $('#claim-from').value = claim.dateFrom || ''; // <input type=date> shows it in the phone's own dd/mm/yyyy style
+    $('#claim-to').value = claim.dateTo || '';
+    $('#export-status').textContent = '';
+    $('#claim-completed-toggle').checked = !!claim.completed;
+    renderLines(claim);
+    if (globalThis.AsMileageUi) AsMileageUi.renderClaimMileage(claim);
+    setNav('expenses');
+    showView('claim');
+  }
+
+  function renderLines(claim) {
+    const lines = claim.lines || [];
+    $('#line-count').textContent = String(lines.length);
+    const list = $('#line-list');
+    const empty = $('#line-empty');
+    list.innerHTML = '';
+    if (!lines.length) {
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+    lines.forEach((line, idx) => {
+      const btn = document.createElement('div');
+      btn.className = 'card line-card';
+      btn.setAttribute('role', 'button');
+      btn.tabIndex = 0;
+      const parts = AsExpenseCategory.splitLine(line);
+      const catLabel = AsExpenseCategory.labelOf(parts.category);
+      const fx = line.foreignCurrency ? ' · ' + escapeHtml(line.foreignCurrency) : '';
+      btn.innerHTML =
+        '<div class="line-card-body">' +
+        '<p class="title"><span class="cat-tag cat-' + parts.category.toLowerCase() + '">' + escapeHtml(catLabel) + '</span> ' +
+        escapeHtml(parts.detail || (parts.category === 'MISC' ? 'Line ' + (idx + 1) : '')) + '</p>' +
+        '<p class="meta">' + escapeHtml(line.date ? ukDate(line.date) : '') + fx + '</p>' +
+        '<p class="money">' + money(lineTotal(line)) + '</p>' +
+        '</div><div class="line-thumbs"></div>';
+      const thumbs = btn.querySelector('.line-thumbs');
+      const lineNo = idx + 1;
+      if (line.receiptId || line.receiptMeta) {
+        thumbs.appendChild(AsAttachments.thumbButton({
+          label: 'Receipt',
+          getRow: () => AsStorage.getReceipt(line.receiptId),
+          onOpen: (row) => AsAttachments.openViewer(row, 'Receipt — line ' + lineNo, 'Receipt'),
+        }));
+      }
+      if (line.statementId || line.statementMeta) {
+        thumbs.appendChild(AsAttachments.thumbButton({
+          label: 'Statement',
+          getRow: () => AsStorage.getReceipt(line.statementId),
+          onOpen: (row) => AsAttachments.openViewer(row, 'Bank statement — line ' + lineNo, 'Statement'),
+        }));
+      }
+      if (!thumbs.children.length) thumbs.remove();
+      btn.addEventListener('click', () => openLine(line.id));
+      btn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openLine(line.id); } });
+      list.appendChild(wrapSwipeRow(btn, {
+        onDelete: async () => {
+          const claim = await AsStorage.getClaim(state.claimId);
+          if (!claim) return;
+          const victim = (claim.lines || []).find((l) => l.id === line.id);
+          const snapLine = victim ? JSON.parse(JSON.stringify(victim)) : null;
+          claim.lines = (claim.lines || []).filter((l) => l.id !== line.id);
+          await AsStorage.putClaim(claim);
+          scheduleFolderSync();
+          await openClaim(claim.id);
+          toastUndo('Line deleted', async () => {
+            const c2 = await AsStorage.getClaim(state.claimId);
+            if (!c2 || !snapLine) return;
+            c2.lines = c2.lines || [];
+            c2.lines.push(snapLine);
+            await AsStorage.putClaim(c2);
+            scheduleFolderSync();
+            await openClaim(c2.id);
+          });
+          if (state.pendingUndo) {
+            state.pendingUndo.onExpire = async () => {
+              if (snapLine && snapLine.receiptId) await AsStorage.deleteReceipt(snapLine.receiptId);
+              if (snapLine && snapLine.statementId) await AsStorage.deleteReceipt(snapLine.statementId);
+            };
+          }
+        },
+      }));
+    });
+  }
+
+  async function saveClaimForm(ev) {
+    ev.preventDefault();
+    const job = normalizeJob($('#claim-job-digits').value);
+    if (!isValidJob(job)) {
+      toast('Job number must be P + digits');
+      return;
+    }
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return;
+    const s = AsStorage.getSettings();
+    claim.jobNo = job;
+    claim.name = s.displayName;
+    claim.sendTo = s.expenseTo;
+    claim.dateFrom = $('#claim-from').value;
+    claim.dateTo = $('#claim-to').value;
+    // Android updateClaimJobNumber: every line JOB NO follows claim
+    (claim.lines || []).forEach((line) => { line.jobNo = job; });
+    await AsStorage.putClaim(claim);
+    $('#claim-title').textContent = claim.jobNo;
+    toast('Claim saved');
+    scheduleFolderSync();
+  }
+
+  async function deleteClaim() {
+    if (!state.claimId) return;
+    if (!confirm('Delete this claim and its receipts from this browser?')) return;
+    await AsStorage.deleteClaim(state.claimId);
+    toast('Claim deleted');
+    scheduleFolderSync();
+    await showExpenses();
+  }
+
+  async function setClaimCompleted(completed) {
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return;
+    claim.completed = completed;
+    claim.completedAt = completed ? Date.now() : null;
+    await AsStorage.putClaim(claim);
+    toast(completed ? 'Marked complete' : 'Reopened');
+    scheduleFolderSync();
+    await openClaim(claim.id);
+  }
+
+  async function addLine() {
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return;
+    if ((claim.lines || []).length >= AsDocxFiller.MAX_LINES) {
+      toast('Max ' + AsDocxFiller.MAX_LINES + ' lines (Word form limit)');
+      return;
+    }
+    const line = {
+      id: AsStorage.uid('line'),
+      date: claim.dateFrom || new Date().toISOString().slice(0, 10),
+      jobNo: claim.jobNo || '',
+      category: 'MISC',
+      description: '',
+      foreignCurrency: '',
+      net: null,
+      vat: null,
+      total: null,
+      receiptId: null,
+      receiptMeta: null,
+      statementId: null,
+      statementMeta: null,
+    };
+    claim.lines = claim.lines || [];
+    claim.lines.push(line);
+    await AsStorage.putClaim(claim);
+    await openLine(line.id);
+  }
+
+
+  // ——— Receipt OCR (beta, on-device) ———
+  function hideOcrUi() {
+    const st = $('#ocr-status');
+    const sg = $('#ocr-suggest');
+    if (st) {
+      st.classList.add('hidden');
+      st.classList.remove('ocr-error');
+    }
+    if (sg) sg.classList.add('hidden');
+    const alone = $('#btn-ocr-rescan-alone');
+    if (alone) alone.classList.add('hidden');
+    state.lastOcrParsed = null;
+  }
+
+  function showOcrStatus(msg, isError) {
+    const st = $('#ocr-status');
+    const sg = $('#ocr-suggest');
+    if (sg) sg.classList.add('hidden');
+    if (!st) return;
+    st.classList.remove('hidden');
+    st.classList.toggle('ocr-error', !!isError);
+    $('#ocr-status-text').textContent = msg;
+    const cancel = $('#btn-ocr-cancel');
+    if (cancel) cancel.classList.toggle('hidden', !!isError);
+  }
+
+  function fillOcrSuggest(parsed) {
+    state.lastOcrParsed = parsed;
+    const sg = $('#ocr-suggest');
+    if (!sg) return;
+    $('#ocr-date').value = parsed.date || '';
+    $('#ocr-desc').value = parsed.description ? AsExpenseCategory.stripOwnPrefix(state.lineCategory, parsed.description) : '';
+    const catNote = $('#ocr-cat-note');
+    if (catNote) {
+      const guessed = parsed.category ? AsExpenseCategory.fromName(parsed.category) : null;
+      catNote.classList.toggle('hidden', !guessed);
+      catNote.textContent = guessed ? 'Category: ' + AsExpenseCategory.labelOf(guessed) + ' (from the receipt — you can change it)' : '';
+    }
+    const fxEl = $('#ocr-fx');
+    if (fxEl) fxEl.value = parsed.foreignCurrency || '';
+    $('#ocr-net').value = parsed.net != null ? parsed.net : '';
+    $('#ocr-vat').value = parsed.vat != null ? parsed.vat : '';
+    $('#ocr-total').value = parsed.total != null ? parsed.total : '';
+    const bits = [];
+    if (parsed.date) bits.push('date');
+    if (parsed.description) bits.push('merchant');
+    if (parsed.category) bits.push('category');
+    if (parsed.foreignCurrency) bits.push('foreign');
+    if (parsed.total != null) bits.push('total');
+    if (parsed.net != null) bits.push('net');
+    if (parsed.vat != null) bits.push('VAT');
+    // Job is claim-level only — ignore OCR job suggestions
+    $('#ocr-suggest-note').textContent = bits.length
+      ? ('Found: ' + bits.join(', ') + '. Edit if needed, then tap Use these.')
+      : "Couldn't read receipt";
+    sg.classList.remove('hidden');
+    const alone = $('#btn-ocr-rescan-alone');
+    if (alone) alone.classList.add('hidden');
+  }
+
+  function applyOcrSuggestions() {
+    const date = $('#ocr-date').value;
+    const desc = $('#ocr-desc').value.trim();
+    const fxEl = $('#ocr-fx');
+    const fx = fxEl ? fxEl.value.trim() : '';
+    const net = numOrNull($('#ocr-net').value);
+    const vat = numOrNull($('#ocr-vat').value);
+    const total = numOrNull($('#ocr-total').value);
+
+    if (date) $('#line-date').value = date;
+    const guessed = state.lastOcrParsed && state.lastOcrParsed.category ? AsExpenseCategory.fromName(state.lastOcrParsed.category) : null;
+    if (guessed) setLineCategory(guessed);
+    if (desc) $('#line-desc').value = AsExpenseCategory.stripOwnPrefix(state.lineCategory, desc);
+    updateDescSample();
+    if (fx) {
+      const lineFx = $('#line-fx');
+      if (lineFx) lineFx.value = fx;
+    }
+    if (net != null) {
+      $('#line-net').value = net;
+    }
+    if (vat != null) {
+      $('#line-vat').value = vat;
+    }
+    if (total != null) {
+      $('#line-total').value = total;
+      $('#line-total').dataset.touched = '1';
+    } else if (net != null || vat != null) {
+      // leave total auto-fill path
+      const totEl = $('#line-total');
+      if (totEl.dataset.touched !== '1') {
+        totEl.value = ((net || 0) + (vat || 0)).toFixed(2);
+      }
+    }
+    // Job stays claim-level — never apply OCR job onto a line
+    hideOcrUi();
+    toast('Suggestions applied — save the line when ready');
+  }
+
+  async function runReceiptOcr(blob, name) {
+    if (!blob || !globalThis.AsReceiptOcr) return;
+    const token = ++state.ocrToken;
+    showOcrStatus('Reading…', false);
+    try {
+      const result = await AsReceiptOcr.readReceipt(blob, {
+        name: name || '',
+        onProgress: (msg) => {
+          if (token !== state.ocrToken) return;
+          showOcrStatus(msg || 'Reading…', false);
+        },
+      });
+      if (token !== state.ocrToken) return;
+      $('#ocr-status').classList.add('hidden');
+      const parsed = result.parsed || {};
+      if (AsReceiptParse && AsReceiptParse.hasUsefulSuggestions(parsed)) {
+        fillOcrSuggest(parsed);
+      } else {
+        showOcrStatus("Couldn't read receipt", true);
+        const alone = $('#btn-ocr-rescan-alone');
+        if (alone) alone.classList.remove('hidden');
+      }
+    } catch (e) {
+      if (token !== state.ocrToken) return;
+      if (e && e.cancelled) {
+        showOcrStatus('Reading cancelled. Attachment is still kept.', true);
+        const alone = $('#btn-ocr-rescan-alone');
+        if (alone) alone.classList.remove('hidden');
+        return;
+      }
+      console.warn('OCR', e);
+      showOcrStatus((e && e.message) || "Couldn't read receipt", true);
+      const alone = $('#btn-ocr-rescan-alone');
+      if (alone) alone.classList.remove('hidden');
+    }
+  }
+
+  async function openLine(lineId) {
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return;
+    const line = (claim.lines || []).find((l) => l.id === lineId);
+    if (!line) {
+      toast('Line not found');
+      return openClaim(state.claimId);
+    }
+    state.lineId = lineId;
+    state.pendingReceipt = null;
+    state.clearReceipt = false;
+    state.ocrToken++;
+    hideOcrUi();
+    $$('[data-help-target]').forEach((btn) => {
+      const help = $('#' + btn.getAttribute('data-help-target'));
+      if (help) help.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
+    const parts = AsExpenseCategory.splitLine(line);
+    $('#line-title').textContent = AsExpenseCategory.lineText(line) || 'Line item';
+    $('#line-date').value = line.date || '';
+    setLineCategory(parts.category);
+    $('#line-desc').value = parts.detail;
+    updateDescSample();
+    $('#line-fx').value = line.foreignCurrency || '';
+    $('#line-net').value = line.net != null ? line.net : '';
+    $('#line-vat').value = line.vat != null ? line.vat : '';
+    $('#line-total').value = line.total != null ? line.total : '';
+    $('#line-total').dataset.touched = line.total != null ? '1' : '';
+    $('#line-receipt').value = '';
+    await renderReceiptPreview(line);
+    await renderStatementPreview(line);
+    showView('line');
+  }
+
+  function setLineCategory(key) {
+    state.lineCategory = AsExpenseCategory.fromStored(key);
+    $$('#line-cat-chips .cat-chip').forEach((b) => {
+      const on = b.dataset.cat === state.lineCategory;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+    $('#line-desc-prefix').textContent = AsExpenseCategory.prefix(state.lineCategory);
+    updateDescSample();
+  }
+
+  function updateDescSample() {
+    const el = $('#line-desc-sample');
+    if (!el) return;
+    const text = AsExpenseCategory.composeForStorage(state.lineCategory, $('#line-desc').value);
+    el.textContent = text || (AsExpenseCategory.prefix(state.lineCategory) + '…');
+  }
+
+  /** Line-edit attachment preview: thumbnail (tap → full-screen viewer) + file name. */
+  function renderAttachmentBox(box, row, label) {
+    box.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'att-preview';
+    wrap.appendChild(AsAttachments.thumbButton({
+      label,
+      getRow: async () => row,
+      onOpen: (r) => AsAttachments.openViewer(r, label, label),
+    }));
+    const info = document.createElement('div');
+    info.className = 'att-info';
+    info.innerHTML = '<span class="att-name"></span>';
+    info.querySelector('.att-name').textContent = row ? (row.name || label) : label + ' missing — attach it again';
+    wrap.appendChild(info);
+    box.appendChild(wrap);
+  }
+
+  async function renderReceiptPreview(line) {
+    const box = $('#receipt-preview');
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    $('#btn-clear-receipt').classList.add('hidden');
+    let blob = null;
+    let meta = null;
+    if (state.pendingReceipt) {
+      blob = state.pendingReceipt.blob;
+      meta = state.pendingReceipt;
+    } else if (!state.clearReceipt && line.receiptId) {
+      const rcpt = await AsStorage.getReceipt(line.receiptId);
+      if (rcpt) {
+        blob = rcpt.blob;
+        meta = { name: rcpt.name, type: rcpt.type };
+      }
+    }
+    if (!blob) {
+      if (!state.clearReceipt && line.receiptId) {
+        // Stored file is gone (site data cleared / restored without receipts)
+        box.classList.remove('hidden');
+        $('#btn-clear-receipt').classList.remove('hidden');
+        renderAttachmentBox(box, null, 'Receipt');
+      }
+      return;
+    }
+    box.classList.remove('hidden');
+    $('#btn-clear-receipt').classList.remove('hidden');
+    renderAttachmentBox(box, { id: state.pendingReceipt ? null : line.receiptId, blob, name: meta.name, type: meta.type }, 'Receipt');
+  }
+
+
+  async function renderStatementPreview(line) {
+    const box = $('#statement-preview');
+    if (!box) return;
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    const clearBtn = $('#btn-clear-statement');
+    if (clearBtn) clearBtn.classList.add('hidden');
+    let blob = null;
+    let meta = null;
+    if (state.pendingStatement) {
+      blob = state.pendingStatement.blob;
+      meta = state.pendingStatement;
+    } else if (!state.clearStatement && line && line.statementId) {
+      const row = await AsStorage.getReceipt(line.statementId);
+      if (row) { blob = row.blob; meta = row; }
+    }
+    if (!blob) {
+      if (!state.clearStatement && line && line.statementId) {
+        box.classList.remove('hidden');
+        if (clearBtn) clearBtn.classList.remove('hidden');
+        renderAttachmentBox(box, null, 'Statement');
+      }
+      return;
+    }
+    box.classList.remove('hidden');
+    if (clearBtn) clearBtn.classList.remove('hidden');
+    renderAttachmentBox(box, { id: state.pendingStatement ? null : line.statementId, blob, name: meta.name, type: meta.type }, 'Statement');
+  }
+
+  async function saveLineForm(ev) {
+    ev.preventDefault();
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return;
+    const idx = (claim.lines || []).findIndex((l) => l.id === state.lineId);
+    if (idx < 0) return;
+    const line = claim.lines[idx];
+    line.date = $('#line-date').value;
+    // Job is claim-level only — mirror claim.jobNo onto every line
+    line.jobNo = claim.jobNo || '';
+    const detail = AsExpenseCategory.stripOwnPrefix(state.lineCategory, $('#line-desc').value);
+    line.category = state.lineCategory;
+    line.description = AsExpenseCategory.composeForStorage(state.lineCategory, detail);
+    line.foreignCurrency = $('#line-fx').value.trim();
+    line.net = numOrNull($('#line-net').value);
+    line.vat = numOrNull($('#line-vat').value);
+    line.total = numOrNull($('#line-total').value);
+
+    if (state.clearReceipt && line.receiptId) {
+      await AsStorage.deleteReceipt(line.receiptId);
+      line.receiptId = null;
+      line.receiptMeta = null;
+    }
+    if (state.pendingReceipt) {
+      if (line.receiptId) { await AsStorage.deleteReceipt(line.receiptId); AsAttachments.forget(line.receiptId); }
+      // 1.1.0-web: big photos are shrunk to ≤1600 px JPEG first (js/image-shrink.js)
+      const small = await AsImageShrink.shrink(state.pendingReceipt.blob, state.pendingReceipt.name);
+      const meta = await AsStorage.putReceipt(small.blob, {
+        name: small.name,
+        type: small.shrunk ? small.type : state.pendingReceipt.type,
+      });
+      line.receiptId = meta.id;
+      line.receiptMeta = meta;
+    }
+    if (state.clearStatement && line.statementId) {
+      await AsStorage.deleteReceipt(line.statementId);
+      line.statementId = null;
+      line.statementMeta = null;
+    }
+    if (state.pendingStatement) {
+      if (line.statementId) { await AsStorage.deleteReceipt(line.statementId); AsAttachments.forget(line.statementId); }
+      // 1.1.0-web: big photos are shrunk to ≤1600 px JPEG first (js/image-shrink.js)
+      const small = await AsImageShrink.shrink(state.pendingStatement.blob, state.pendingStatement.name);
+      const meta = await AsStorage.putReceipt(small.blob, {
+        name: small.name,
+        type: small.shrunk ? small.type : state.pendingStatement.type,
+      });
+      line.statementId = meta.id;
+      line.statementMeta = meta;
+    }
+    claim.lines[idx] = line;
+    (claim.lines || []).forEach((l) => { l.jobNo = claim.jobNo || ''; });
+    await AsStorage.putClaim(claim);
+    state.pendingReceipt = null;
+    state.clearReceipt = false;
+    state.pendingStatement = null;
+    state.clearStatement = false;
+    toast('Line saved');
+    scheduleFolderSync();
+    await openClaim(claim.id);
+  }
+
+  async function deleteLine() {
+    if (!state.lineId) return;
+    if (!confirm('Delete this line item?')) return;
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return;
+    const line = (claim.lines || []).find((l) => l.id === state.lineId);
+    if (line && line.receiptId) await AsStorage.deleteReceipt(line.receiptId);
+    if (line && line.statementId) await AsStorage.deleteReceipt(line.statementId);
+    claim.lines = (claim.lines || []).filter((l) => l.id !== state.lineId);
+    await AsStorage.putClaim(claim);
+    toast('Line deleted');
+    scheduleFolderSync();
+    await openClaim(claim.id);
+  }
+
+  async function doExportZip() {
+    const status = $('#export-status');
+    status.classList.remove('error');
+    status.textContent = 'Building zip…';
+    try {
+      const claim = await AsStorage.getClaim(state.claimId);
+      if (!claim) return;
+      const s = AsStorage.getSettings();
+      const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      if (!isValidJob(job)) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before exporting';
+        toast('Job number must be P + digits');
+        return;
+      }
+      claim.jobNo = job;
+      claim.dateFrom = $('#claim-from').value || claim.dateFrom;
+      claim.dateTo = $('#claim-to').value || claim.dateTo;
+      claim.name = s.displayName;
+      claim.sendTo = s.expenseTo;
+      (claim.lines || []).forEach((l) => { l.jobNo = job; });
+      await AsStorage.putClaim(claim);
+      const name = await AsExport.exportClaimZip(claim);
+      status.textContent = 'Downloaded ' + name + ' (Word form + numbered receipts)';
+      toast('Zip downloaded');
+      scheduleFolderSync();
+    } catch (e) {
+      console.error(e);
+      status.classList.add('error');
+      status.textContent = e.message || String(e);
+    }
+  }
+
+  async function doExportDocx() {
+    const status = $('#export-status');
+    status.classList.remove('error');
+    status.textContent = 'Building zip…';
+    try {
+      const claim = await AsStorage.getClaim(state.claimId);
+      const s = AsStorage.getSettings();
+      const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+      if (!isValidJob(job)) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before exporting';
+        toast('Job number must be P + digits');
+        return;
+      }
+      claim.jobNo = job;
+      claim.dateFrom = $('#claim-from').value || claim.dateFrom;
+      claim.dateTo = $('#claim-to').value || claim.dateTo;
+      claim.name = s.displayName;
+      claim.sendTo = s.expenseTo;
+      (claim.lines || []).forEach((l) => { l.jobNo = job; });
+      await AsStorage.putClaim(claim);
+      const name = await AsExport.exportFilledDocx(claim);
+      status.textContent = 'Downloaded ' + name;
+      toast('Word form downloaded');
+      scheduleFolderSync();
+    } catch (e) {
+      console.error(e);
+      status.classList.add('error');
+      status.textContent = e.message || String(e);
+    }
+  }
+
+  async function prepareClaimForSend() {
+    const claim = await AsStorage.getClaim(state.claimId);
+    if (!claim) return null;
+    const s = AsStorage.getSettings();
+    const job = normalizeJob($('#claim-job-digits').value) || claim.jobNo;
+    if (!isValidJob(job)) {
+      toast('Job number must be P + digits');
+      const status = $('#export-status');
+      if (status) {
+        status.classList.add('error');
+        status.textContent = 'Set a valid job number (P + digits) before sending';
+      }
+      return null;
+    }
+    claim.jobNo = job;
+    claim.dateFrom = $('#claim-from').value || claim.dateFrom;
+    claim.dateTo = $('#claim-to').value || claim.dateTo;
+    claim.name = s.displayName;
+    claim.sendTo = s.expenseTo;
+    (claim.lines || []).forEach((l) => { l.jobNo = job; });
+    await AsStorage.putClaim(claim);
+    return claim;
+  }
+
+  async function sendToInvoice() {
+    const claim = await prepareClaimForSend();
+    if (!claim) return;
+    const status = $('#export-status');
+    if (status) {
+      status.classList.remove('error');
+      status.textContent = 'Building zip…';
+    }
+    try {
+      // 1.1.0-web: one zip for the whole job — expense form, receipts and any linked mileage form
+      const linked = globalThis.AsMileageUi ? await AsMileageUi.linkedTo(claim) : [];
+      const built = await AsExport.buildJobZip(claim, linked);
+      const blob = built.blob;
+      const filename = built.name;
+      const email = AsExport.buildExpenseEmail(claim, filename);
+
+      // Auto-start download so the zip is in Downloads before they open mail.
+      AsExport.downloadBlob(blob, filename);
+      if (status) status.textContent = 'Prepared ' + filename;
+
+      showEmailPreview({
+        title: 'Send',
+        to: email.to,
+        subject: email.subject,
+        body: email.body,
+        filename: filename,
+        attachmentNote:
+          'Attach the downloaded zip in your mail app.',
+        onDownload: () => {
+          AsExport.downloadBlob(blob, filename);
+          toast('Downloaded ' + filename);
+          scheduleFolderSync();
+        },
+        onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
+      });
+    } catch (e) {
+      console.error(e);
+      if (status) {
+        status.classList.add('error');
+        status.textContent = e.message || String(e);
+      }
+      toast(e.message || 'Could not build zip');
+    }
+  }
+
+  function safeJobZip(claim) {
+    return AsExport.safeName(claim.jobNo || 'claim') + '.zip';
+  }
+
+  // ——— Timesheets ———
+  function fillMonthYearSelects(monthSel, yearSel, selectedMonth, selectedYear) {
+    const months = AsTimesheetFiller
+      ? ['January','February','March','April','May','June','July','August','September','October','November','December']
+      : [];
+    monthSel.innerHTML = '';
+    for (let m = 1; m <= 12; m++) {
+      const opt = document.createElement('option');
+      opt.value = String(m);
+      opt.textContent = months[m - 1] || String(m);
+      if (m === selectedMonth) opt.selected = true;
+      monthSel.appendChild(opt);
+    }
+    // 1.0.3: was current year ± 2 only (2024–2028 in 2026); now 2000 … this year + 10
+    // (plus the timesheet's own year) and ◀ / ▶ step beyond — see js/year-picker.js.
+    AsYearPicker.fillYearSelect(yearSel, selectedYear);
+  }
+
+  async function showTimesheets() {
+    state.tsId = null;
+    state.entryId = null;
+    setNav('timesheets');
+    updateListHeaders();
+    await refreshTsList();
+    showView('timesheets');
+  }
+
+  async function refreshTsList() {
+    const all = await AsStorage.listTimesheets();
+    const filtered = all.filter((t) =>
+      state.tsChip === 'completed' ? t.completed : !t.completed
+    );
+    const list = $('#ts-list');
+    const empty = $('#ts-empty');
+    list.innerHTML = '';
+    if (!filtered.length) {
+      empty.classList.remove('hidden');
+      empty.innerHTML = state.tsChip === 'completed'
+        ? 'No completed timesheets'
+        : 'Tap <strong>+ New</strong> to add a month.';
+      return;
+    }
+    empty.classList.add('hidden');
+    if (state.tsChip === 'completed') {
+      renderTimesheetYears(list, filtered);
+    } else {
+      filtered.forEach((t) => list.appendChild(tsCard(t)));
+    }
+  }
+
+  /** Timesheets → Completed grouped by tally year (Mar–Feb), each a collapsible header row. */
+  function renderTimesheetYears(list, completed) {
+    daysBreakdownTimesheets = completed;
+    const totals = AsOffshoreDays.tallyFromTimesheets(completed);
+    const groups = AsOffshoreDays.groupByTallyYear(completed, (t) => [t.year, t.month], totals);
+    for (const g of groups) {
+      const y = g.total.period.startMarchYear;
+      const open = state.tsYearOpen[y] != null ? state.tsYearOpen[y] : g.isCurrent;
+      const n = g.items.length;
+      const section = document.createElement('div');
+      section.className = 'year-group' + (open ? ' open' : '');
+      section.appendChild(yearToggle({
+        title: AsOffshoreDays.yearHeader(g.total),
+        sub: (g.isCurrent ? 'This year · ' : '') + n + ' completed timesheet' + (n === 1 ? '' : 's'),
+        open,
+        onToggle: () => { state.tsYearOpen[y] = !open; refreshTsList(); },
+      }));
+      if (open) {
+        const banner = daysPeriodBanner(g.total, { current: g.isCurrent });
+        section.appendChild(banner);
+        wireDaysBannerClicks(banner);
+        if (!n) {
+          const p = document.createElement('p');
+          p.className = 'empty small';
+          p.textContent = 'No completed timesheets in this year yet.';
+          section.appendChild(p);
+        }
+        g.items.slice().sort((a, b) => (b.year - a.year) || (b.month - a.month))
+          .forEach((t) => section.appendChild(tsCard(t)));
+      }
+      list.appendChild(section);
+    }
+  }
+
+  function tsCard(t) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card';
+    const title = AsTimesheetFiller.displayTitle(t.year, t.month);
+    btn.innerHTML =
+      '<p class="title">' + escapeHtml(title) + '</p>' +
+      '<p class="meta">' + (t.entries || []).length + ' entr' +
+      ((t.entries || []).length === 1 ? 'y' : 'ies') +
+      (t.completed ? ' · completed' : '') + '</p>';
+    btn.addEventListener('click', () => openTimesheet(t.id));
+    const canComplete = !t.completed;
+    return wrapSwipeRow(btn, {
+      // 1.1.0-web: Completed rows swipe left to Reopen (back to Active), like Android
+      onReopen: t.completed ? async () => {
+        const ts = await AsStorage.getTimesheet(t.id);
+        if (!ts) return;
+        ts.completed = false;
+        ts.completedAt = null;
+        await AsStorage.putTimesheet(ts);
+        toast('Reopened');
+        await refreshTsList();
+      } : null,
+      onDelete: async () => {
+        const snap = await AsStorage.getTimesheet(t.id);
+        await AsStorage.deleteTimesheet(t.id);
+        scheduleFolderSync();
+        await refreshTsList();
+        toastUndo('Timesheet deleted', async () => {
+          if (snap) await AsStorage.putTimesheet(snap);
+          scheduleFolderSync();
+          await refreshTsList();
+        });
+      },
+      onComplete: canComplete ? async () => {
+        const ts = await AsStorage.getTimesheet(t.id);
+        if (!ts) return;
+        ts.completed = true;
+        ts.completedAt = Date.now();
+        await AsStorage.putTimesheet(ts);
+        toast('Marked complete');
+        scheduleFolderSync();
+        await refreshTsList();
+      } : null,
+    });
+  }
+
+  function openNewTimesheet() {
+    const now = new Date();
+    fillMonthYearSelects($('#ts-new-month'), $('#ts-new-year'), now.getMonth() + 1, now.getFullYear());
+    showView('ts-new');
+  }
+
+  async function createTimesheet(ev) {
+    ev.preventDefault();
+    const month = Number($('#ts-new-month').value);
+    const year = Number($('#ts-new-year').value);
+    const existing = await AsStorage.findTimesheetByYearMonth(year, month);
+    if (existing) {
+      toast('Timesheet for that month already exists');
+      return openTimesheet(existing.id);
+    }
+    const ts = {
+      id: AsStorage.uid('ts'),
+      year,
+      month,
+      completed: false,
+      entries: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await AsStorage.putTimesheet(ts);
+    toast('Timesheet created');
+    scheduleFolderSync();
+    await openTimesheet(ts.id);
+  }
+
+  async function openTimesheet(id) {
+    state.tsId = id;
+    state.entryId = null;
+    const ts = await AsStorage.getTimesheet(id);
+    if (!ts) {
+      toast('Timesheet not found');
+      return showTimesheets();
+    }
+    const s = AsStorage.getSettings();
+    $('#ts-title').textContent = AsTimesheetFiller.displayTitle(ts.year, ts.month);
+    $('#ts-route-header').textContent = s.displayName + ' → ' + s.timesheetTo;
+    fillMonthYearSelects($('#ts-edit-month'), $('#ts-edit-year'), ts.month, ts.year);
+    $('#ts-edit-month').disabled = !!ts.completed;
+    $('#ts-edit-year').disabled = !!ts.completed;
+    $('#ts-completed-toggle').checked = !!ts.completed;
+    $('#btn-add-entry').disabled = !!ts.completed;
+    $('#ts-export-status').textContent = '';
+    renderEntries(ts);
+    setNav('timesheets');
+    showView('ts-edit');
+  }
+
+  function renderEntries(ts) {
+    const entries = (ts.entries || []).slice().sort((a, b) => a.startDay - b.startDay);
+    $('#ts-entry-count').textContent = String(entries.length);
+    const list = $('#ts-entry-list');
+    const empty = $('#ts-entry-empty');
+    list.innerHTML = '';
+    if (!entries.length) {
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+    entries.forEach((e) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'card';
+      const typeLabel = (DAY_TYPE_UI.find((d) => d.key === e.dayType) || {}).label || e.dayType;
+      const range = e.startDay === e.endDay
+        ? 'Day ' + e.startDay
+        : 'Days ' + e.startDay + '–' + e.endDay;
+      btn.innerHTML =
+        '<p class="title">' + escapeHtml(range) + ' · ' + escapeHtml(typeLabel) + '</p>' +
+        '<p class="meta">' + escapeHtml(e.jobNumber || '') +
+        (e.description ? ' · ' + escapeHtml(e.description) : '') + '</p>';
+      btn.addEventListener('click', () => {
+        if (ts.completed) {
+          toast('Reopen to edit');
+          return;
+        }
+        openEntry(e.id);
+      });
+      if (ts.completed) {
+        list.appendChild(btn);
+        return;
+      }
+      list.appendChild(wrapSwipeRow(btn, {
+        onDelete: async () => {
+          const cur = await AsStorage.getTimesheet(state.tsId);
+          if (!cur || cur.completed) return;
+          const victim = (cur.entries || []).find((x) => x.id === e.id);
+          const snap = victim ? JSON.parse(JSON.stringify(victim)) : null;
+          cur.entries = (cur.entries || []).filter((x) => x.id !== e.id);
+          await AsStorage.putTimesheet(cur);
+          scheduleFolderSync();
+          await openTimesheet(cur.id);
+          toastUndo('Entry deleted', async () => {
+            const t2 = await AsStorage.getTimesheet(state.tsId);
+            if (!t2 || !snap) return;
+            t2.entries = t2.entries || [];
+            t2.entries.push(snap);
+            await AsStorage.putTimesheet(t2);
+            scheduleFolderSync();
+            await openTimesheet(t2.id);
+          });
+        },
+      }));
+    });
+  }
+
+  async function saveTsMeta(ev) {
+    ev.preventDefault();
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts || ts.completed) return;
+    const month = Number($('#ts-edit-month').value);
+    const year = Number($('#ts-edit-year').value);
+    const clash = await AsStorage.findTimesheetByYearMonth(year, month, ts.id);
+    if (clash) {
+      toast('Another timesheet already uses that month');
+      return;
+    }
+    const last = AsTimesheetFiller.daysInMonth(year, month);
+    let clamped = false;
+    for (const e of ts.entries || []) {
+      if (e.startDay > last) { e.startDay = last; clamped = true; }
+      if (e.endDay > last) { e.endDay = last; clamped = true; }
+      if (e.endDay < e.startDay) e.endDay = e.startDay;
+    }
+    ts.year = year;
+    ts.month = month;
+    await AsStorage.putTimesheet(ts);
+    if (clamped) toast('Some entry days were clamped to month length');
+    else toast('Saved');
+    scheduleFolderSync();
+    await openTimesheet(ts.id);
+  }
+
+  async function deleteTimesheet() {
+    if (!state.tsId) return;
+    if (!confirm('Delete this timesheet?')) return;
+    await AsStorage.deleteTimesheet(state.tsId);
+    toast('Deleted');
+    scheduleFolderSync();
+    await showTimesheets();
+  }
+
+  async function setTsCompleted(completed) {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    ts.completed = completed;
+    ts.completedAt = completed ? Date.now() : null;
+    await AsStorage.putTimesheet(ts);
+    toast(completed ? 'Marked complete' : 'Reopened');
+    scheduleFolderSync();
+    await openTimesheet(ts.id);
+  }
+
+  function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+    return aStart <= bEnd && bStart <= aEnd;
+  }
+
+  /** Live day-field state for the open timesheet month (1..lastDay). */
+  const entryDayUi = {
+    year: null,
+    month: null,
+    lastDay: 31,
+    calOpen: false,
+    pickAnchor: null, // first tap while choosing a range
+  };
+
+  function currentEntryLastDay() {
+    return entryDayUi.lastDay || 31;
+  }
+
+  function parseDayValue(raw, last) {
+    const digits = String(raw == null ? '' : raw).replace(/\D/g, '').slice(0, 2);
+    if (!digits) return null;
+    let n = Number(digits);
+    if (!Number.isFinite(n)) return null;
+    if (n < 1) n = 1;
+    if (n > last) n = last;
+    return n;
+  }
+
+  function setEntryDayInputs(start, end, last) {
+    const lastDay = last || currentEntryLastDay();
+    const sEl = $('#entry-start');
+    const eEl = $('#entry-end');
+    if (!sEl || !eEl) return;
+    let s = Math.max(1, Math.min(Number(start) || 1, lastDay));
+    let e = Math.max(1, Math.min(Number(end) || 1, lastDay));
+    if (e < s) e = s;
+    sEl.min = 1;
+    sEl.max = lastDay;
+    eEl.min = 1;
+    eEl.max = lastDay;
+    sEl.value = String(s);
+    eEl.value = String(e);
+    updateEntryDayHint(lastDay);
+    syncCalFromInputs();
+  }
+
+  function updateEntryDayHint(last) {
+    const hint = $('#entry-day-hint');
+    if (!hint) return;
+    const title = entryDayUi.year && entryDayUi.month
+      ? AsTimesheetFiller.displayTitle(entryDayUi.year, entryDayUi.month)
+      : 'this month';
+    hint.textContent = 'Valid days for ' + title + ': 1–' + last;
+  }
+
+  function clampEntryDayField(el) {
+    if (!el) return;
+    const last = currentEntryLastDay();
+    el.min = 1;
+    el.max = last;
+    const parsed = parseDayValue(el.value, last);
+    if (parsed == null) {
+      // Leave empty while typing; blur handler fills a default
+      return null;
+    }
+    if (String(parsed) !== String(el.value).trim()) {
+      el.value = String(parsed);
+    }
+    return parsed;
+  }
+
+  function onEntryDayInput(ev) {
+    const el = ev.target;
+    const last = currentEntryLastDay();
+    entryDayUi.pickAnchor = null;
+    // Cap while typing (e.g. 31 in February → 28) without fighting mid-edit of "2"
+    const raw = String(el.value || '');
+    const digits = raw.replace(/\D/g, '').slice(0, 2);
+    if (digits !== raw) el.value = digits;
+    if (!digits) {
+      syncCalFromInputs();
+      return;
+    }
+    const n = Number(digits);
+    if (Number.isFinite(n) && n > last) {
+      el.value = String(last);
+    }
+    // Keep end >= start when both set
+    const s = parseDayValue($('#entry-start').value, last);
+    const e = parseDayValue($('#entry-end').value, last);
+    if (s != null && e != null && e < s && el.id === 'entry-start') {
+      $('#entry-end').value = String(s);
+    }
+    syncCalFromInputs();
+  }
+
+  function onEntryDayBlur(ev) {
+    const el = ev.target;
+    const last = currentEntryLastDay();
+    let v = clampEntryDayField(el);
+    if (v == null) {
+      v = 1;
+      el.value = '1';
+    }
+    const sEl = $('#entry-start');
+    const eEl = $('#entry-end');
+    let s = parseDayValue(sEl.value, last) || 1;
+    let e = parseDayValue(eEl.value, last) || 1;
+    if (e < s) {
+      if (el.id === 'entry-end') {
+        e = s;
+        eEl.value = String(e);
+      } else {
+        s = e;
+        sEl.value = String(s);
+      }
+    }
+    syncCalFromInputs();
+  }
+
+  function readEntryRange() {
+    const last = currentEntryLastDay();
+    let s = parseDayValue($('#entry-start').value, last);
+    let e = parseDayValue($('#entry-end').value, last);
+    if (s == null) s = 1;
+    if (e == null) e = s;
+    if (e < s) {
+      const t = s; s = e; e = t;
+    }
+    return { start: s, end: e, last };
+  }
+
+  function setCalStatus(msg) {
+    const el = $('#entry-cal-status');
+    if (el) el.textContent = msg;
+  }
+
+  function syncCalFromInputs() {
+    if (!$('#entry-cal-grid') || !entryDayUi.calOpen) return;
+    paintCalGrid();
+  }
+
+  function paintCalGrid() {
+    const grid = $('#entry-cal-grid');
+    if (!grid || entryDayUi.year == null || entryDayUi.month == null) return;
+    const last = currentEntryLastDay();
+    const range = readEntryRange();
+    let start = range.start;
+    let end = range.end;
+    if (entryDayUi.pickAnchor != null) {
+      start = entryDayUi.pickAnchor;
+      end = entryDayUi.pickAnchor;
+      setCalStatus('Start ' + start + ' — tap end day');
+    } else if (start === end) {
+      setCalStatus('Day ' + start + ' selected — tap another day for a range');
+    } else {
+      setCalStatus('Days ' + start + '–' + end);
+    }
+
+    // Monday-first weekday index (0=Mon … 6=Sun)
+    const firstDow = (new Date(entryDayUi.year, entryDayUi.month - 1, 1).getDay() + 6) % 7;
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) {
+      cells.push('<button type="button" class="cal-day cal-pad" disabled tabindex="-1" aria-hidden="true"></button>');
+    }
+    for (let d = 1; d <= last; d++) {
+      const classes = ['cal-day'];
+      const inSel = entryDayUi.pickAnchor == null && d >= start && d <= end;
+      if (inSel) classes.push('in-range');
+      if (entryDayUi.pickAnchor == null && d === start) classes.push('range-start');
+      if (entryDayUi.pickAnchor == null && d === end) classes.push('range-end');
+      if (entryDayUi.pickAnchor != null && d === entryDayUi.pickAnchor) classes.push('pending', 'range-start');
+      cells.push(
+        '<button type="button" class="' + classes.join(' ') + '" data-day="' + d + '" aria-label="Day ' + d + '">' +
+        d +
+        '</button>'
+      );
+    }
+    grid.innerHTML = cells.join('');
+  }
+
+  function openEntryCalendar() {
+    const panel = $('#entry-cal');
+    if (!panel) return;
+    entryDayUi.calOpen = true;
+    entryDayUi.pickAnchor = null;
+    panel.hidden = false;
+    panel.classList.remove('hidden');
+    $('#entry-cal-title').textContent = AsTimesheetFiller.displayTitle(entryDayUi.year, entryDayUi.month);
+    paintCalGrid();
+    $('#btn-pick-dates').setAttribute('aria-expanded', 'true');
+  }
+
+  function closeEntryCalendar() {
+    const panel = $('#entry-cal');
+    if (!panel) return;
+    entryDayUi.calOpen = false;
+    entryDayUi.pickAnchor = null;
+    panel.hidden = true;
+    panel.classList.add('hidden');
+    $('#btn-pick-dates').setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleEntryCalendar() {
+    if (entryDayUi.calOpen) closeEntryCalendar();
+    else openEntryCalendar();
+  }
+
+  function onCalDayClick(ev) {
+    const btn = ev.target.closest('.cal-day[data-day]');
+    if (!btn || btn.disabled) return;
+    const day = Number(btn.getAttribute('data-day'));
+    if (!Number.isFinite(day)) return;
+    if (entryDayUi.pickAnchor == null) {
+      entryDayUi.pickAnchor = day;
+      paintCalGrid();
+      return;
+    }
+    let a = entryDayUi.pickAnchor;
+    let b = day;
+    if (b < a) { const t = a; a = b; b = t; }
+    entryDayUi.pickAnchor = null;
+    setEntryDayInputs(a, b, currentEntryLastDay());
+    paintCalGrid();
+  }
+
+  function clearEntryCalendarSelection() {
+    entryDayUi.pickAnchor = null;
+    setEntryDayInputs(1, 1, currentEntryLastDay());
+    paintCalGrid();
+    setCalStatus('Cleared — tap start, then end');
+  }
+
+  function prepareEntryDayUi(ts, startDay, endDay) {
+    const last = AsTimesheetFiller.daysInMonth(ts.year, ts.month);
+    entryDayUi.year = ts.year;
+    entryDayUi.month = ts.month;
+    entryDayUi.lastDay = last;
+    entryDayUi.pickAnchor = null;
+    setEntryDayInputs(startDay, endDay, last);
+    closeEntryCalendar();
+  }
+
+
+  async function defaultsFromPreviousTimesheet(ts) {
+    const all = await AsStorage.listTimesheets();
+    const curKey = ts.year * 12 + ts.month;
+    const prior = all
+      .filter((x) => x.id !== ts.id && (x.year * 12 + x.month) < curKey)
+      .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))[0]
+      || all
+        .filter((x) => x.id !== ts.id)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+    if (!prior || !(prior.entries || []).length) {
+      return { jobNumber: '', description: '', dayType: 'OFFICE' };
+    }
+    const entries = prior.entries;
+    const offshore = entries.filter((e) => e.dayType === 'OFFSHORE' && e.jobNumber);
+    const source = offshore[0]
+      || entries.find((e) => e.jobNumber)
+      || entries[0];
+    return {
+      jobNumber: source.jobNumber || '',
+      description: source.description || '',
+      dayType: source.dayType || 'OFFICE',
+    };
+  }
+
+  async function addEntry() {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts || ts.completed) return;
+    const defaults = await defaultsFromPreviousTimesheet(ts);
+    const entry = {
+      id: AsStorage.uid('tse'),
+      startDay: 1,
+      endDay: 1,
+      jobNumber: defaults.jobNumber || '',
+      description: defaults.description || '',
+      dayType: defaults.dayType || 'OFFICE',
+    };
+    ts.entries = ts.entries || [];
+    ts.entries.push(entry);
+    await AsStorage.putTimesheet(ts);
+    await openEntry(entry.id);
+  }
+
+  function buildDayTypeRadios(selected) {
+    const box = $('#entry-day-types');
+    box.innerHTML = '';
+    DAY_TYPE_UI.forEach((d) => {
+      const lab = document.createElement('label');
+      lab.className = 'radio';
+      lab.innerHTML =
+        '<input type="radio" name="dayType" value="' + d.key + '"' +
+        (d.key === selected ? ' checked' : '') + ' /> ' + escapeHtml(d.label);
+      box.appendChild(lab);
+    });
+    box.onchange = updateEntryJobVisibility;
+    updateEntryJobVisibility();
+  }
+
+  async function openEntry(entryId) {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    const entry = (ts.entries || []).find((e) => e.id === entryId);
+    if (!entry) {
+      toast('Entry not found');
+      return openTimesheet(state.tsId);
+    }
+    state.entryId = entryId;
+    $('#entry-title').textContent = 'Entry — ' + AsTimesheetFiller.displayTitle(ts.year, ts.month);
+    prepareEntryDayUi(ts, entry.startDay, entry.endDay);
+    $('#entry-job-digits').value = digitsOnly(entry.jobNumber);
+    $('#entry-desc').value = entry.description || '';
+    buildDayTypeRadios(entry.dayType || 'OFFICE');
+    showView('ts-entry');
+  }
+
+  async function saveEntryForm(ev) {
+    ev.preventDefault();
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts || ts.completed) return;
+    const idx = (ts.entries || []).findIndex((e) => e.id === state.entryId);
+    if (idx < 0) return;
+    const last = AsTimesheetFiller.daysInMonth(ts.year, ts.month);
+    let start = Math.max(1, Math.min(Number($('#entry-start').value) || 1, last));
+    let end = Math.max(1, Math.min(Number($('#entry-end').value) || 1, last));
+    if (end < start) {
+      toast('End day must be ≥ start day');
+      return;
+    }
+    const dayTypeEl = $('input[name="dayType"]:checked');
+    const dayType = dayTypeEl ? dayTypeEl.value : 'OFFICE';
+    // 1.1.0-web (Android DayType.needsJobNumber): only Office / Offshore need a project number.
+    // Holiday, Roster Leave, Training and Sick are plain date ranges shown as ticks.
+    const needsJob = dayTypeNeedsJob(dayType);
+    const jobRaw = needsJob ? $('#entry-job-digits').value.trim() : '';
+    const job = jobRaw ? normalizeJob(jobRaw) : '';
+    if (needsJob && !job) {
+      toast('Enter a project number');
+      return;
+    }
+    if (job && !isValidJob(job)) {
+      toast('Job must be P + digits');
+      return;
+    }
+
+    for (const other of ts.entries || []) {
+      if (other.id === state.entryId) continue;
+      if (rangesOverlap(start, end, other.startDay, other.endDay)) {
+        toast('Overlaps existing entry (' + other.startDay + '–' + other.endDay + ')');
+        return;
+      }
+    }
+
+    const entry = ts.entries[idx];
+    entry.startDay = start;
+    entry.endDay = end;
+    entry.jobNumber = job;
+    entry.description = $('#entry-desc').value.trim();
+    entry.dayType = dayType;
+    await AsStorage.putTimesheet(ts);
+    toast('Entry saved');
+    scheduleFolderSync();
+    await openTimesheet(ts.id);
+  }
+
+  /** Office and Offshore need a project number; the other day types don't. */
+  function dayTypeNeedsJob(dayType) {
+    return dayType === 'OFFICE' || dayType === 'OFFSHORE';
+  }
+
+  /** Show the project-number box only for day types that need one. */
+  function updateEntryJobVisibility() {
+    const el = $('input[name="dayType"]:checked');
+    const row = $('#entry-job-row');
+    if (row) row.classList.toggle('hidden', !dayTypeNeedsJob(el ? el.value : 'OFFICE'));
+  }
+
+  async function deleteEntry() {
+    if (!state.entryId) return;
+    if (!confirm('Delete this entry?')) return;
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    ts.entries = (ts.entries || []).filter((e) => e.id !== state.entryId);
+    await AsStorage.putTimesheet(ts);
+    toast('Entry deleted');
+    scheduleFolderSync();
+    await openTimesheet(ts.id);
+  }
+
+  async function doExportOdt() {
+    const status = $('#ts-export-status');
+    status.classList.remove('error');
+    status.textContent = 'Building…';
+    try {
+      const ts = await AsStorage.getTimesheet(state.tsId);
+      const name = await AsExport.exportTimesheetOdt(ts);
+      status.textContent = 'Downloaded ' + name;
+      toast('ODT downloaded');
+      scheduleFolderSync();
+    } catch (e) {
+      console.error(e);
+      status.classList.add('error');
+      status.textContent = e.message || String(e);
+    }
+  }
+
+  async function sendToTimesheets() {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    const status = $('#ts-export-status');
+    if (status) {
+      status.classList.remove('error');
+      status.textContent = 'Building timesheet.odt for send…';
+    }
+    try {
+      const blob = await AsExport.buildTimesheetOdtBlob(ts);
+      const filename = AsTimesheetFiller.exportFileName(ts.year, ts.month);
+      const email = AsExport.buildTimesheetEmail(ts, filename);
+
+      AsExport.downloadBlob(blob, filename);
+      if (status) status.textContent = 'Prepared ' + filename;
+
+      showEmailPreview({
+        title: 'Send',
+        to: email.to,
+        subject: email.subject,
+        body: email.body,
+        filename: filename,
+        attachmentNote:
+          'Attach the downloaded .odt in your mail app.',
+        onDownload: () => {
+          AsExport.downloadBlob(blob, filename);
+          toast('Downloaded ' + filename);
+          scheduleFolderSync();
+        },
+        onMailto: () => AsExport.openMailto(email.to, email.subject, email.body),
+      });
+    } catch (e) {
+      console.error(e);
+      if (status) {
+        status.classList.add('error');
+        status.textContent = e.message || String(e);
+      }
+      toast(e.message || 'Could not build timesheet');
+    }
+  }
+
+  // ——— Expense zip Import… (Android ExpenseZipReader parity) ———
+  async function importExpenseZips(files) {
+    if (!files || !files.length) return;
+    if (!globalThis.AsExpenseZipReader) {
+      toast('Expense zip reader not loaded');
+      return;
+    }
+    let imported = 0;
+    let skipped = 0;
+    let replaced = 0;
+    const failMessages = [];
+    let replaceAll = null; // true / false / null
+
+    const list = Array.from(files).filter((f) => AsExpenseZipReader.isSupportedFileName(f.name));
+    if (!list.length) {
+      toast('No .zip files selected');
+      return;
+    }
+
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      try {
+        toast('Importing ' + file.name + ' (' + (i + 1) + '/' + list.length + ')…');
+        const buf = await file.arrayBuffer();
+        const parsed = await AsExpenseZipReader.parse(buf, file.name);
+        const job = normalizeJob(parsed.jobNumber);
+        let existing = null;
+        if (job) {
+          existing = await AsStorage.findClaimByJobAndDates(job, parsed.dateFrom, parsed.dateTo);
+        }
+        if (existing) {
+          let action = replaceAll;
+          if (action === null) {
+            const choice = await promptExpenseConflict({
+              job: job || '(no job)',
+              dateFrom: parsed.dateFrom,
+              dateTo: parsed.dateTo,
+              fileName: file.name,
+              showBatch: i < list.length - 1,
+            });
+            if (choice === 'skip-all') { replaceAll = false; action = false; }
+            else if (choice === 'replace-all') { replaceAll = true; action = true; }
+            else if (choice === 'skip') action = false;
+            else if (choice === 'replace') action = true;
+            else { skipped++; continue; }
+          }
+          if (!action) { skipped++; continue; }
+          replaced++;
+        }
+        await applyExpenseImport(parsed, existing);
+        imported++;
+      } catch (e) {
+        console.error(e);
+        const msg = (e && e.message) || String(e);
+        failMessages.push(file.name + ': ' + msg);
+        toast('Import failed: ' + msg);
+      }
+    }
+
+    let summary = 'Imported ' + imported;
+    if (replaced) summary += ', replaced ' + replaced;
+    if (skipped) summary += ', skipped ' + skipped;
+    if (failMessages.length) summary += ', failed ' + failMessages.length;
+    toast(summary);
+    scheduleFolderSync();
+    state.expenseChip = 'completed';
+    $$('[data-expense-chip]').forEach((b) =>
+      b.classList.toggle('on', b.getAttribute('data-expense-chip') === 'completed')
+    );
+    await showExpenses();
+  }
+
+  async function applyExpenseImport(parsed, existing) {
+    const settings = AsStorage.getSettings();
+    const now = Date.now();
+    const job = normalizeJob(parsed.jobNumber);
+    const claimId = existing ? existing.id : AsStorage.uid('claim');
+
+    if (existing && Array.isArray(existing.lines)) {
+      for (const line of existing.lines) {
+        if (line.receiptId) {
+          try { await AsStorage.deleteReceipt(line.receiptId); } catch (_) {}
+        }
+        if (line.statementId) {
+          try { await AsStorage.deleteReceipt(line.statementId); } catch (_) {}
+        }
+      }
+    }
+
+    if (existing && Array.isArray(existing.lines)) {
+      /* statement cleanup already covered if we extend loop below */
+    }
+    const receiptsGrouped = {};
+    for (const r of parsed.receipts || []) {
+      (receiptsGrouped[r.lineNumber] || (receiptsGrouped[r.lineNumber] = [])).push(r);
+    }
+    const linesByNum = {};
+    for (const l of parsed.lines || []) linesByNum[l.lineNumber] = l;
+    const lineNums = Array.from(new Set([
+      ...(parsed.lines || []).map((l) => l.lineNumber),
+      ...Object.keys(receiptsGrouped).map(Number),
+    ])).filter((n) => n >= 1).sort((a, b) => a - b);
+
+    const webLines = [];
+    for (const num of lineNums) {
+      const pl = linesByNum[num];
+      const parts = receiptsGrouped[num] || [];
+      const receiptPart = parts.find((r) => r.part == null || r.part === 1)
+        || parts.find((r) => r.part !== 2);
+      const statementPart = parts.find((r) => r.part === 2);
+      let receiptId = null;
+      let receiptMeta = null;
+      let statementId = null;
+      let statementMeta = null;
+      if (receiptPart && receiptPart.bytes && receiptPart.bytes.length) {
+        const blob = new Blob([receiptPart.bytes], {
+          type: receiptPart.mime || 'application/octet-stream',
+        });
+        receiptMeta = await AsStorage.putReceipt(blob, {
+          name: receiptPart.fileName,
+          type: receiptPart.mime || blob.type,
+        });
+        receiptId = receiptMeta.id;
+      }
+      if (statementPart && statementPart.bytes && statementPart.bytes.length) {
+        const blob = new Blob([statementPart.bytes], {
+          type: statementPart.mime || 'application/octet-stream',
+        });
+        statementMeta = await AsStorage.putReceipt(blob, {
+          name: statementPart.fileName,
+          type: statementPart.mime || blob.type,
+        });
+        statementId = statementMeta.id;
+      }
+      webLines.push({
+        id: AsStorage.uid('line'),
+        date: (pl && pl.date) || '',
+        jobNo: job || (pl && pl.jobNo) || '',
+        ...(function () {
+          const [category, detail] = AsExpenseCategory.fromImport(pl && pl.category, (pl && pl.description) || '');
+          return { category, description: AsExpenseCategory.composeForStorage(category, detail) };
+        })(),
+        foreignCurrency: (pl && pl.foreignCurrency) || '',
+        net: pl ? pl.net : null,
+        vat: pl ? pl.vat : null,
+        total: pl ? pl.total : null,
+        receiptId,
+        receiptMeta,
+        statementId,
+        statementMeta,
+      });
+    }
+
+    await AsStorage.putClaim({
+      id: claimId,
+      jobNo: job,
+      name: parsed.name || settings.displayName || '',
+      sendTo: parsed.sendTo || settings.expenseTo || settings.sendTo || '',
+      dateFrom: parsed.dateFrom,
+      dateTo: parsed.dateTo,
+      completed: true,
+      completedAt: now,
+      lines: webLines,
+      createdAt: existing ? (existing.createdAt || now) : now,
+      updatedAt: now,
+    });
+    return claimId;
+  }
+
+  function promptExpenseConflict(opts) {
+    return new Promise((resolve) => {
+      const root = $('#modal-root');
+      const close = (value) => {
+        root.className = 'hidden';
+        root.innerHTML = '';
+        resolve(value);
+      };
+      const job = opts.job || '(no job)';
+      const range = (opts.dateFrom || '') + ' → ' + (opts.dateTo || '');
+      root.className = 'modal-backdrop';
+      root.innerHTML =
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="expense-conflict-title">' +
+        '<h2 id="expense-conflict-title">Claim already exists</h2>' +
+        '<p>' + escapeHtml(job) + ' (' + escapeHtml(range) + ') already exists ' +
+        '(from ' + escapeHtml(opts.fileName || 'zip') + '). ' +
+        'Skip this file or replace the existing claim?</p>' +
+        (opts.showBatch
+          ? ''
+          : '') +
+        '<div class="actions">' +
+        '<button type="button" class="btn primary" data-choice="replace">Replace</button>' +
+        (opts.showBatch
+          ? '<button type="button" class="btn secondary" data-choice="replace-all">Replace all</button>' +
+            '<button type="button" class="btn secondary" data-choice="skip-all">Skip all</button>'
+          : '') +
+        '<button type="button" class="btn ghost" data-choice="skip">Skip</button>' +
+        '</div></div>';
+      root.querySelectorAll('[data-choice]').forEach((btn) => {
+        btn.onclick = () => close(btn.getAttribute('data-choice'));
+      });
+      root.onclick = (ev) => {
+        if (ev.target === root) close('skip');
+      };
+    });
+  }
+
+    async function importTimesheets(files) {
+    if (!files || !files.length) return;
+    let imported = 0;
+    let skipped = 0;
+    let replaced = 0;
+    let replaceAll = null; // true/false/null
+
+    for (const file of files) {
+      if (!AsTimesheetReader.isSupportedFileName(file.name)) {
+        if (/\.pdf$/i.test(file.name)) toast('Skipped PDF: ' + file.name);
+        continue;
+      }
+      try {
+        const buf = await file.arrayBuffer();
+        const parsed = await AsTimesheetReader.parse(buf, file.name);
+        const existing = await AsStorage.findTimesheetByYearMonth(parsed.year, parsed.month);
+        if (existing) {
+          let action = replaceAll;
+          if (action === null) {
+            const choice = promptConflict(parsed.year, parsed.month);
+            if (choice === 'skip-all') { replaceAll = false; action = false; }
+            else if (choice === 'replace-all') { replaceAll = true; action = true; }
+            else if (choice === 'skip') action = false;
+            else if (choice === 'replace') action = true;
+            else { skipped++; continue; }
+          }
+          if (!action) { skipped++; continue; }
+          await AsStorage.deleteTimesheet(existing.id);
+          replaced++;
+        }
+        const entries = (parsed.entries || []).map((e) => ({
+          id: AsStorage.uid('tse'),
+          startDay: e.startDay,
+          endDay: e.endDay,
+          jobNumber: e.jobNo || '',
+          description: e.description || '',
+          dayType: e.dayType || 'OFFICE',
+        }));
+        await AsStorage.putTimesheet({
+          id: AsStorage.uid('ts'),
+          year: parsed.year,
+          month: parsed.month,
+          completed: true,
+          completedAt: Date.now(),
+          entries,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        imported++;
+      } catch (e) {
+        console.error(e);
+        toast('Import failed: ' + (e.message || file.name));
+      }
+    }
+    toast('Imported ' + imported + (replaced ? ', replaced ' + replaced : '') + (skipped ? ', skipped ' + skipped : ''));
+    scheduleFolderSync();
+    state.tsChip = 'completed';
+    $$('[data-ts-chip]').forEach((b) => b.classList.toggle('on', b.getAttribute('data-ts-chip') === 'completed'));
+    await showTimesheets();
+  }
+
+  function promptConflict(year, month) {
+    const label = AsTimesheetFiller.displayTitle(year, month);
+    const msg =
+      label + ' already exists.\n\n' +
+      'OK = Replace\nCancel = Skip\n\n' +
+      '(Use prompt: type replace-all / skip-all for batch)';
+    // Simple confirm + optional batch via prompt
+    const batch = window.prompt(
+      label + ' already exists.\nType: skip | replace | skip-all | replace-all',
+      'replace'
+    );
+    if (!batch) return 'skip';
+    const v = batch.trim().toLowerCase();
+    if (v === 'skip' || v === 'replace' || v === 'skip-all' || v === 'replace-all') return v;
+    return 'skip';
+  }
+
+  // ——— Days worked ———
+  let daysBreakdownTimesheets = [];
+
+  function daysTallyTiles(counts, startMarchYear) {
+    const tiles = [
+      ['Holiday', 'holiday', counts.holiday],
+      ['Sick', 'sick', counts.sick],
+      ['Office', 'office', counts.office],
+      ['Training', 'training', counts.training],
+    ];
+    return (
+      '<div class="tally-tiles" role="list">' +
+      tiles
+        .map(function (row) {
+          return (
+            '<button type="button" class="tally-tile tally-tap" role="listitem" ' +
+            'data-day-type="' + row[1] + '" data-period-year="' + startMarchYear + '" ' +
+            'aria-label="' + row[0] + ': ' + row[2] + '. Show breakdown">' +
+            '<span class="n" aria-hidden="true">' + row[2] + '</span>' +
+            '<span class="lbl" aria-hidden="true">' + row[0] + '</span>' +
+            '</button>'
+          );
+        })
+        .join('') +
+      '</div>'
+    );
+  }
+
+  function daysPeriodBanner(pt, opts) {
+    opts = opts || {};
+    const el = document.createElement('div');
+    const year = pt.period.startMarchYear;
+    el.className = 'days-banner' + (opts.past ? ' past-period' : '');
+    el.setAttribute('role', 'region');
+    el.setAttribute(
+      'aria-label',
+      (opts.past ? 'Past period ' : 'Current period ') + pt.period.label
+    );
+    el.dataset.periodYear = String(year);
+    el.innerHTML =
+      '<p class="period">' + (opts.current ? 'Days worked · this year' : 'Days worked') + '</p>' +
+      '<p class="label">Offshore days</p>' +
+      '<button type="button" class="big tally-tap" data-day-type="offshore" data-period-year="' +
+      year +
+      '" aria-label="Offshore days: ' +
+      pt.counts.offshore +
+      '. Show breakdown">' +
+      pt.counts.offshore +
+      '</button>' +
+      daysTallyTiles(pt.counts, year);
+    return el;
+  }
+
+  function showDaysBreakdown(startMarchYear, countKey) {
+    const period = AsOffshoreDays.periodStartingMarch(startMarchYear);
+    const label = AsOffshoreDays.labelForType(countKey);
+    const grouped = AsOffshoreDays.breakdownGrouped(
+      daysBreakdownTimesheets,
+      startMarchYear,
+      countKey
+    );
+    const root = $('#modal-root');
+    let bodyHtml;
+    if (grouped.empty) {
+      bodyHtml = '<p class="empty" style="margin:8px 0">No days of this type in this period.</p>';
+    } else {
+      bodyHtml = grouped.months
+        .map(function (m) {
+          const lines = m.lines
+            .map(function (line) {
+              return '<li>' + escapeHtml(line) + '</li>';
+            })
+            .join('');
+          return (
+            '<div class="breakdown-month">' +
+            '<h3>' +
+            escapeHtml(m.label) +
+            '</h3>' +
+            '<ul>' +
+            lines +
+            '</ul>' +
+            '</div>'
+          );
+        })
+        .join('');
+    }
+    root.className = 'modal-backdrop';
+    root.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="days-breakdown-title">' +
+      '<h2 id="days-breakdown-title">' +
+      escapeHtml(label + ' — ' + period.label) +
+      '</h2>' +
+      '<div class="breakdown-body">' +
+      bodyHtml +
+      '</div>' +
+      '<div class="actions split">' +
+      '<button type="button" class="btn ghost" id="modal-close">Close</button>' +
+      '<button type="button" class="btn primary" id="btn-print-summary">' + PRINT_ICON + ' Print summary</button>' +
+      '</div></div>';
+    const close = () => {
+      root.className = 'hidden';
+      root.innerHTML = '';
+    };
+    $('#modal-close', root).onclick = close;
+    $('#btn-print-summary', root).onclick = () => printDaysSummary(startMarchYear);
+    root.onclick = (e) => {
+      if (e.target === root) close();
+    };
+  }
+
+  const PRINT_ICON = '<svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h12v5H6V2zm-2 6h16a2 2 0 0 1 2 2v6h-4v5H6v-5H2v-6a2 2 0 0 1 2-2zm4 7v4h8v-4H8zm10-4.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>';
+
+  /** Bottom sheet (used for "Summary ready", "Open file", iOS install steps). */
+  function openSheet(html, onClose) {
+    const old = document.querySelector('.sheet-backdrop');
+    if (old) old.remove();
+    const back = document.createElement('div');
+    back.className = 'sheet-backdrop';
+    back.innerHTML = html;
+    const close = () => { if (back.isConnected) back.remove(); if (onClose) onClose(); };
+    back.addEventListener('click', (e) => {
+      if (e.target === back || e.target.closest('[data-close]')) close();
+    });
+    document.body.appendChild(back);
+    return { el: back, close };
+  }
+
+  /** Generate the Days worked summary PDF (trip → project rows) and offer Open / Download / Share. */
+  async function printDaysSummary(startMarchYear) {
+    const btn = $('#btn-print-summary');
+    if (btn) { btn.disabled = true; btn.innerHTML = PRINT_ICON + ' Preparing…'; }
+    try {
+      const summary = AsDaysWorkedSummary.build(daysBreakdownTimesheets, startMarchYear);
+      const name = AsStorage.getSettings().displayName || '';
+      const pdf = await AsSummaryPdf.buildBlob(summary, name, new Date());
+      const title = AsDaysWorkedSummary.title(summary.period);
+      const root = $('#modal-root');
+      root.className = 'hidden';
+      root.innerHTML = '';
+      showFileSheet({
+        title: 'Summary ready',
+        lines: [title, summary.offshoreDays + ' offshore days · ' + summary.tripCount + ' trip' + (summary.tripCount === 1 ? '' : 's') +
+          ' · ' + pdf.pages + ' page' + (pdf.pages === 1 ? '' : 's')],
+        note: 'Open shows the PDF in a new tab — print it from there (on iPhone: Share → Print). Download saves it to your Downloads / Files.',
+        blob: pdf.blob,
+        fileName: pdf.fileName,
+        mime: 'application/pdf',
+        canOpen: true,
+      });
+      state.lastSummaryPdf = { fileName: pdf.fileName, size: pdf.blob.size, pages: pdf.pages, title };
+    } catch (e) {
+      console.error(e);
+      toast((e && e.message) || 'Could not create summary');
+      if (btn) { btn.disabled = false; btn.innerHTML = PRINT_ICON + ' Print summary'; }
+    }
+  }
+
+  /**
+   * Sheet offering a generated file. Every action runs straight from a tap (iOS Safari blocks
+   * window.open / share calls that happen after an await).
+   */
+  function showFileSheet(o) {
+    let file = null;
+    try { file = new File([o.blob], o.fileName, { type: o.mime }); } catch (_) { file = null; }
+    const canShare = AsAttachments.canShareFile(file);
+    const sheet = openSheet(
+      '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="file-sheet-title">' +
+      '<div class="sheet-grip" aria-hidden="true"></div>' +
+      '<h2 id="file-sheet-title">' + escapeHtml(o.title) + '</h2>' +
+      (o.lines || []).map((l, i) => '<p class="' + (i ? 'hint' : 'sheet-line') + '">' + escapeHtml(l) + '</p>').join('') +
+      '<p class="file-chip">📄 ' + escapeHtml(o.fileName) + '</p>' +
+      (o.note ? '<p class="hint">' + escapeHtml(o.note) + '</p>' : '') +
+      '<div class="sheet-actions">' +
+      (o.canOpen ? '<button type="button" class="btn primary" data-act="open">Open</button>' : '') +
+      '<button type="button" class="btn ' + (o.canOpen ? 'secondary' : 'primary') + '" data-act="download">Download</button>' +
+      (canShare ? '<button type="button" class="btn secondary" data-act="share">' + escapeHtml(o.shareLabel || 'Share…') + '</button>' : '') +
+      '<button type="button" class="btn ghost" data-close>Close</button>' +
+      '</div></div>'
+    );
+    sheet.el.querySelectorAll('[data-act]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const act = b.dataset.act;
+        if (act === 'open') {
+          if (!AsAttachments.openBlobInTab(o.blob, o.mime)) {
+            AsExport.downloadBlob(o.blob, o.fileName);
+            toast('Pop-up blocked — downloaded ' + o.fileName + ' instead');
+          }
+        } else if (act === 'download') {
+          AsExport.downloadBlob(o.blob, o.fileName);
+          toast('Downloaded ' + o.fileName);
+          if (o.onDownload) o.onDownload();
+        } else if (act === 'share' && file) {
+          try { await navigator.share({ files: [file], title: o.fileName }); } catch (_) { /* cancelled */ }
+        }
+      });
+    });
+    return sheet;
+  }
+
+  function wireDaysBannerClicks(root) {
+    root.querySelectorAll('.tally-tap').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const year = Number(btn.getAttribute('data-period-year'));
+        const type = btn.getAttribute('data-day-type');
+        if (!year || !type) return;
+        showDaysBreakdown(year, type);
+      });
+    });
+  }
+
+  // ——— Settings (banner list → sub-pages, Android 1.0.0) ———
+  function versionLabel() {
+    const beta = /\/beta\//.test(location.pathname);
+    return AsStorage.APP_VERSION + (beta ? ' beta' : '');
+  }
+
+  function lastBackupText() {
+    const s = AsStorage.getSettings();
+    const last = s.lastBackupAt || s.lastBackupSuccessAt || null;
+    if (!last) return 'Last backup: never';
+    const d = new Date(last);
+    return 'Last backup: ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function refreshSettingsSubtitles() {
+    const s = AsStorage.getSettings();
+    $('#sb-profile-sub').textContent = s.displayName || 'Not set';
+    
+    $('#sb-emails-sub').textContent = 'Expenses: ' + (s.expenseTo || s.sendTo) + ' · Timesheets: ' + s.timesheetTo;
+    $('#sb-about-sub').textContent = versionLabel();
+    if (globalThis.AsSyncUi) AsSyncUi.refreshSubtitle();
+    const ps = AsPwa.state();
+    $('#sb-install-sub').textContent = ps.standalone ? 'Installed — you are using the app'
+      : ps.ios ? 'iPhone / iPad: Share → Add to Home Screen'
+      : ps.canPrompt ? 'Add AS Forms to your Home Screen / desktop'
+      : 'Add to Home Screen (browser menu)';
+    updateBackupBanner();
+  }
+
+  function showSettings() {
+    setNav('settings');
+    refreshSettingsSubtitles();
+    showView('settings');
+  }
+
+  function showProfile() {
+    $('#settings-name').value = AsStorage.getSettings().displayName;
+    if (globalThis.AsMileageUi) AsMileageUi.fillProfile();
+    showView('set-profile');
+  }
+
+  function showEmailHub() {
+    refreshSettingsSubtitles();
+    showView('set-email');
+  }
+
+
+  function showImportPage() { showView('set-import'); }
+
+  function showAbout() {
+    $('#about-version').innerHTML = 'AS Forms <strong>' + escapeHtml(versionLabel()) + '</strong>';
+    const ctl = navigator.serviceWorker && navigator.serviceWorker.controller;
+    $('#about-offline').textContent = ctl
+      ? 'Offline: ready — the app and receipt reader are saved on this device.'
+      : ('serviceWorker' in navigator ? 'Offline: getting ready (reload once while online).' : 'Offline mode is not supported in this browser.');
+    showView('set-about');
+  }
+
+  function refreshInstallPage() {
+    const ps = AsPwa.state();
+    $('#install-standalone-note').classList.toggle('hidden', !ps.standalone);
+    $('#install-actions').classList.toggle('hidden', ps.standalone);
+    const btn = $('#btn-install-app');
+    const hint = $('#install-hint');
+    if (ps.ios) {
+      btn.textContent = 'Show me how';
+      hint.textContent = ps.iosNonSafari
+        ? 'Open this page in Safari, then use Share → Add to Home Screen.'
+        : 'On iPhone and iPad, Safari adds web apps from its Share menu.';
+    } else if (ps.canPrompt) {
+      btn.textContent = 'Install app';
+      hint.textContent = 'Your browser will ask you to confirm.';
+    } else {
+      btn.textContent = 'How to install';
+      hint.textContent = 'In Chrome or Edge: open the browser menu (⋮) and choose “Install app” or “Add to Home screen”. Already installed? Open it from your Home Screen or app list.';
+    }
+  }
+
+  function showInstallPage() {
+    refreshInstallPage();
+    showView('set-install');
+  }
+
+  function showIosInstallSheet() {
+    openSheet(AsPwa.iosSheetHtml().replace('class="install-sheet"', 'class="sheet install-sheet"'));
+  }
+
+  async function onInstallTapped() {
+    const ps = AsPwa.state();
+    if (ps.ios) { showIosInstallSheet(); return; }
+    if (ps.canPrompt) {
+      const outcome = await AsPwa.promptInstall();
+      if (outcome === 'accepted') { toast('Installing AS Forms…'); AsPwa.dismissBanner(); }
+      refreshInstallUi();
+      return;
+    }
+    openSheet('<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grip"></div><h2>Install AS Forms</h2>' +
+      '<ol class="ios-steps"><li><span class="step-num">1</span><span class="step-text">Open the browser menu <b>⋮</b> (top right in Chrome / Edge).</span></li>' +
+      '<li><span class="step-num">2</span><span class="step-text">Tap <b>Install app</b> or <b>Add to Home screen</b>.</span></li>' +
+      '<li><span class="step-num">3</span><span class="step-text">Confirm. AS Forms then opens from your Home Screen or app list.</span></li></ol>' +
+      '<div class="sheet-actions"><button type="button" class="btn primary" data-close>Got it</button></div></div>');
+  }
+
+  /** Install banner (first visits, dismissible once) + update bar + install page state. */
+  function refreshInstallUi() {
+    const banner = $('#install-banner');
+    if (banner) banner.classList.toggle('hidden', !(AsPwa.shouldShowBanner() && TAB_VIEWS.has(nav.current)));
+    const upd = $('#update-bar');
+    if (upd) upd.classList.toggle('hidden', !AsPwa.state().updateReady);
+    if (nav.current === 'set-install') refreshInstallPage();
+    if (nav.current === 'settings') refreshSettingsSubtitles();
+  }
+  globalThis.__asRefreshInstallUi = refreshInstallUi;
+
+  function showEmails() {
+    const s = AsStorage.getSettings();
+    $('#settings-expense-to').value = s.expenseTo;
+    $('#settings-timesheet-to').value = s.timesheetTo;
+    showView('emails');
+  }
+
+  function showTemplates() {
+    const s = AsStorage.getSettings();
+    $('#tpl-expense-subject').value = s.expenseSubject;
+    $('#tpl-expense-body').value = s.expenseBody;
+    $('#tpl-timesheet-subject').value = s.timesheetSubject;
+    $('#tpl-timesheet-body').value = s.timesheetBody;
+    $('#tpl-help').textContent = AsEmailTemplates.PLACEHOLDER_HELP;
+    showView('templates');
+  }
+
+
+  function showBackup() {
+    $('#backup-status').textContent = '';
+    $('#backup-last').textContent = lastBackupText();
+    updateBackupBanner();
+    showView('backup');
+    if (globalThis.AsSyncUi) AsSyncUi.render(); // 1.1.0-web cloud card + archive row
+  }
+
+  // ——— Timesheet Preview + Open file (Android 1.0.0) ———
+  let tsPreviewZoom = null;
+
+  async function showTimesheetPreview() {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    const name = AsStorage.getSettings().displayName || AsTimesheetFiller.DEFAULT_NAME;
+    let sheet;
+    try {
+      sheet = AsTimesheetPreview.sheetFor(ts, name);
+    } catch (e) {
+      toast(e.message || 'Could not build preview');
+      return;
+    }
+    $('#tsp-title').textContent = 'Preview';
+    $('#tsp-month').textContent = AsTimesheetFiller.displayTitle(ts.year, ts.month);
+    $('#tsp-summary').textContent = AsTimesheetLayout.summaryLine(sheet);
+    const content = $('#tsp-content');
+    content.innerHTML = AsTimesheetPreview.render(sheet);
+    content.style.width = AsTimesheetPreview.DESIGN_WIDTH + 'px';
+    showView('ts-preview');
+    sizePreviewViewport();
+    if (tsPreviewZoom) tsPreviewZoom.destroy();
+    tsPreviewZoom = AsZoomView.attach($('#tsp-viewport'), content, { fit: 'width', maxScale: 4 });
+    // logo image may change the height after load
+    const img = content.querySelector('img');
+    if (img && !img.complete) img.addEventListener('load', () => tsPreviewZoom && tsPreviewZoom.refresh(), { once: true });
+  }
+
+  /** Fill the screen between the hint and the bottom tabs (works with iOS's moving toolbars). */
+  function sizePreviewViewport() {
+    const vp = $('#tsp-viewport');
+    if (!vp || $('#view-ts-preview').classList.contains('hidden')) return;
+    const top = vp.getBoundingClientRect().top + window.scrollY;
+    const nav = document.querySelector('.bottom-nav');
+    const navH = nav ? nav.getBoundingClientRect().height : 60;
+    const btns = $('.tsp-zoom-btns');
+    const btnH = btns ? btns.getBoundingClientRect().height + 16 : 56;
+    vp.style.height = Math.max(280, Math.round(window.innerHeight - top - navH - btnH - 8)) + 'px';
+  }
+  window.addEventListener('resize', () => { sizePreviewViewport(); });
+
+  /** "Open file": build the .odt from entries, then offer Download / Share (Open in Word / Files). */
+  async function openTimesheetFile() {
+    const ts = await AsStorage.getTimesheet(state.tsId);
+    if (!ts) return;
+    try {
+      const blob = await AsExport.buildTimesheetOdtBlob(ts);
+      const fileName = AsTimesheetFiller.exportFileName(ts.year, ts.month);
+      showFileSheet({
+        title: 'Open timesheet',
+        lines: [AsTimesheetFiller.displayTitle(ts.year, ts.month) + ' — made fresh from your entries'],
+        note: 'A web app cannot launch Word directly. Download saves the .odt — open it from Downloads / Files with Word, Google Docs or LibreOffice.' +
+          ' On iPhone use Share… → Word (or Save to Files).',
+        blob,
+        fileName,
+        mime: 'application/vnd.oasis.opendocument.text',
+        canOpen: false,
+        shareLabel: 'Share / Open in…',
+        onDownload: scheduleFolderSync,
+      });
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'Could not build the timesheet');
+    }
+  }
+
+  // ——— Email preview modal ———
+  function showEmailPreview(opts) {
+    const root = $('#modal-root');
+    const downloadClass = 'btn accent';
+    const mailtoClass = 'btn secondary';
+    const isOdt = (opts.filename || '').toLowerCase().endsWith('.odt');
+    root.className = 'modal-backdrop';
+    root.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true">' +
+      '<h2>' + escapeHtml(opts.title) + '</h2>' +
+      '<div class="field"><div class="k">To</div><div class="v">' + escapeHtml(opts.to) + '</div></div>' +
+      '<div class="field"><div class="k">Subject</div><div class="v">' + escapeHtml(opts.subject) + '</div></div>' +
+      '<div class="field"><div class="k">Body</div><div class="v">' + escapeHtml(opts.body) + '</div></div>' +
+      '<div class="field"><div class="k">Attachment</div><div class="v">' + escapeHtml(opts.filename || '') +
+      '<br><span style="color:#5c5c5c;font-size:.85em">' + escapeHtml(opts.attachmentNote || '') + '</span></div></div>' +
+      '<div class="actions">' +
+      '<button type="button" class="' + downloadClass + '" id="modal-download">Download ' +
+        (isOdt ? 'odt' : 'zip') +
+      '</button>' +
+      '<button type="button" class="' + mailtoClass + '" id="modal-mailto">Open mail app (attach ' +
+        (isOdt ? 'file' : 'zip') +
+      ' yourself)</button>' +
+      '<button type="button" class="btn ghost" id="modal-close">Close</button>' +
+      '</div></div>';
+
+    const mailtoBtn = $('#modal-mailto', root);
+    const close = () => {
+      root.className = 'hidden';
+      root.innerHTML = '';
+    };
+    $('#modal-close', root).onclick = close;
+    $('#modal-download', root).onclick = () => {
+      if (opts.onDownload) opts.onDownload();
+    };
+    mailtoBtn.onclick = () => {
+      if (opts.onMailto) opts.onMailto();
+      // Keep modal open so they can still download if needed
+    };
+    root.onclick = (e) => {
+      if (e.target === root) close();
+    };
+  }
+
+  /** 1.0.3: swipe between the top-level tabs (js/tab-swipe.js); slide in from the swipe side. */
+  const TAB_ORDER = ['expenses', 'timesheets', 'settings'];
+  async function swipeToTab(dir) {
+    const next = AsTabSwipe.target(nav.current, dir, TAB_ORDER);
+    if (!next) return;
+    if (next === 'expenses') await showExpenses();
+    else if (next === 'timesheets') await showTimesheets();
+    else await showSettings();
+    const view = document.querySelector('#view-' + next);
+    if (!view) return;
+    view.classList.remove('tab-in-left', 'tab-in-right');
+    void view.offsetWidth; // restart the animation
+    document.body.classList.add('tab-anim');
+    view.classList.add(dir > 0 ? 'tab-in-right' : 'tab-in-left');
+    const end = () => { view.classList.remove('tab-in-left', 'tab-in-right'); document.body.classList.remove('tab-anim'); };
+    view.addEventListener('animationend', end, { once: true });
+    setTimeout(end, 600); // safety net (animation skipped / tab hidden)
+  }
+  function wireTabSwipe() {
+    AsTabSwipe.attach({
+      canSwipe: () => TAB_VIEWS.has(nav.current) && !overlayOpen() && !document.querySelector('.swipe-row.armed'),
+      onSwipe: (dir) => { swipeToTab(dir).catch((e) => console.error(e)); },
+    });
+  }
+
+  function wire() {
+    wireTabSwipe();
+    AsYearPicker.attachStepper($('#ts-new-year'));
+    AsYearPicker.attachStepper($('#ts-edit-year'));
+    $$('.bottom-nav button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-nav');
+        if (tab === 'expenses') showExpenses();
+        else if (tab === 'timesheets') showTimesheets();
+        else if (tab === 'settings') showSettings();
+      });
+    });
+
+    $$('[data-expense-chip]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.expenseChip = btn.getAttribute('data-expense-chip');
+        $$('[data-expense-chip]').forEach((b) =>
+          b.classList.toggle('on', b === btn)
+        );
+        refreshClaimList();
+      });
+    });
+
+    $$('[data-ts-chip]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.tsChip = btn.getAttribute('data-ts-chip');
+        $$('[data-ts-chip]').forEach((b) =>
+          b.classList.toggle('on', b === btn)
+        );
+        refreshTsList();
+      });
+    });
+
+    $$('[data-help-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const help = $('#' + btn.getAttribute('data-help-target'));
+        if (!help) return;
+        const isHidden = help.classList.toggle('hidden');
+        btn.setAttribute('aria-expanded', String(!isHidden));
+      });
+    });
+
+    $$('[data-back]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const to = btn.getAttribute('data-back');
+        if (to === 'expenses') showExpenses();
+        else if (to === 'timesheets') showTimesheets();
+        else if (to === 'settings') showSettings();
+        else if (to === 'set-email') showEmailHub();
+        else if (to === 'ts-edit') openTimesheet(state.tsId);
+      });
+    });
+
+    // 1.1.0-web: "+ New" asks Expense claim or Mileage claim (js/mileage-ui.js)
+    $('#btn-new-claim').addEventListener('click', () => (globalThis.AsMileageUi ? AsMileageUi.newChooser(createClaim) : createClaim()));
+    $('#btn-import-claims').addEventListener('click', () => $('#claim-import-files').click());
+    $('#claim-import-files').addEventListener('change', async (ev) => {
+      const files = ev.target.files;
+      await importExpenseZips(files);
+      ev.target.value = '';
+    });
+    $('#form-claim').addEventListener('submit', saveClaimForm);
+    $('#btn-delete-claim').addEventListener('click', deleteClaim);
+    $('#btn-add-line').addEventListener('click', addLine);
+    $('#form-line').addEventListener('submit', saveLineForm);
+    $('#btn-delete-line').addEventListener('click', deleteLine);
+    $('#btn-line-back').addEventListener('click', () => openClaim(state.claimId));
+    $('#btn-export-zip').addEventListener('click', doExportZip);
+    $('#btn-export-docx').addEventListener('click', doExportDocx);
+    $('#btn-send-invoice').addEventListener('click', sendToInvoice);
+    $('#claim-completed-toggle').addEventListener('change', (ev) => setClaimCompleted(ev.target.checked));
+
+    $('#line-receipt').addEventListener('change', async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      state.pendingReceipt = { blob: file, name: file.name, type: file.type };
+      state.clearReceipt = false;
+      hideOcrUi();
+      const claim = await AsStorage.getClaim(state.claimId);
+      const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
+      await renderReceiptPreview(line);
+      // Auto-run on-device OCR; never blocks saving the attachment
+      runReceiptOcr(file, file.name);
+    });
+    $('#btn-clear-receipt').addEventListener('click', async () => {
+      state.pendingReceipt = null;
+      state.clearReceipt = true;
+      state.ocrToken++;
+      if (globalThis.AsReceiptOcr) try { AsReceiptOcr.cancel(); } catch (_) {}
+      hideOcrUi();
+      $('#line-receipt').value = '';
+      const claim = await AsStorage.getClaim(state.claimId);
+      const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
+      await renderReceiptPreview(line);
+    });
+    $('#btn-ocr-cancel').addEventListener('click', () => {
+      state.ocrToken++;
+      if (globalThis.AsReceiptOcr) AsReceiptOcr.cancel();
+      showOcrStatus('Reading cancelled. Attachment is still kept.', true);
+      const alone = $('#btn-ocr-rescan-alone');
+      if (alone) alone.classList.remove('hidden');
+    });
+    
+    const stmtInput = $('#line-statement');
+    if (stmtInput) {
+      stmtInput.addEventListener('change', async (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        state.pendingStatement = { blob: file, name: file.name, type: file.type };
+        state.clearStatement = false;
+        const claim = await AsStorage.getClaim(state.claimId);
+        const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
+        await renderStatementPreview(line);
+      });
+    }
+    const btnClearStmt = $('#btn-clear-statement');
+    if (btnClearStmt) {
+      btnClearStmt.addEventListener('click', async () => {
+        state.pendingStatement = null;
+        state.clearStatement = true;
+        if (stmtInput) stmtInput.value = '';
+        const claim = await AsStorage.getClaim(state.claimId);
+        const line = (claim.lines || []).find((l) => l.id === state.lineId) || {};
+        await renderStatementPreview(line);
+      });
+    }
+$('#btn-ocr-apply').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      applyOcrSuggestions();
+    });
+    $('#btn-ocr-dismiss').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      hideOcrUi();
+      const alone = $('#btn-ocr-rescan-alone');
+      if (alone && state.pendingReceipt) alone.classList.remove('hidden');
+    });
+    async function rescanCurrentReceipt() {
+      let blob = null;
+      let name = '';
+      if (state.pendingReceipt) {
+        blob = state.pendingReceipt.blob;
+        name = state.pendingReceipt.name || '';
+      } else if (state.lineId && state.claimId) {
+        const claim = await AsStorage.getClaim(state.claimId);
+        const line = (claim.lines || []).find((l) => l.id === state.lineId);
+        if (line && line.receiptId) {
+          const rcpt = await AsStorage.getReceipt(line.receiptId);
+          if (rcpt) {
+            blob = rcpt.blob;
+            name = rcpt.name || '';
+          }
+        }
+      }
+      if (!blob) {
+        toast('Attach a receipt first');
+        return;
+      }
+      hideOcrUi();
+      runReceiptOcr(blob, name);
+    }
+    $('#btn-ocr-rescan').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      rescanCurrentReceipt();
+    });
+    $('#btn-ocr-rescan-alone').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      rescanCurrentReceipt();
+    });
+    function maybeFillTotal() {
+      const net = numOrNull($('#line-net').value);
+      const vat = numOrNull($('#line-vat').value);
+      const totEl = $('#line-total');
+      if (totEl.dataset.touched === '1') return;
+      if (net == null && vat == null) return;
+      totEl.value = ((net || 0) + (vat || 0)).toFixed(2);
+    }
+    $('#line-net').addEventListener('input', maybeFillTotal);
+    $('#line-vat').addEventListener('input', maybeFillTotal);
+    $('#line-total').addEventListener('input', () => { $('#line-total').dataset.touched = '1'; });
+
+    $('#btn-new-ts').addEventListener('click', openNewTimesheet);
+    $('#form-ts-new').addEventListener('submit', createTimesheet);
+    $('#form-ts-meta').addEventListener('submit', saveTsMeta);
+    $('#btn-delete-ts').addEventListener('click', deleteTimesheet);
+    $('#btn-add-entry').addEventListener('click', addEntry);
+    $('#form-ts-entry').addEventListener('submit', saveEntryForm);
+    $('#btn-delete-entry').addEventListener('click', deleteEntry);
+    $('#btn-entry-back').addEventListener('click', () => {
+      closeEntryCalendar();
+      openTimesheet(state.tsId);
+    });
+    $('#entry-start').addEventListener('input', onEntryDayInput);
+    $('#entry-end').addEventListener('input', onEntryDayInput);
+    $('#entry-start').addEventListener('blur', onEntryDayBlur);
+    $('#entry-end').addEventListener('blur', onEntryDayBlur);
+    $('#btn-pick-dates').addEventListener('click', toggleEntryCalendar);
+    $('#btn-pick-dates').setAttribute('aria-expanded', 'false');
+    $('#btn-pick-dates').setAttribute('aria-controls', 'entry-cal');
+    $('#entry-cal-grid').addEventListener('click', onCalDayClick);
+    $('#btn-cal-clear').addEventListener('click', clearEntryCalendarSelection);
+    $('#btn-cal-done').addEventListener('click', () => {
+      // Commit any pending single-tap as a one-day range
+      if (entryDayUi.pickAnchor != null) {
+        setEntryDayInputs(entryDayUi.pickAnchor, entryDayUi.pickAnchor, currentEntryLastDay());
+        entryDayUi.pickAnchor = null;
+      } else {
+        const r = readEntryRange();
+        setEntryDayInputs(r.start, r.end, r.last);
+      }
+      closeEntryCalendar();
+    });
+    $('#btn-export-odt').addEventListener('click', doExportOdt);
+    $('#btn-send-timesheets').addEventListener('click', sendToTimesheets);
+    $('#ts-completed-toggle').addEventListener('change', (ev) => setTsCompleted(ev.target.checked));
+    $('#btn-import-ts').addEventListener('click', () => $('#ts-import-files').click());
+    $('#ts-import-files').addEventListener('change', async (ev) => {
+      const files = Array.from(ev.target.files || []);
+      ev.target.value = '';
+      await importTimesheets(files);
+    });
+
+    $('#form-settings-name').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      AsStorage.saveSettings({
+        displayName: $('#settings-name').value.trim() || AsEmailTemplates.DEFAULT_NAME,
+      });
+      if (globalThis.AsMileageUi && !AsMileageUi.saveProfileFields()) return; // bad postcode: stay
+      toast('Saved');
+      AsStorage.notifyChanged('prefs');
+      updateListHeaders();
+      refreshSettingsSubtitles();
+    });
+    $('#btn-goto-profile').addEventListener('click', showProfile);
+    $('#btn-goto-email').addEventListener('click', showEmailHub);
+    $('#btn-goto-import').addEventListener('click', showImportPage);
+    $('#btn-goto-install').addEventListener('click', showInstallPage);
+    $('#btn-goto-about').addEventListener('click', showAbout);
+    $('#btn-goto-emails').addEventListener('click', showEmails);
+    $('#btn-goto-templates').addEventListener('click', showTemplates);
+    $('#btn-goto-backup').addEventListener('click', showBackup);
+    $('#btn-settings-import-ts').addEventListener('click', () => $('#ts-import-files').click());
+    $('#btn-settings-import-claims').addEventListener('click', () => $('#claim-import-files').click());
+    $('#btn-install-app').addEventListener('click', onInstallTapped);
+    $('#btn-install-banner').addEventListener('click', onInstallTapped);
+    $('#btn-install-banner-dismiss').addEventListener('click', () => { AsPwa.dismissBanner(); refreshInstallUi(); });
+    $('#btn-update-reload').addEventListener('click', () => AsPwa.applyUpdate());
+    AsPwa.onChange(refreshInstallUi);
+
+    // Line category chips: swap the fixed prefix, keep the typed detail
+    $$('#line-cat-chips .cat-chip').forEach((b) => b.addEventListener('click', () => setLineCategory(b.dataset.cat)));
+    $('#line-desc').addEventListener('input', updateDescSample);
+
+    $('#btn-ts-preview').addEventListener('click', showTimesheetPreview);
+    $('#btn-ts-open-file').addEventListener('click', openTimesheetFile);
+    $('#btn-tsp-open-file').addEventListener('click', openTimesheetFile);
+    $('#btn-tsp-zoom-in').addEventListener('click', () => tsPreviewZoom && tsPreviewZoom.zoomBy(1.5));
+    $('#btn-tsp-zoom-out').addEventListener('click', () => tsPreviewZoom && tsPreviewZoom.zoomBy(1 / 1.5));
+    $('#btn-tsp-zoom-fit').addEventListener('click', () => tsPreviewZoom && tsPreviewZoom.reset());
+    $('#form-emails').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      let expenseTo = $('#settings-expense-to').value.trim() || AsEmailTemplates.EXPENSE_TO;
+      let timesheetTo = $('#settings-timesheet-to').value.trim() || AsEmailTemplates.TIMESHEET_TO;
+      if (!AsEmailTemplates.isPlausibleEmail(expenseTo)) {
+        toast('Check expense email format');
+        return;
+      }
+      if (!AsEmailTemplates.isPlausibleEmail(timesheetTo)) {
+        toast('Check timesheets email format');
+        return;
+      }
+      AsStorage.saveSettings({ expenseTo, timesheetTo, sendTo: expenseTo });
+      toast('Emails saved');
+      scheduleFolderSync();
+      updateListHeaders();
+      showEmailHub();
+    });
+    $('#form-templates').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      AsStorage.saveSettings({
+        expenseSubject: $('#tpl-expense-subject').value,
+        expenseBody: $('#tpl-expense-body').value,
+        timesheetSubject: $('#tpl-timesheet-subject').value,
+        timesheetBody: $('#tpl-timesheet-body').value,
+      });
+      toast('Templates saved');
+      scheduleFolderSync();
+      showEmailHub();
+    });
+    const remExport = $('#btn-backup-reminder-export');
+    if (remExport) remExport.addEventListener('click', () => {
+      state.backupBannerDismissedSession = true;
+      updateBackupBanner();
+      showBackup();
+    });
+    const remDismiss = $('#btn-backup-reminder-dismiss');
+    if (remDismiss) remDismiss.addEventListener('click', () => {
+      AsStorage.dismissBackupReminder();
+      state.backupBannerDismissedSession = true;
+      updateBackupBanner();
+    });
+    $('#btn-backup-export').addEventListener('click', async () => {
+      const st = $('#backup-status');
+      st.classList.remove('error');
+      st.textContent = 'Building backup…';
+      try {
+        const name = await AsExport.exportBackupZip();
+        updateBackupBanner();
+        $('#backup-last').textContent = lastBackupText();
+        st.textContent = 'Downloaded ' + name;
+        toast('Backup exported');
+      } catch (e) {
+        st.classList.add('error');
+        st.textContent = e.message || String(e);
+      }
+    });
+    $('#btn-backup-import').addEventListener('click', () => $('#backup-import-file').click());
+    $('#backup-import-file').addEventListener('change', async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      if (!confirm('Replaces all claims, timesheets and receipts in this browser.')) return;
+      const st = $('#backup-status');
+      st.classList.remove('error');
+      st.textContent = 'Importing…';
+      try {
+        await AsExport.importBackupZip(file);
+        st.textContent = 'Import complete';
+        toast('Backup imported');
+        updateListHeaders();
+        scheduleFolderSync();
+      } catch (e) {
+        console.error(e);
+        st.classList.add('error');
+        st.textContent = e.message || String(e);
+      }
+    });
+
+    // 1.1.0-web: Data folder wiring removed (no local-folder option on web).
+  }
+
+
+  function promptDisplayNameIfNeeded() {
+    const s = AsStorage.getSettings();
+    if ((s.displayName || '').trim() || s.namePromptSeen) {
+      return Promise.resolve(false);
+    }
+    state.namePromptShown = true;
+    return new Promise((resolve) => {
+      const root = $('#modal-root');
+      root.className = 'modal-backdrop';
+      root.innerHTML =
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="welcome-name-title">' +
+        '<h2 id="welcome-name-title">Welcome to AS Forms</h2>' +
+        '<p class="hint">Your name for forms.</p>' +
+        '<label class="field" style="display:block;margin:12px 0">' +
+        'Display name' +
+        '<input type="text" id="welcome-name-input" maxlength="80" autocomplete="name" placeholder="Your name" ' +
+        'style="display:block;width:100%;margin-top:4px;padding:10px 12px;border:1px solid var(--border);border-radius:8px" />' +
+        '</label>' +
+        '<p id="welcome-name-error" class="hint error hidden" style="color:var(--danger)">Please enter your name, or tap Skip.</p>' +
+        '<div class="actions">' +
+        '<button type="button" class="btn primary" id="welcome-name-continue">Continue</button>' +
+        '<button type="button" class="btn ghost" id="welcome-name-skip">Skip</button>' +
+        '</div></div>';
+
+      const input = $('#welcome-name-input', root);
+      const err = $('#welcome-name-error', root);
+
+      function finish(name, skipped) {
+        AsStorage.saveSettings({
+          displayName: name,
+          namePromptSeen: true,
+        });
+        root.className = 'hidden';
+        root.innerHTML = '';
+        updateListHeaders();
+        if ($('#settings-name')) $('#settings-name').value = name;
+        resolve(!skipped);
+      }
+
+      function onContinue() {
+        const name = (input.value || '').trim();
+        if (!name) {
+          err.classList.remove('hidden');
+          input.focus();
+          return;
+        }
+        finish(name, false);
+      }
+
+      $('#welcome-name-continue', root).onclick = onContinue;
+      $('#welcome-name-skip', root).onclick = () => finish('', true);
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          onContinue();
+        }
+      });
+      setTimeout(() => input.focus(), 50);
+    });
+  }
+
+  // ——— Guided tour (js/tutorial.js) ———
+  // The tour is a sandboxed simulation: it draws its own mock screens and never reads/writes
+  // claims, timesheets, receipts or settings. Only localStorage `as-forms-tutorialSeen` is set.
+  function hideTourBanner() {
+    const b = $('#tour-banner');
+    if (b) b.classList.add('hidden');
+  }
+  function startTour() {
+    if (!globalThis.AsTutorial || AsTutorial.isOpen()) return;
+    AsTutorial.markSeen();
+    hideTourBanner();
+    AsTutorial.start({
+      displayName: AsStorage.getSettings().displayName || '',
+      onEnd: (reason) => { if (reason === 'done') toast('Replay any time: Settings → Tutorial'); },
+    });
+  }
+  /** First open (just after the name prompt) → run the tour. Existing users → one-time banner. */
+  async function offerTutorial() {
+    if (!globalThis.AsTutorial || AsTutorial.seen()) return;
+    if (state.namePromptShown) { startTour(); return; }
+    let existing = true;
+    try {
+      const s = AsStorage.getSettings();
+      existing = !!((s.displayName || '').trim() || s.namePromptSeen);
+      if (!existing) {
+        const [claims, sheets] = await Promise.all([AsStorage.listClaims(), AsStorage.listTimesheets()]);
+        existing = claims.length + sheets.length > 0;
+      }
+    } catch (_) { existing = true; }
+    if (existing) $('#tour-banner').classList.remove('hidden');
+    else startTour();
+  }
+  function wireTour() {
+    $('#btn-tour-banner').addEventListener('click', startTour);
+    $('#btn-tour-banner-dismiss').addEventListener('click', () => { AsTutorial.markSeen(); hideTourBanner(); });
+    $('#btn-settings-tutorial').addEventListener('click', startTour);
+    $('#btn-about-replay-tour').addEventListener('click', startTour);
+  }
+
+  async function boot() {
+    globalThis.__asToast = toast;
+    initHistory();
+    wire();
+    wireTour();
+    AsPwa.register();
+    AsStorage.saveSettings(AsStorage.getSettings());
+    // 1.1.0-web modules (mileage, Sync and Backup, splash, keyboard, previews) hook in here
+    for (const fn of bootHooks) { try { fn(); } catch (e) { console.error(e); } }
+    updateListHeaders();
+    await showExpenses();
+    if (globalThis.AsUi110) AsUi110.splashDone(); // splash glides into the top bar
+    await promptDisplayNameIfNeeded();
+    updateListHeaders();
+    refreshInstallUi();
+    if (globalThis.AsSyncUi) AsSyncUi.afterBoot();
+    await offerTutorial();
+  }
+
+  // ——— 1.1.0-web plug-in API for js/mileage-ui.js, js/sync-ui.js, js/ui-110.js ———
+  const bootHooks = [];
+  globalThis.AsApp = {
+    $, $$, state, toast, toastUndo, escapeHtml, money, claimTotal, normalizeJob, digitsOnly, isValidJob,
+    ukDate, ukShort, showView, setNav, navBack, wrapSwipeRow, showEmailPreview, openSheet,
+    showExpenses, refreshClaimList, openClaim, showSettings, updateListHeaders, refreshSettingsSubtitles,
+    updateBackupBanner, lastBackupText, versionLabel, showTimesheets: () => showTimesheets(),
+    registerView(name, selector) { extraViews[name] = selector; },
+    onBoot(fn) { bootHooks.push(fn); },
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();

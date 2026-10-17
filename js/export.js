@@ -381,6 +381,13 @@
     const zip = new JSZip();
     zip.file(AsBackupFormat.MANIFEST_NAME, JSON.stringify(snapshot, null, 2));
     for (const e of receiptEntries) zip.file(e.path, e.blob);
+    // 1.2.2-web: personal details (HR details, signatures, filled forms) go in ONLY when the lock
+    // is on and a recovery key exists, still encrypted (personal.json, see forms-store
+    // personalForBackup). Otherwise the backup has no personal details. Bank & NI never.
+    if (global.AsFormsStore && global.AsLock) {
+      const part = await global.AsFormsStore.personalForBackup();
+      if (part) zip.file(PERSONAL_NAME, JSON.stringify(part));
+    }
     return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
   }
 
@@ -413,7 +420,22 @@
       receiptBlobs[p] = await zip.files[p].async('blob');
     }
     await importBackupParts(snapshot, receiptBlobs);
+    // 1.2.2-web: locked personal details. They need the recovery key, so they are handed back to
+    // the caller (js/lock-ui.js asks for the key); everything else is already restored.
+    const pf = zip.file(PERSONAL_NAME);
+    const personal = pf ? JSON.parse(await pf.async('string')) : null;
+    // 1.2.1 backups: plain forms profile + signatures (restored without Bank & NI)
+    const fp = zip.file(FORMS_PROFILE_NAME);
+    if (fp && global.AsFormsStore) {
+      const sigs = {};
+      for (const p of Object.keys(zip.files).filter((n) => /^signatures\/sig_\d\.png$/.test(n))) sigs[p] = await zip.files[p].async('uint8array');
+      await global.AsFormsStore.restore(await fp.async('string'), sigs);
+    }
+    if (personal && global.AsLockUi) await global.AsLockUi.offerRestore(personal);
+    return { personal: !!personal };
   }
+  const FORMS_PROFILE_NAME = 'forms-profile.json';
+  const PERSONAL_NAME = 'personal.json';
 
   global.AsExport = {
     downloadBlob,

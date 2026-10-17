@@ -22,7 +22,8 @@
 (function (global) {
   'use strict';
 
-  const SEEN_KEY = 'as-forms-tutorialSeen';
+  // 1.2.1-web: names are scoped per copy (main site / beta) — see js/app-scope.js
+  const SEEN_KEY = global.AsScope ? global.AsScope.key('as-forms-tutorialSeen') : 'as-forms-tutorialSeen';
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const STEPS = ['e-tab', 'e-new', 'e-line', 'e-food', 'e-attach', 'e-accept', 'e-swipe',
     't-tab', 't-month', 't-start', 't-end', 't-offshore', 'd-big', 'd-tiles', 'd-year'];
