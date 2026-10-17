@@ -250,18 +250,22 @@
         <label>
           Expense / Invoice
           <input type="email" id="settings-expense-to" maxlength="120" />
+          <span class="field-hint" data-default-for="expenseTo"></span>
         </label>
         <label>
           Timesheets
           <input type="email" id="settings-timesheet-to" maxlength="120" />
+          <span class="field-hint" data-default-for="timesheetTo"></span>
         </label>
         <label>
           Payroll
           <input type="email" id="settings-payroll-to" maxlength="120" />
+          <span class="field-hint" data-default-for="payrollTo"></span>
         </label>
         <label>
           HR
           <input type="email" id="settings-hr-to" maxlength="120" />
+          <span class="field-hint" data-default-for="hrTo"></span>
         </label>
         <button type="submit" class="btn primary">Save</button>
       </form>
@@ -597,6 +601,9 @@
   <div id="modal-root" class="hidden"></div>
   <div id="toast" class="toast hidden" role="status"></div>
 
+  <!-- 1.2.1-web: keeps main-site and beta storage apart; must load first -->
+  <script src="js/app-scope.js?v=1.2.1-web"></script>
+  <script src="js/uk-date.js?v=1.2.1-web"></script>
   <script src="lib/jszip.min.js?v=1.2.1-web"></script>
   <script src="js/email-templates.js?v=1.2.1-web"></script>
   <script src="js/expense-category.js?v=1.2.1-web"></script>

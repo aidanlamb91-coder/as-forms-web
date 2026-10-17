@@ -227,17 +227,42 @@
 
   /** HR details for a backup: Bank & NI removed. */
   const hrForBackup = (hr) => Object.fromEntries(Object.entries(hr || {}).filter(([k]) => !BANK_KEYS.includes(k)));
-  /** A draft for a backup: its Bank & NI answers removed. */
+  /**
+   * Bank & NI answers on the forms, by name. Always removed from backups, even if a form forgets
+   * to mark the box "not in backups" (Coach review). Covers the bank card of the Payroll form and
+   * the NI box of every form, plus anything else that looks like bank details or an NI number.
+   */
+  const BANK_FIELD_KEYS = ['pay.ni', 'pay.taxcountry', 'pay.main', 'pay.mainemployment', 'bank.name', 'bank.address', 'bank.accountname',
+    'bank.account', 'bank.sort', 'bank.iban', 'bank.swift'];
+  const BANK_LAST = new Set(['ni', 'nino', 'ninumber', 'nationalinsurance', 'sort', 'sortcode', 'account', 'accountno', 'accountnumber',
+    'accountname', 'bankname', 'bankaddress', 'iban', 'swift', 'bic', 'taxcountry', 'mainemployment']);
+  function isBankField(key) {
+    const k = String(key || '').toLowerCase();
+    const last = k.split('.').pop().replace(/[^a-z]/g, '');
+    return BANK_FIELD_KEYS.includes(k) || k.startsWith('bank.') || BANK_LAST.has(last);
+  }
+  /** A draft for a backup: its Bank & NI answers removed (the form's own flags AND the fixed list). */
   function draftForBackup(d) {
     const priv = new Set(d.privateKeys || []);
-    const values = Object.fromEntries(Object.entries(d.values || {}).filter(([k]) => !priv.has(k)));
+    const values = Object.fromEntries(Object.entries(d.values || {}).filter(([k]) => !priv.has(k) && !isBankField(k)));
     return Object.assign({}, d, { values });
+  }
+
+  /**
+   * "N of M filled" — the ONE count used by the import summary and the form editor, so both
+   * always agree. Counts the boxes you can see: no signature, and an "Other …" box only when
+   * "Other" is picked.
+   */
+  function countFilled(list, values) {
+    const v = values || {};
+    const boxes = (list || []).filter((f) => f.type !== 'signature' && (!/_other$/.test(f.key) || v[f.key.replace(/_other$/, '')] === 'other'));
+    return { filled: boxes.filter((f) => String(v[f.key] == null ? '' : v[f.key]).trim()).length, total: boxes.length };
   }
 
   global.AsFormRules = {
     fields, field, isPdf, hasSignature, markerKeys, allMarkerKeys,
     check, tidy, pensionLowered, prefillValue, prefill, changedHrDetails, exportFileName, surnameFor,
     matches, forNewVersion, sendToName, whenText, historyLine, sizeText, ukDate, toIso, fromIso,
-    BANK_KEYS, HR_CARDS, hrForBackup, draftForBackup,
+    BANK_KEYS, HR_CARDS, hrForBackup, draftForBackup, isBankField, BANK_FIELD_KEYS, countFilled,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

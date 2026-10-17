@@ -36,7 +36,9 @@ Then open http://127.0.0.1:8765/
 - Download all, Delete all (size shown), hold an item to delete it, offline search inside the documents.
 - Profile: Name, Mileage, Favourite locations, HR details (on this device only; Bank and NI never in backups), Signature (draw or upload, up to 3).
 - Payroll and HR emails in Email & addresses (default jillian.robertson@andrewssurvey.com).
-- Settings → **Clear data on this device** for shared computers. No fingerprint lock on web.
+- Settings → **Clear data on this device** for shared computers — clears only this copy (beta or main site), never the other. No fingerprint lock on web.
+- The beta keeps its own storage (`beta:` names); the main site keeps its existing names, so nothing moves when it is promoted.
+- Dates show as dd/mm/yyyy on every browser.
 - Backup: 1.1.0 backup source `/workspace/receipt-app-backups/web-1.1.0-web-pre-1.2.1-web-src-202610170928.tgz`.
 
 ## New in 1.1.0-web (beta) — Android 1.1.0 parity

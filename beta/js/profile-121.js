@@ -29,7 +29,7 @@
     </section>
     <section id="view-signature" class="view hidden">
       <header class="topbar"><button type="button" class="btn ghost back-btn" id="btn-sig-back">← Back</button><h1>Signature</h1></header>
-      <div class="panel"><div id="sig-slots" class="sig-slots"></div><p class="hint">Hold to make default. Used on new forms.</p></div>
+      <div class="panel"><div id="sig-slots" class="sig-slots"></div><p class="hint">Hold, or tap Make default. Used on new forms.</p></div>
       <input type="file" id="sig-upload" accept="image/*" hidden />
     </section>`);
     A().registerView('set-mileage', '#view-set-mileage');
@@ -197,10 +197,9 @@
   async function clearDevice() {
     try { await S().clearAll(); } catch (e) { console.error(e); }
     try { await St().clearAllData(); } catch (e) { console.error(e); }
-    const dbs = indexedDB.databases ? await indexedDB.databases().catch(() => []) : [];
-    await Promise.all(dbs.filter((d) => d.name).map((d) => new Promise((r) => { const q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = () => r(); })));
-    try { localStorage.clear(); } catch (_) { /* private mode */ }
-    try { sessionStorage.clear(); } catch (_) { /* private mode */ }
+    // Only this copy's own keys and databases: the main site and the beta share one web address,
+    // so clearing the beta must never touch the main site's data (and the other way round).
+    await global.AsScope.clearOwn();
   }
 
   function wire() {
@@ -222,6 +221,9 @@
     });
     $('#btn-goto-other-forms').onclick = () => global.AsFormsUi.showList();
     $('#btn-clear-device').onclick = clearDeviceSheet;
+    // "Default: …" under each destination email, from the app's own defaults (one source)
+    const defs = St().defaultSettings();
+    document.querySelectorAll('[data-default-for]').forEach((el) => { el.textContent = 'Default: ' + (defs[el.dataset.defaultFor] || ''); });
     refreshProfileRows();
   }
   A().onBoot(wire);

@@ -28,8 +28,10 @@
 (function (global) {
   const TR = () => global.AsTokenRefresh;
   const CFG = () => global.AsCloudConfig;
-  const STATE_KEY = 'as-forms-cloud';
-  const PENDING_KEY = 'as-forms-oauth-pending';
+  // 1.2.1-web: names are scoped per copy (main site / beta) — see js/app-scope.js
+  const scoped = (n) => (globalThis.AsScope ? globalThis.AsScope.key(n) : n);
+  const STATE_KEY = scoped('as-forms-cloud');
+  const PENDING_KEY = scoped('as-forms-oauth-pending');
   const FOLDER_NAME = 'AS Forms';
   const CLOUD_ZIP_NAME = 'AS-Forms-backup.zip';
   const ARCHIVE_RE = /^AS-Forms-(\d{4})\.zip$/;

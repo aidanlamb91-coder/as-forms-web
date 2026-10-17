@@ -8,7 +8,7 @@
  */
 const VERSION = '1.2.1-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
-const BUILD = 1;
+const BUILD = 2;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';
@@ -74,6 +74,8 @@ const SHELL = [
   'img/ic_google_drive.png',
   'img/ic_onedrive.png',
   // 1.2.1-web Other forms
+  'js/app-scope.js',
+  'js/uk-date.js',
   'js/forms-crypto.js',
   'js/forms-rules.js',
   'js/forms-docx.js',

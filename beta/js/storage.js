@@ -8,14 +8,15 @@
  * and an "as-data-changed" event after every save/delete so cloud sync can follow up.
  */
 (function (global) {
-  const DB_NAME = 'as-forms-web';
+  // 1.2.1-web: names are scoped per copy (main site / beta) — see js/app-scope.js
+  const DB_NAME = globalThis.AsScope ? globalThis.AsScope.db('as-forms-web') : 'as-forms-web';
   const DB_VERSION = 4;
   const STORE_CLAIMS = 'claims';
   const STORE_TIMESHEETS = 'timesheets';
   const STORE_RECEIPTS = 'receipts';
   const STORE_META = 'meta';
   const STORE_MILEAGE = 'mileage';
-  const SETTINGS_KEY = 'as-forms-settings';
+  const SETTINGS_KEY = globalThis.AsScope ? globalThis.AsScope.key('as-forms-settings') : 'as-forms-settings';
   const APP_VERSION = '1.2.1-web';
   // 1.2.1-web Other forms: where Payroll and HR forms are addressed (editable in Destination emails)
   const DEFAULT_PAYROLL_TO = 'jillian.robertson@andrewssurvey.com';
@@ -61,7 +62,9 @@
 
   function openDb() {
     if (dbPromise) return dbPromise;
-    dbPromise = new Promise((resolve, reject) => {
+    // wait for the beta's one-time copy of the main site's data (js/app-scope.js) before opening
+    const scopeReady = (globalThis.AsScope && globalThis.AsScope.ready) || Promise.resolve();
+    dbPromise = scopeReady.then(() => new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = (ev) => {
         const db = req.result;
@@ -83,7 +86,7 @@
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
-    });
+    }));
     return dbPromise;
   }
 

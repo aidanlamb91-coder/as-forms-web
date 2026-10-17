@@ -190,7 +190,8 @@
     const values = {};
     for (const [k, v] of Object.entries(found.values)) if (keys.has(k) && String(v).trim()) values[k] = v;
     const unsure = Array.from(found.unsure).filter((k) => k in values);
-    return { values, unsure, filled: Object.keys(values).length, total: boxes.length, signatureSkipped: R().hasSignature(spec) };
+    const n = R().countFilled(R().fields(spec), values); // same count as the editor
+    return { values, unsure, filled: n.filled, total: n.total, signatureSkipped: R().hasSignature(spec) };
   }
 
   /** Import a filled .docx. */

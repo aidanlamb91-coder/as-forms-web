@@ -14,7 +14,8 @@
  * only in this browser. Bank & NI never go into any backup (cloud or downloaded).
  */
 (function (global) {
-  const DB_NAME = 'as-forms-forms';
+  // 1.2.1-web: scoped per copy (main site / beta) — see js/app-scope.js
+  const DB_NAME = global.AsScope ? global.AsScope.db('as-forms-forms') : 'as-forms-forms';
   const STORES = ['kv', 'files', 'drafts', 'text'];
   const MAX_SIGNATURES = 3;
   const C = () => global.AsFormsCrypto;
@@ -26,12 +27,13 @@
 
   function db() {
     if (!dbp) {
-      dbp = new Promise((resolve, reject) => {
+      const scopeReady = (global.AsScope && global.AsScope.ready) || Promise.resolve();
+      dbp = scopeReady.then(() => new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, 1);
         req.onupgradeneeded = () => { for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s); };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
-      });
+      }));
     }
     return dbp;
   }

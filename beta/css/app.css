@@ -1014,3 +1014,24 @@ body.kb-open #app { padding-bottom: calc(var(--kb-inset, 0px) + 16px); }
 .sig-pick img { max-height: 56px; max-width: 100%; }
 .btn.small { padding: .35rem .7rem; font-size: .85rem; }
 .settings-banner.danger-row .sb-title { color: var(--danger); }
+
+/* ——— 1.2.1-web UK dates (js/uk-date.js): dd/mm/yyyy box in front of the real date input ——— */
+.uk-date { position: relative; display: block; }
+.uk-date .uk-date-text { width: 100%; padding-right: 42px; }
+.uk-date .uk-date-text.invalid { outline: 2px solid var(--danger); outline-offset: 1px; }
+.uk-date .uk-date-cal { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.uk-date .uk-date-cal svg { width: 20px; height: 20px; }
+.uk-date input.uk-date-native { position: absolute; right: 10px; bottom: 0; width: 1px !important; height: 1px; min-width: 0; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+
+/* ——— 1.2.1-web toasts never cover buttons ——— */
+/* above the Preview / Export bar */
+body:has(.view:not(.hidden) .form-actions) .toast { bottom: calc(var(--nav-h) + var(--safe-b) + 84px); }
+/* with a sheet open: at the top of the screen, above the sheet (its buttons are at the bottom) */
+body:has(.sheet-backdrop) .toast { top: calc(env(safe-area-inset-top, 0px) + 12px) !important; bottom: auto !important; z-index: 130; }
+body.kb-open .toast { bottom: calc(var(--kb-inset, 0px) + 12px); }
+
+/* ——— 1.2.1-web ⋮ menu (same actions as hold) + inline icons in hints ——— */
+.of-more { border: none; background: none; font-size: 1.25rem; line-height: 1; color: var(--muted); cursor: pointer; padding: 2px 6px; }
+.inline-ico svg { width: 15px; height: 15px; vertical-align: -2px; }
+.field-hint { font-weight: 500; color: var(--muted); font-size: .78rem; }
+.fe-count { margin: 0 2px 8px; }

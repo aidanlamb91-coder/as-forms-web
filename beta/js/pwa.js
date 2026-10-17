@@ -8,7 +8,8 @@
  * - Everything install-related is hidden when already running as the installed app.
  */
 (function (global) {
-  const BANNER_KEY = 'as-forms-install-banner-dismissed';
+  // 1.2.1-web: names are scoped per copy (main site / beta) — see js/app-scope.js
+  const BANNER_KEY = global.AsScope ? global.AsScope.key('as-forms-install-banner-dismissed') : 'as-forms-install-banner-dismissed';
   let deferredPrompt = null;
   let waitingWorker = null;
   let reloading = false;

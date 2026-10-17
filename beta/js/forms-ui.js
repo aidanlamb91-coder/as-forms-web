@@ -104,7 +104,9 @@
       '<div class="of-text"><p class="of-title">' + esc(item.title) + (o.count ? ' <span class="badge on">' + o.count + '</span>' : '') + '</p>' +
       '<p class="of-sub">' + esc(item.number + ' ' + item.rev) + '</p>' + (o.note ? '<p class="of-note">' + esc(o.note) + '</p>' : '') +
       (o.snippet ? '<p class="of-snip">' + esc(o.snippet) + '</p>' : '') + '</div>' +
-      mark(item, s) + (o.star === false ? '' : '<button type="button" class="of-star' + (fav ? ' on' : '') + '" data-star="' + esc(item.number) + '" aria-label="Favourite">' + (fav ? '★' : '☆') + '</button>') + '</div>';
+      mark(item, s) + (o.star === false ? '' : '<button type="button" class="of-star' + (fav ? ' on' : '') + '" data-star="' + esc(item.number) + '" aria-label="Favourite">' + (fav ? '★' : '☆') + '</button>') +
+      // ⋮ = the same actions as holding the row (hold isn't discoverable with a mouse)
+      (s.downloaded.has(item.number) && !st.busy.has(item.number) ? '<button type="button" class="of-more" data-more="' + esc(item.number) + '" aria-label="More" title="More">⋮</button>' : '') + '</div>';
   }
 
   function renderList() {
@@ -147,7 +149,7 @@
       '<button type="button" class="of-tool" id="btn-of-download-all"' + (p ? ' disabled' : '') + '>' + ICON.down + '<span>Download all</span><span class="of-info" id="of-download-all-info">' +
         (p ? p[0] + ' of ' + p[1] : (s.downloaded.size >= s.index.items.length ? 'All done' : total ? R().sizeText(total) : '')) + '</span></button>' +
       '<button type="button" class="of-tool danger" id="btn-of-delete-all"' + (p || !s.downloaded.size ? ' disabled' : '') + '>' + ICON.bin + '<span>Delete all downloads</span><span class="of-info" id="of-used">' + R().sizeText(st.used) + '</span></button>' +
-      '<p class="hint">Hold a downloaded item to delete it.</p>';
+      '<p class="hint">Hold a downloaded item, or tap ⋮, to delete it.</p>';
     list.innerHTML = h;
   }
 
@@ -197,7 +199,7 @@
     const list = $('#of-list');
     let hold = null; let held = false;
     list.addEventListener('pointerdown', (e) => {
-      const r = e.target.closest('.of-row'); if (!r || e.target.closest('.of-star')) return;
+      const r = e.target.closest('.of-row'); if (!r || e.target.closest('.of-star, .of-more')) return;
       held = false; clearTimeout(hold);
       hold = setTimeout(() => { held = true; const it = itemByNo(r.dataset.no); if (it) askDelete(it); }, 600);
     });
@@ -205,6 +207,8 @@
     list.addEventListener('contextmenu', (e) => { const r = e.target.closest('.of-row'); if (!r) return; e.preventDefault(); clearTimeout(hold); if (!held) { held = true; const it = itemByNo(r.dataset.no); if (it) askDelete(it); } });
     list.addEventListener('click', async (e) => {
       if (held) { held = false; return; }
+      const more = e.target.closest('[data-more]');
+      if (more) { const it = itemByNo(more.dataset.more); if (it) askDelete(it); return; }
       const star = e.target.closest('[data-star]');
       if (star) { const it = itemByNo(star.dataset.star); if (it) { await L().toggleFavourite(it); refreshUsed(); } return; }
       const grp = e.target.closest('[data-group]');
@@ -240,6 +244,8 @@
   }
   function wireCode() {
     $('#btn-code-back').onclick = showList;
+    // the "Wrong code" message goes as soon as you start typing again
+    $('#forms-code-input').addEventListener('input', () => { $('#forms-code-error').textContent = ''; });
     $('#form-forms-code').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = $('#btn-forms-code-save');
@@ -285,7 +291,7 @@
         ' <span class="fh-tag ' + kind[1] + '">' + kind[0] + '</span></p><p class="meta fh-line">' + esc(R().historyLine(d)) + '</p></div>' +
         (d.exportedAt ? '<button type="button" class="icon-btn" data-share="' + esc(d.id) + '" aria-label="Share again" title="Share again">' + ICON.share + '</button>'
           : '<button type="button" class="icon-btn" data-del="' + esc(d.id) + '" aria-label="Delete" title="Delete">' + ICON.bin + '</button>') + '</div>';
-    }).join('') + '</div><p class="hint" id="fh-hint">' + (copies.some((d) => d.exportedAt) ? 'Tap to open · ⤴ to share again' : 'Tap to open') + '</p>';
+    }).join('') + '</div><p class="hint" id="fh-hint">' + (copies.some((d) => d.exportedAt) ? 'Tap to open · <span class="inline-ico" aria-label="Share">' + ICON.share + '</span> to share again' : 'Tap to open') + '</p>';
   }
 
   async function lastJob() {
@@ -421,16 +427,19 @@
     if (locked) h += '<div class="fe-banner ok"><span>Exported ' + esc(R().ukDate(new Date(d.exportedAt))) + '</span><button type="button" class="btn ghost small" id="btn-fe-new-copy">Edit as new copy</button></div>';
     const order = R().fields(spec).map((f) => f.key).filter((k) => (d.unsure || []).includes(k));
     if (order.length && !locked) h += '<div class="fe-banner amber" id="import-check-banner"><span id="fe-check-count">' + order.length + ' to check</span><button type="button" class="btn ghost small" id="btn-fe-next">Next</button></div>';
+    // one count for the whole form — the same function the import summary uses
+    const all = R().countFilled(R().fields(spec), d.values);
+    h += '<p class="hint fe-count" id="fe-count">' + all.filled + ' of ' + all.total + ' filled</p>';
     if (spec.note) h += '<p class="hint">' + esc(spec.note) + '</p>';
-    for (const s of spec.sections) {
+    spec.sections.forEach((s, si) => {
       const fs = s.fields || [];
-      if (fs.length === 1 && fs[0].type === 'signature') { h += sigCard(d, locked); continue; }
+      if (fs.length === 1 && fs[0].type === 'signature') { h += sigCard(d, locked); return; }
       const visible = fs.filter((f) => !f.key.endsWith('_other') || d.values[f.key.replace(/_other$/, '')] === 'other');
-      const filled = fs.filter((f) => d.values[f.key]).length;
+      const n = R().countFilled(fs, d.values);
       const open = !s.collapsed || fs.some((f) => (d.unsure || []).includes(f.key));
-      h += '<details class="panel fe-card"' + (open ? ' open' : '') + '><summary><span>' + esc(s.title) + '</span>' + (fs.length ? '<span class="hint">' + filled + ' of ' + fs.length + ' filled</span>' : '') + '</summary>' +
+      h += '<details class="panel fe-card"' + (open ? ' open' : '') + '><summary><span>' + esc(s.title) + '</span>' + (n.total ? '<span class="hint" data-sec="' + si + '">' + n.filled + ' of ' + n.total + ' filled</span>' : '') + '</summary>' +
         (s.note ? '<p class="hint">' + esc(s.note) + '</p>' : '') + '<div class="fe-grid">' + visible.map((f) => fieldHtml(f, d, locked)).join('') + '</div></details>';
-    }
+    });
     $('#fe-body').innerHTML = h;
     $('#btn-fe-export').disabled = false;
     updateWarnings();
@@ -462,6 +471,7 @@
     const unsure = (d.unsure || []).filter((k) => k !== key);
     const next = Object.assign({}, d, { values, unsure, updatedAt: Date.now() });
     S().saveDraft(next); // autosave on every change
+    refreshCounts(spec, values);
     const f = R().field(spec, key);
     const err = document.querySelector('#fe-body [data-err="' + CSS.escape(key) + '"]');
     if (err) err.textContent = (f && R().check(f.validate, v || '')) || '';
@@ -473,6 +483,16 @@
       if (!left) { const b = $('#import-check-banner'); if (b) b.remove(); }
     }
     updateWarnings();
+  }
+
+  /** Keeps the "N of M filled" lines up to date while typing. */
+  function refreshCounts(spec, values) {
+    const all = R().countFilled(R().fields(spec), values);
+    const top = $('#fe-count'); if (top) top.textContent = all.filled + ' of ' + all.total + ' filled';
+    spec.sections.forEach((s, si) => {
+      const el = document.querySelector('#fe-body [data-sec="' + si + '"]'); if (!el) return;
+      const n = R().countFilled(s.fields || [], values); el.textContent = n.filled + ' of ' + n.total + ' filled';
+    });
   }
 
   function wireEdit() {
