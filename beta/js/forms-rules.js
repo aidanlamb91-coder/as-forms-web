@@ -110,6 +110,7 @@
     for (const f of fields(spec)) {
       if (!f.prefill || !f.prefill.startsWith('hr.')) continue;
       const k = f.prefill.slice(3);
+      if (BANK_KEYS.includes(k)) continue; // 1.2.2-web: Bank & NI are never saved
       let v = String(values[f.key] || '').trim();
       if (f.type === 'radio') { const o = (f.options || []).find((x) => x.key === v); v = o ? o.label : ''; }
       if (v && v !== String((hr || {})[k] || '')) out[k] = v;

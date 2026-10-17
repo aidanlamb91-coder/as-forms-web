@@ -1199,6 +1199,7 @@
   }
 
   async function sendToInvoice() {
+    if (globalThis.AsLockUi && !(await AsLockUi.ensureName())) return; // 1.2.2-web: name for this session
     const claim = await prepareClaimForSend();
     if (!claim) return;
     const status = $('#export-status');
@@ -1943,6 +1944,7 @@
   }
 
   async function sendToTimesheets() {
+    if (globalThis.AsLockUi && !(await AsLockUi.ensureName())) return; // 1.2.2-web: name for this session
     const ts = await AsStorage.getTimesheet(state.tsId);
     if (!ts) return;
     const status = $('#ts-export-status');
@@ -2625,6 +2627,7 @@
   let tsPreviewZoom = null;
 
   async function showTimesheetPreview() {
+    if (globalThis.AsLockUi && !(await AsLockUi.ensureName())) return; // 1.2.2-web: name for this session
     const ts = await AsStorage.getTimesheet(state.tsId);
     if (!ts) return;
     const name = AsStorage.getSettings().displayName || AsTimesheetFiller.DEFAULT_NAME;
@@ -2665,6 +2668,7 @@
 
   /** "Open file": build the .odt from entries, then offer Download / Share (Open in Word / Files). */
   async function openTimesheetFile() {
+    if (globalThis.AsLockUi && !(await AsLockUi.ensureName())) return; // 1.2.2-web: name for this session
     const ts = await AsStorage.getTimesheet(state.tsId);
     if (!ts) return;
     try {

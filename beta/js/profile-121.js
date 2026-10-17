@@ -24,7 +24,7 @@
     $('#app').insertAdjacentHTML('beforeend', `
     <section id="view-hr" class="view hidden">
       <header class="topbar"><button type="button" class="btn ghost back-btn" id="btn-hr-back">← Back</button><h1>HR details</h1></header>
-      <p class="hint pad">Kept on this device only. Avoid shared devices.</p>
+      <p class="hint pad">Bank and NI aren’t saved — type them on each form.</p>
       <div id="hr-cards"></div>
     </section>
     <section id="view-signature" class="view hidden">
@@ -62,10 +62,12 @@
   }
 
   // ——— HR details ———
-  function showHr() {
+  async function showHr() {
+    if (global.AsLockUi && !(await global.AsLockUi.need())) return; // 1.2.2-web lock
     S().init().then(() => {
       const hr = S().hr();
-      $('#hr-cards').innerHTML = R().HR_CARDS.map((c) => '<details class="panel fe-card"' + (c.title === 'Personal' ? ' open' : '') + '><summary><span>' + esc(c.title) + '</span>' +
+      // 1.2.2-web: no Bank & NI card — they are typed on each form and never saved
+      $('#hr-cards').innerHTML = R().HR_CARDS.filter((c) => !c.bank).map((c) => '<details class="panel fe-card"' + (c.title === 'Personal' ? ' open' : '') + '><summary><span>' + esc(c.title) + '</span>' +
         (c.bank ? '<span class="hint">Never in backups</span>' : '<span class="hint">' + c.items.filter((i) => hr[i.key]).length + ' of ' + c.items.length + '</span>') + '</summary><div class="fe-grid">' +
         c.items.map((i) => {
           const id = 'hr-' + i.key; const v = hr[i.key] || '';
@@ -103,7 +105,10 @@
         '<button type="button" class="btn ghost small danger" data-sigdel="' + slot + '">Delete</button></div></div>';
     }).join('');
   }
-  function showSignatures() { S().init().then(() => { renderSigs(); A().showView('signature'); }); }
+  async function showSignatures() {
+    if (global.AsLockUi && !(await global.AsLockUi.need())) return; // 1.2.2-web lock
+    S().init().then(() => { renderSigs(); A().showView('signature'); });
+  }
 
   /** Paper → see-through, crop to the ink (Android SignatureImage.clean). Pixels: Uint8ClampedArray RGBA. */
   function cleanPixels(w, h, px, margin) {

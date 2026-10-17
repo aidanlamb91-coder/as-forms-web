@@ -1035,3 +1035,9 @@ body.kb-open .toast { bottom: calc(var(--kb-inset, 0px) + 12px); }
 .inline-ico svg { width: 15px; height: 15px; vertical-align: -2px; }
 .field-hint { font-weight: 500; color: var(--muted); font-size: .78rem; }
 .fe-count { margin: 0 2px 8px; }
+
+/* 1.2.2-web personal details lock (js/lock-ui.js) */
+.rk-text { font: 700 1.05rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; word-break: break-all; text-align: center; padding: 10px; border: 1px dashed var(--border, #ccc); border-radius: 10px; user-select: all; }
+.rk-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.sec-status { font-weight: 700; margin-bottom: 10px; }
+#view-security .toggle-control { margin-top: 14px; }

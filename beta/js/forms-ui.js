@@ -267,7 +267,11 @@
     const item = ((s.index && s.index.items) || []).find((i) => i.number === st.form);
     return { s, item, spec: item ? s.specs[item.number] : null };
   }
-  function openForm(no) { st.form = no; st.tab = 0; A().showView('form-home'); renderHome(); }
+  // 1.2.2-web: filled forms are personal details — unlock first when the lock is on
+  async function openForm(no) {
+    if (global.AsLockUi && !(await global.AsLockUi.need())) return;
+    st.form = no; st.tab = 0; A().showView('form-home'); renderHome();
+  }
   function setBusy(b) { st.homeBusy = b; $('#fh-busy').classList.toggle('hidden', !b); ['#btn-fh-start', '#btn-fh-import', '#btn-fh-import2'].forEach((x) => { $(x).disabled = b; }); }
 
   function renderHome() {
@@ -379,7 +383,10 @@
   }
 
   // ——— Edit ———
-  function openDraft(id) { st.draftId = id; st.nextAt = 0; A().showView('form-edit'); renderEdit(); }
+  async function openDraft(id) {
+    if (global.AsLockUi && !(await global.AsLockUi.need())) return; // 1.2.2-web lock
+    st.draftId = id; st.nextAt = 0; A().showView('form-edit'); renderEdit();
+  }
   function editCtx() {
     const d = S().draft(st.draftId);
     const s = L().getState();
@@ -533,7 +540,11 @@
       if (e.target.closest('#btn-fe-sig')) sigPicker();
     });
     $('#btn-fe-preview').onclick = preview;
-    $('#btn-fe-export').onclick = exportSheet;
+    // 1.2.2-web: with the name off, ask for it first (kept for this session)
+    $('#btn-fe-export').onclick = async () => { if (global.AsLockUi && !(await global.AsLockUi.ensureName())) return; exportSheet(); };
+    // Bank & NI typed on a form are forgotten as soon as you leave it
+    new MutationObserver(() => { if ($('#view-form-edit').classList.contains('hidden')) S().forgetBank(); })
+      .observe($('#view-form-edit'), { attributes: true, attributeFilter: ['class'] });
   }
 
   function sigPicker() {
@@ -628,6 +639,7 @@
     const done = async (sentTo) => {
       const cur = S().draft(d.id) || d;
       await S().saveDraft(Object.assign({}, cur, { exportedAt: Date.now(), exportFormat: built.format, sentTo: sentTo || null }));
+      S().forgetBank(d.id); // 1.2.2-web: Bank & NI forgotten after export
       renderEdit();
       const back = R().changedHrDetails(spec, cur.values, S().hr());
       if (Object.keys(back).length) setTimeout(() => saveBackSheet(back), 400);

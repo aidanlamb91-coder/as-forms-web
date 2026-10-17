@@ -126,6 +126,7 @@
   const kind = (n) => (/\.docx$/i.test(n) ? 'form' : /\.pdf$/i.test(n) ? 'pdf' : 'image');
 
   async function openJobExport(expenseId, mileageId) {
+    if (global.AsLockUi && !(await global.AsLockUi.ensureName())) return; // 1.2.2-web: name for this session
     st.expenseId = expenseId;
     st.mileageId = mileageId;
     const $ = A().$;

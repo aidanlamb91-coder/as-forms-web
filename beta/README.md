@@ -1,4 +1,4 @@
-# AS Forms — Web (`1.2.1-web`, beta)
+# AS Forms — Web (`1.2.2-web`, beta)
 
 Free, **static**, browser-only port of AS Forms for Aidan Lamb / Andrews Survey.
 No paid APIs, no build step, no auto-send email (files download, then "Open mail app").
@@ -29,14 +29,22 @@ Then open http://127.0.0.1:8765/
 - Deployed site + public APK downloads: `aidanlamb91-coder/as-forms-web` (public; root = stable, `beta/` = beta).
 - Android source: `aidanlamb91-coder/as-forms-android` (private); its `scripts/release-android.sh` publishes each APK to both repos.
 
+## New in 1.2.2-web (beta) — personal details lock
+- Profile asks **"Lock personal details?"** (first time, and once per session while no lock is set). The lock is a passkey (fingerprint, Face ID or device PIN). Browsers without the passkey PRF extension get an app passphrase instead, and are told so.
+- Unlock once per session (closing or reloading the app locks again). Settings → **Security**: Lock now, change or remove the lock, new recovery key, Remember name only.
+- **No thanks**: "Personal details won't be saved between sessions." plus **Remember name only** (on by default). With it off, timesheet, expense and form exports ask for the name once per session.
+- **Bank and NI are never stored or backed up**: typed on each form, kept for that form only, forgotten after export or on leaving. Saved 1.2.1 copies are deleted on upgrade (one-line notice).
+- Backups: locked personal details go in encrypted (`personal.json`) only when a recovery key exists. Restoring on a new device: enter the recovery key, then set the passkey again; without it everything else restores.
+- Backup: 1.2.1 source `/workspace/receipt-app-backups/web-1.2.1-web-pre-1.2.2-web-src-202610171124.tgz`.
+
 ## New in 1.2.1-web (beta) — Android 1.2.0 + 1.2.1 forms
 - Settings → **Other forms**: company forms to fill in, then forms and policies to download. Unlock once with the access code (ask your admin); only a locked key is kept on the device.
 - Fill in, Preview, Export as Word or PDF. Email opens the share sheet or mail app — the app never sends.
 - New / History per form, Import a filled `.docx` or typed PDF (amber = check), delete with Undo, share again.
 - Download all, Delete all (size shown), hold an item to delete it, offline search inside the documents.
-- Profile: Name, Mileage, Favourite locations, HR details (on this device only; Bank and NI never in backups), Signature (draw or upload, up to 3).
+- Profile: Name, Mileage, Favourite locations, HR details (Bank and NI no longer saved since 1.2.2-web), Signature (draw or upload, up to 3).
 - Payroll and HR emails in Email & addresses (default jillian.robertson@andrewssurvey.com).
-- Settings → **Clear data on this device** for shared computers — clears only this copy (beta or main site), never the other. No fingerprint lock on web.
+- Settings → **Clear data on this device** for shared computers — clears only this copy (beta or main site), never the other. (1.2.2-web adds the passkey lock.)
 - The beta keeps its own storage (`beta:` names); the main site keeps its existing names, so nothing moves when it is promoted.
 - Dates show as dd/mm/yyyy on every browser.
 - Backup: 1.1.0 backup source `/workspace/receipt-app-backups/web-1.1.0-web-pre-1.2.1-web-src-202610170928.tgz`.

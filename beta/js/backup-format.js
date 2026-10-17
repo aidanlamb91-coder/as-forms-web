@@ -159,7 +159,8 @@
       exportedAtMillis: now || Date.now(),
       appVersionName: appVersion || '',
       prefs: {
-        displayName: str(s.displayName),
+        // 1.2.2-web: with "Remember name only" off the name isn't kept, so it isn't backed up either
+        displayName: global.AsLock && !global.AsLock.rememberName() ? '' : str(s.displayName),
         expenseSubject: str(s.expenseSubject),
         expenseBody: str(s.expenseBody),
         timesheetSubject: str(s.timesheetSubject),

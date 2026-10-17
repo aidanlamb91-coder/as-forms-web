@@ -17,7 +17,7 @@
   const STORE_META = 'meta';
   const STORE_MILEAGE = 'mileage';
   const SETTINGS_KEY = globalThis.AsScope ? globalThis.AsScope.key('as-forms-settings') : 'as-forms-settings';
-  const APP_VERSION = '1.2.1-web';
+  const APP_VERSION = '1.2.2-web';
   // 1.2.1-web Other forms: where Payroll and HR forms are addressed (editable in Destination emails)
   const DEFAULT_PAYROLL_TO = 'jillian.robertson@andrewssurvey.com';
   const DEFAULT_HR_TO = 'jillian.robertson@andrewssurvey.com';
@@ -139,16 +139,31 @@
       if (parsed.sendTo && !parsed.expenseTo) parsed.expenseTo = parsed.sendTo;
       // 0.3.15-web: migrate old default timesheet address
       if (parsed.timesheetTo != null) parsed.timesheetTo = migrateTimesheetTo(parsed.timesheetTo);
-      return { ...defaults, ...parsed, sendTo: parsed.expenseTo || parsed.sendTo || defaults.expenseTo };
+      return withSessionName({ ...defaults, ...parsed, sendTo: parsed.expenseTo || parsed.sendTo || defaults.expenseTo });
     } catch {
-      return { ...defaults };
+      return withSessionName({ ...defaults });
     }
+  }
+
+  // 1.2.2-web "Remember name only" off: the name lives in memory for this session only
+  // (js/lock-core.js). It is never written to localStorage, and reads give the session name.
+  const nameIsSessionOnly = () => !!(globalThis.AsLock && !globalThis.AsLock.rememberName());
+  function withSessionName(s) {
+    if (nameIsSessionOnly()) s.displayName = globalThis.AsLock.sessionName();
+    return s;
   }
 
   function saveSettings(partial) {
     const next = { ...getSettings(), ...partial };
     if (partial.expenseTo != null) next.sendTo = partial.expenseTo;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    const stored = { ...next };
+    if (nameIsSessionOnly()) {
+      if (partial.displayName != null) globalThis.AsLock.setSessionName(partial.displayName);
+      stored.displayName = '';
+      stored.namePromptSeen = true; // ask at export time instead of at start-up
+      next.displayName = globalThis.AsLock.sessionName();
+    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
     return next;
   }
 
