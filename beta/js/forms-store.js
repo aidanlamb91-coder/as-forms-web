@@ -339,6 +339,8 @@
     libKey, setLibKey, forgetLibKey, fileGet, filePut, fileDel, fileNames, textGet, textPut, textDel, textClear, textNames,
     personalForBackup, openPersonal, applyPersonal, restore, draftToJson, draftFromJson, clearAll, onChange: (fn) => listeners.add(fn), DB_NAME,
     // 1.2.2-web lock
-    lockChanged, forgetBank, isLocked: () => mem.locked, bankNotice: () => mem.bankNotice, clearBankNotice: () => { mem.bankNotice = false; }, Locked,
+    lockChanged, forgetBank,
+    hasPersonal: () => Object.keys(mem.hr || {}).length > 0 || Object.keys(mem.sigs || {}).length > 0 || mem.drafts.length > 0,
+    isLocked: () => mem.locked, bankNotice: () => mem.bankNotice, clearBankNotice: () => { mem.bankNotice = false; }, Locked,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

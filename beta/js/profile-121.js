@@ -191,6 +191,7 @@
   function clearDeviceSheet() {
     const sh = A().openSheet('<div class="sheet" role="dialog" aria-label="Clear data on this device"><div class="sheet-grip"></div><h2>Clear data on this device?</h2>' +
       '<p class="hint">Removes claims, timesheets, receipts, forms, HR details, signatures, the access code and cloud sign-in from this browser. Back up first if you need them.</p>' +
+      (global.AsLock && global.AsLock.method() === 'passkey' ? '<p class="hint" id="clear-passkey-hint">Delete the AS Forms passkey in your password manager.</p>' : '') +
       '<div class="sheet-actions"><button type="button" class="btn danger" id="btn-clear-device-yes">Clear everything</button><button type="button" class="btn ghost" data-close>Cancel</button></div></div>');
     $('#btn-clear-device-yes', sh.el).onclick = async () => {
       sh.close();
@@ -200,6 +201,8 @@
     };
   }
   async function clearDevice() {
+    // 1.2.2-web: drop the open lock key and the personal details held in memory first
+    if (global.AsLock) { global.AsLock.forget(); try { await S().lockChanged('lock'); } catch (_) { /* ignore */ } }
     try { await S().clearAll(); } catch (e) { console.error(e); }
     try { await St().clearAllData(); } catch (e) { console.error(e); }
     // Only this copy's own keys and databases: the main site and the beta share one web address,

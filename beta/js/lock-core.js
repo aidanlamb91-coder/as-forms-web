@@ -23,6 +23,7 @@
  */
 (function (global) {
   const KEY = global.AsScope ? global.AsScope.key('as-forms-lock') : 'as-forms-lock';
+  const MIN_PASS = 10;           // shortest app passphrase allowed
   const PASS_ITER = 600000;      // PBKDF2-SHA256 rounds for an app passphrase
   const RECOVERY_ITER = 210000;  // the recovery key is long and random; this is just extra margin
   const RK_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // Crockford base32: no I, L, O, U
@@ -145,7 +146,7 @@
     emit('lock-on');
   }
   async function setPassphrase(pp) {
-    if (String(pp || '').length < 8) throw new Error('Use at least 8 characters');
+    if (String(pp || '').length < MIN_PASS) throw new Error('Use at least ' + MIN_PASS + ' characters');
     const raw = currentOrNewRaw();
     const salt = rand(16);
     const kek = await kekFromText(pp, salt, PASS_ITER);
@@ -165,7 +166,28 @@
     await useDataKey(raw);
     emit('unlock');
   }
-  function lockNow() { dataKey = null; dataRaw = null; emit('lock'); }
+  /** Forgot the passkey / passphrase: open with the recovery key instead (then the lock is set again). */
+  async function unlockRecovery(rk) {
+    if (cfg.mode !== 'lock' || !cfg.recovery) throw new WrongKey('No recovery key');
+    await useDataKey(await openRecovery(cfg.recovery, rk));
+    emit('unlock');
+  }
+  function lockNow() { if (!dataKey) return; dataKey = null; dataRaw = null; emit('lock'); }
+  /** Clear data on this device: drop the open key, the session name and the saved lock settings. */
+  function forget() {
+    dataKey = null; dataRaw = null; sessionName = ''; pendingRecovery = null;
+    try { global.localStorage.removeItem(KEY); } catch (_) { /* ignore */ }
+    cfg = {};
+    emit('lock');
+  }
+  /** Rough passphrase strength for the hint under the box (not a rule beyond MIN_PASS). */
+  function passStrength(pp) {
+    const s = String(pp || '');
+    if (s.length < MIN_PASS) return { ok: false, label: 'At least ' + MIN_PASS + ' characters' };
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(s)).length;
+    const score = (s.length >= 14) + (s.length >= 20) + (kinds >= 2) + (kinds >= 3) + (/\s/.test(s.trim()) ? 1 : 0);
+    return { ok: true, label: score >= 3 ? 'Strong' : score >= 2 ? 'OK' : 'Weak: add words or numbers' };
+  }
   /** New recovery key (needs the lock open). Returns the key to show the user ONCE. */
   async function newRecovery() {
     if (!dataRaw) throw new Error('Unlock first');
@@ -181,8 +203,8 @@
     emit('lock-off');
   }
   /** "No thanks" to the lock. */
-  function decline(rememberName) {
-    save({ mode: 'off', rememberName: rememberName !== false, asked: true });
+  function decline(rememberName, noAsk) {
+    save({ mode: 'off', rememberName: rememberName !== false, asked: true, noAsk: !!noAsk });
     emit('declined');
   }
   /** A backup's personal details opened with its recovery key: use that data key on this device,
@@ -202,15 +224,16 @@
   global.AsLock = {
     // state
     mode: () => cfg.mode || null, method: () => cfg.method || null, isUnlocked: () => !!dataKey, key: () => dataKey,
+    noAsk: () => !!cfg.noAsk, setNoAsk: (on) => save({ noAsk: !!on }),
     hasRecovery: () => !!cfg.recovery, recoveryRecord: () => cfg.recovery || null, asked: () => !!cfg.asked,
     rememberName, setRememberName, sessionName: () => sessionName, setSessionName: (n) => { sessionName = String(n || '').trim(); emit('name'); },
     // actions
-    passkeyAvailable, setPasskey, setPassphrase, unlockPasskey, unlockPassphrase, lockNow, newRecovery, removeLock, decline,
+    passkeyAvailable, setPasskey, setPassphrase, unlockPasskey, unlockPassphrase, lockNow, unlockRecovery, forget, passStrength, newRecovery, removeLock, decline,
     openRecovery, adoptFromBackup, takePendingRecovery,
     // helpers (tests, backup)
     newRecoveryKey, tidyRecoveryKey, makeRecoveryRecord: recoveryRecord, b64, unb64, importDataKey, kekFromText, wrap, unwrap,
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
     reload: () => { cfg = load(); },
-    WrongKey, NoPrf, PASS_ITER, RECOVERY_ITER, KEY,
+    WrongKey, NoPrf, MIN_PASS, PASS_ITER, RECOVERY_ITER, KEY,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

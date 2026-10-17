@@ -20,6 +20,17 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let askedThisSession = false;
+  let autoLockMs = 5 * 60 * 1000; // re-lock after this long hidden
+  let hiddenTimer = null;
+  function autoLock() {
+    if (K().mode() !== 'lock' || !K().isUnlocked()) return;
+    K().lockNow();
+    S().lockChanged('lock').catch(() => {});
+    // an open personal screen would still show what was on it: go back to Settings
+    const v = [...document.querySelectorAll('.view')].find((x) => !x.classList.contains('hidden'));
+    if (v && /^view-(hr|signature|form-home|form-edit)$/.test(v.id)) A().showSettings();
+    refresh();
+  }
 
   function sheet(html, onClose) { return A().openSheet('<div class="sheet" role="dialog"><div class="sheet-grip"></div>' + html + '</div>', onClose); }
   /** A sheet that resolves with what was chosen (null when closed / cancelled). */
@@ -33,15 +44,16 @@
   }
 
   function statusText() {
-    if (K().mode() === 'lock') return (K().method() === 'passkey' ? 'Locked with passkey' : 'Locked with passphrase') + (K().isUnlocked() ? ' · open' : '');
+    if (K().mode() === 'lock') return K().isUnlocked() ? 'Unlocked' : (K().method() === 'passkey' ? 'Locked with passkey' : 'Locked with passphrase');
     return 'Not locked';
   }
 
   // ——— turning the lock on ———
-  /** Asks "Lock personal details?" (Profile, once per session while no lock is set). */
+  /** Asks "Lock personal details?" (Profile, once per session while no lock is set, unless
+   *  "Don't ask again" was ticked; and at the first start for 1.2.1 users with saved details). */
   async function askLock() {
     askedThisSession = true;
-    const pick = await choose('<h2>Lock personal details?</h2><p class="hint">Fingerprint, face or device PIN.</p>' +
+    const pick = await choose('<h2>Lock personal details?</h2><p class="hint">HR details, signatures and filled forms</p>' +
       '<div class="sheet-actions"><button type="button" class="btn primary" id="btn-lock-yes">Lock</button><button type="button" class="btn ghost" id="btn-lock-no">No thanks</button></div>',
       (sh, done) => { $('#btn-lock-yes', sh.el).onclick = () => done('yes'); $('#btn-lock-no', sh.el).onclick = () => done('no'); });
     if (pick === 'yes') return setupLock();
@@ -74,16 +86,17 @@
     return choose('<h2>App passphrase</h2><p class="hint" id="pp-note">' + esc(note) + '</p>' +
       '<form id="pp-set-form" autocomplete="on"><input type="text" name="username" autocomplete="username" value="AS Forms passphrase" readonly hidden />' +
       '<label>Passphrase <input type="password" id="pp-new" autocomplete="new-password" /></label>' +
+      '<p class="hint" id="pp-strength" aria-live="polite">At least ' + K().MIN_PASS + ' characters</p>' +
       '<label>Again <input type="password" id="pp-new2" autocomplete="new-password" /></label>' +
       '<p class="status error" id="pp-set-error" role="status"></p>' +
       '<div class="sheet-actions"><button type="submit" class="btn primary" id="btn-pp-set">Set</button><button type="button" class="btn ghost" data-close>Cancel</button></div></form>',
       (sh, done) => {
         const err = $('#pp-set-error', sh.el);
-        sh.el.addEventListener('input', () => { err.textContent = ''; });
+        sh.el.addEventListener('input', () => { err.textContent = ''; $('#pp-strength', sh.el).textContent = K().passStrength($('#pp-new', sh.el).value).label; });
         $('#pp-set-form', sh.el).addEventListener('submit', async (e) => {
           e.preventDefault();
           const a = $('#pp-new', sh.el).value, b = $('#pp-new2', sh.el).value;
-          if (a.length < 8) { err.textContent = 'At least 8 characters'; return; }
+          if (a.length < K().MIN_PASS) { err.textContent = 'At least ' + K().MIN_PASS + ' characters'; return; }
           if (a !== b) { err.textContent = "Doesn't match"; return; }
           $('#btn-pp-set', sh.el).disabled = true; $('#btn-pp-set', sh.el).textContent = 'Setting…';
           try { await K().setPassphrase(a); done(true); } catch (x) { err.textContent = x.message || 'Failed'; $('#btn-pp-set', sh.el).disabled = false; $('#btn-pp-set', sh.el).textContent = 'Set'; }
@@ -93,17 +106,19 @@
 
   /** "No thanks": nothing personal is saved; optionally just the name. */
   async function declineSheet() {
-    const keep = await choose('<h2>Not locked</h2><p class="hint">Personal details won\u2019t be saved between sessions.</p>' +
+    const keep = await choose('<h2>Don\u2019t lock</h2><p class="hint">Personal details won\u2019t be saved between sessions.</p>' +
       '<label class="toggle-control wide" for="chk-remember-name"><span>Remember name only</span><input type="checkbox" id="chk-remember-name" checked /><span class="switch" aria-hidden="true"></span></label>' +
+      '<label class="check-row small" for="chk-no-ask"><input type="checkbox" id="chk-no-ask" /> <span>Don\u2019t ask again</span></label>' +
       '<div class="sheet-actions"><button type="button" class="btn primary" id="btn-decline-ok">OK</button></div>',
-      (sh, done) => { $('#btn-decline-ok', sh.el).onclick = () => done($('#chk-remember-name', sh.el).checked ? 'name' : 'none'); });
+      (sh, done) => { $('#btn-decline-ok', sh.el).onclick = () => done({ name: $('#chk-remember-name', sh.el).checked, noAsk: $('#chk-no-ask', sh.el).checked }); });
     if (keep == null) return false;
-    await declineWith(keep === 'name');
+    await declineWith(keep.name, keep.noAsk);
     return true;
   }
-  async function declineWith(rememberName) {
+  /** Declined: personal details move to memory only (1.2.1 copies on disk are deleted). */
+  async function declineWith(rememberName, noAsk) {
     const name = St().getSettings().displayName || '';
-    K().decline(rememberName);
+    K().decline(rememberName, noAsk);
     if (!rememberName) { K().setSessionName(name); St().saveSettings({}); } // removes the stored name
     await S().lockChanged('declined');
     refresh();
@@ -121,9 +136,16 @@
       (pass ? '<form id="pp-unlock-form"><input type="text" name="username" autocomplete="username" value="AS Forms passphrase" readonly hidden />' +
         '<label>Passphrase <input type="password" id="pp-unlock" autocomplete="current-password" /></label>' : '<form id="pp-unlock-form">') +
       '<p class="status error" id="unlock-error" role="status"></p>' +
-      '<div class="sheet-actions"><button type="submit" class="btn primary" id="btn-unlock">Unlock</button><button type="button" class="btn ghost" data-close>Not now</button></div></form>',
+      '<div class="sheet-actions"><button type="submit" class="btn primary" id="btn-unlock">Unlock</button>' +
+      (K().hasRecovery() ? '<button type="button" class="btn secondary" id="btn-unlock-rk">Use recovery key</button>' : '') +
+      '<button type="button" class="btn ghost" data-close>Not now</button></div>' +
+      '<p class="hint"><button type="button" class="link-btn" id="btn-unlock-reset">Forgot? Reset personal details</button></p></form>',
       (sh, done) => {
         const err = $('#unlock-error', sh.el);
+        const rkBtn = $('#btn-unlock-rk', sh.el);
+        if (rkBtn) rkBtn.onclick = () => done('recovery');
+        $('#btn-unlock-reset', sh.el).onclick = () => done('reset');
+        const failed = (pass ? "Couldn't unlock. Try again" : "Couldn't unlock. Try again") + (K().hasRecovery() ? ' or use the recovery key.' : '.');
         sh.el.addEventListener('input', () => { err.textContent = ''; });
         $('#pp-unlock-form', sh.el).addEventListener('submit', async (e) => {
           e.preventDefault();
@@ -135,10 +157,49 @@
             done(true);
           } catch (x) {
             b.disabled = false;
-            err.textContent = x && x.name === 'WrongKey' ? (pass ? 'Wrong passphrase' : "Couldn't unlock") : x && x.name === 'NotAllowedError' ? 'Cancelled' : "Couldn't unlock";
+            err.textContent = x && x.name === 'WrongKey' && pass ? 'Wrong passphrase' : x && x.name === 'NotAllowedError' ? 'Cancelled' : failed;
           }
         });
-      }).then((v) => !!v);
+      }).then((v) => (v === 'recovery' ? recoveryUnlock() : v === 'reset' ? resetPersonal() : !!v));
+  }
+  /** Forgot the passkey / passphrase: unlock with the saved recovery key, then set the lock again. */
+  async function recoveryUnlock() {
+    const ok = await choose('<h2>Use recovery key</h2>' +
+      '<form id="rk-unlock-form" autocomplete="on"><input type="text" name="username" autocomplete="username" value="AS Forms recovery key" readonly class="rk-hidden" tabindex="-1" aria-hidden="true" />' +
+      '<label>Recovery key <input type="password" name="password" id="rk-unlock" autocomplete="current-password" autocapitalize="characters" spellcheck="false" /></label>' +
+      '<p class="status error" id="rk-unlock-error" role="status"></p>' +
+      '<div class="sheet-actions"><button type="submit" class="btn primary" id="btn-rk-unlock">Unlock</button><button type="button" class="btn ghost" data-close>Cancel</button></div></form>',
+      (sh, done) => {
+        const err = $('#rk-unlock-error', sh.el);
+        sh.el.addEventListener('input', () => { err.textContent = ''; });
+        $('#rk-unlock-form', sh.el).addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const b = $('#btn-rk-unlock', sh.el); b.disabled = true; b.textContent = 'Checking…';
+          try { await K().unlockRecovery($('#rk-unlock', sh.el).value); done(true); } catch (_) { err.textContent = 'Wrong recovery key'; b.disabled = false; b.textContent = 'Unlock'; }
+        });
+      });
+    if (!ok) return false;
+    await S().lockChanged('unlock');
+    refresh();
+    // reset the lock: a new passkey (or passphrase) for the same personal details
+    const again = await choose('<h2>Set the lock again</h2><p class="hint">Unlocked. Set a new passkey or passphrase.</p>' +
+      '<div class="sheet-actions"><button type="button" class="btn primary" id="btn-relock">Lock</button><button type="button" class="btn ghost" data-close>Not now</button></div>',
+      (sh, done) => { $('#btn-relock', sh.el).onclick = () => done(true); });
+    if (again) await setupLock();
+    return true;
+  }
+  /** Forgot everything: delete the locked personal details on this device and start again. */
+  async function resetPersonal() {
+    const ok = await choose('<h2>Reset personal details?</h2><p class="hint">Deletes HR details, signatures and filled forms on this device. Claims, timesheets and receipts stay.</p>' +
+      '<div class="sheet-actions"><button type="button" class="btn danger" id="btn-reset-yes">Reset</button><button type="button" class="btn ghost" data-close>Cancel</button></div>',
+      (sh, done) => { $('#btn-reset-yes', sh.el).onclick = () => done(true); });
+    if (!ok) return false;
+    K().removeLock();
+    await S().lockChanged('lock-off');
+    refresh();
+    A().toast('Personal details reset');
+    await askLock();
+    return K().mode() !== 'lock' || K().isUnlocked();
   }
   async function lockNow() { K().lockNow(); await S().lockChanged('lock'); refresh(); A().toast('Locked'); }
 
@@ -155,6 +216,16 @@
     refresh();
     await showRecovery(rk);
   }
+  /** Offers the key to the browser's password manager; true only when reading it back confirms the
+   *  save (store() itself resolves whether or not the person tapped Save). */
+  async function savedToPasswordManager(rk) {
+    if (!global.PasswordCredential || !navigator.credentials || !navigator.credentials.store) return false;
+    try {
+      await navigator.credentials.store(new global.PasswordCredential({ id: 'AS Forms recovery key', password: rk, name: 'AS Forms recovery key' }));
+      const c = await navigator.credentials.get({ password: true, mediation: 'silent' });
+      return !!(c && c.id === 'AS Forms recovery key' && c.password === rk);
+    } catch (_) { return false; }
+  }
   /** Shows a new recovery key ONCE, with the ways to keep it. */
   function showRecovery(rk) {
     return choose('<h2>Recovery key</h2><p class="hint">Keep it safe. Shown once.</p><p class="rk-text" id="rk-text">' + esc(rk) + '</p>' +
@@ -167,11 +238,7 @@
       (sh, done) => {
         $('#rk-form', sh.el).addEventListener('submit', async (e) => {
           e.preventDefault();
-          let saved = false;
-          if (global.PasswordCredential && navigator.credentials && navigator.credentials.store) {
-            try { await navigator.credentials.store(new global.PasswordCredential({ id: 'AS Forms recovery key', password: rk, name: 'AS Forms recovery key' })); saved = true; } catch (_) { /* not offered */ }
-          }
-          A().toast(saved ? 'Saved' : 'If no prompt, use Copy or Save as file');
+          A().toast((await savedToPasswordManager(rk)) ? 'Saved' : 'No prompt? Use Copy or Save as file.');
         });
         $('#btn-rk-copy', sh.el).onclick = async () => {
           try { await navigator.clipboard.writeText(rk); A().toast('Copied'); } catch (_) { A().toast("Couldn't copy"); }
@@ -225,7 +292,7 @@
       '<div class="sheet-actions"><button type="button" class="btn primary" id="btn-relock">Lock</button><button type="button" class="btn ghost" data-close>Not now</button></div>',
       (sh, done) => { $('#btn-relock', sh.el).onclick = () => done(true); });
     if (again && (await setupLock())) { A().toast('Personal details restored'); return true; }
-    A().toast('Restored for this session only');
+    A().toast('Restored for this session only. Lock to keep them.');
     return true;
   }
 
@@ -300,9 +367,10 @@
     $('#btn-sec-change').onclick = async () => {
       if (!(await need())) return;
       const pk = await K().passkeyAvailable();
-      const how = await choose('<h2>Change lock</h2><div class="sheet-actions">' +
-        (pk ? '<button type="button" class="btn primary" id="btn-change-passkey">New passkey</button>' : '') +
-        '<button type="button" class="btn secondary" id="btn-change-pp">App passphrase</button><button type="button" class="btn ghost" data-close>Cancel</button></div>',
+      const how = await choose('<h2>Change lock</h2><div class="sheet-actions change-options">' +
+        (pk ? '<button type="button" class="btn primary" id="btn-change-passkey">New passkey</button><p class="hint">Fingerprint, face or device PIN on this device.</p>' : '') +
+        '<button type="button" class="btn secondary" id="btn-change-pp">App passphrase</button><p class="hint">A phrase you type. Works in any browser.</p>' +
+        '<button type="button" class="btn ghost" data-close>Cancel</button></div>',
         (sh, done) => { const b = $('#btn-change-passkey', sh.el); if (b) b.onclick = () => done('passkey'); $('#btn-change-pp', sh.el).onclick = () => done('passphrase'); });
       if (how && (await setupLock(how))) A().toast('Lock changed');
       refresh();
@@ -329,17 +397,27 @@
     });
     // Profile: ask once per session while no lock is set
     const prof = document.getElementById('btn-goto-profile');
-    if (prof) prof.addEventListener('click', () => { if (K().mode() !== 'lock' && !askedThisSession) setTimeout(askLock, 50); });
+    if (prof) prof.addEventListener('click', () => { if (K().mode() !== 'lock' && !K().noAsk() && !askedThisSession) setTimeout(askLock, 50); });
     // 1.2.2-web upgrade: Bank & NI saved by 1.2.1 were deleted — say so once
-    S().init().then(() => {
+    S().init().then(async () => {
       if (S().bankNotice()) {
         S().clearBankNotice();
-        sheet('<p class="hint" id="bank-notice">Saved bank and NI details were deleted. Type them on each form.</p><div class="sheet-actions"><button type="button" class="btn primary" data-close>OK</button></div>');
+        await choose('<p class="hint" id="bank-notice">Saved bank and NI details were deleted. Type them on each form.</p><div class="sheet-actions"><button type="button" class="btn primary" id="btn-bank-ok">OK</button></div>',
+          (sh, done) => { $('#btn-bank-ok', sh.el).onclick = () => done(true); });
       }
-    }).catch(() => {});
+      // 1.2.1 users with saved HR details, signatures or filled forms: ask at the first start (and
+      // every start until they answer), so nobody stays on the old device-key storage
+      if (K().mode() == null && S().hasPersonal() && !askedThisSession) await askLock();
+    }).catch((e) => console.error(e));
+    // Auto-lock: about 5 minutes in the background, or when the page is closed / hidden for good
+    document.addEventListener('visibilitychange', () => {
+      clearTimeout(hiddenTimer);
+      if (document.visibilityState === 'hidden') hiddenTimer = setTimeout(autoLock, autoLockMs);
+    });
+    global.addEventListener('pagehide', autoLock);
     refresh();
   }
   A().onBoot(wire);
 
-  global.AsLockUi = { askLock, setupLock, declineSheet, declineWith, need, unlockSheet, lockNow, offerRecovery, createRecovery, showRecovery, offerRestore, ensureName, showSecurity, refresh };
+  global.AsLockUi = { setAutoLockMs: (ms) => { autoLockMs = ms; }, autoLock, recoveryUnlock, resetPersonal, askLock, setupLock, declineSheet, declineWith, need, unlockSheet, lockNow, offerRecovery, createRecovery, showRecovery, offerRestore, ensureName, showSecurity, refresh };
 })(window);

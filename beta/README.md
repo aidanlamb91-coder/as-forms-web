@@ -31,8 +31,9 @@ Then open http://127.0.0.1:8765/
 
 ## New in 1.2.2-web (beta) — personal details lock
 - Profile asks **"Lock personal details?"** (first time, and once per session while no lock is set). The lock is a passkey (fingerprint, Face ID or device PIN). Browsers without the passkey PRF extension get an app passphrase instead, and are told so.
-- Unlock once per session (closing or reloading the app locks again). Settings → **Security**: Lock now, change or remove the lock, new recovery key, Remember name only.
-- **No thanks**: "Personal details won't be saved between sessions." plus **Remember name only** (on by default). With it off, timesheet, expense and form exports ask for the name once per session.
+- Unlock once per session (closing or reloading the app locks again; it also re-locks after about 5 minutes in the background). Forgot it? **Use recovery key** on the unlock sheet, then set the lock again, or **Forgot? Reset personal details**. Settings → **Security**: Lock now, change or remove the lock, new recovery key, Remember name only.
+- 1.2.1 users with saved HR details, signatures or forms are asked at the first start; locking re-seals them, No thanks moves them to memory only.
+- **No thanks**: "Personal details won't be saved between sessions." (asked again each session unless **Don't ask again**; Settings → Security turns it on later) plus **Remember name only** (on by default). With it off, timesheet, expense and form exports ask for the name once per session.
 - **Bank and NI are never stored or backed up**: typed on each form, kept for that form only, forgotten after export or on leaving. Saved 1.2.1 copies are deleted on upgrade (one-line notice).
 - Backups: locked personal details go in encrypted (`personal.json`) only when a recovery key exists. Restoring on a new device: enter the recovery key, then set the passkey again; without it everything else restores.
 - Backup: 1.2.1 source `/workspace/receipt-app-backups/web-1.2.1-web-pre-1.2.2-web-src-202610171124.tgz`.

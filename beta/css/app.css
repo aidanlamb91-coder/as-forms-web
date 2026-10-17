@@ -1041,3 +1041,5 @@ body.kb-open .toast { bottom: calc(var(--kb-inset, 0px) + 12px); }
 .rk-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .sec-status { font-weight: 700; margin-bottom: 10px; }
 #view-security .toggle-control { margin-top: 14px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+.change-options .hint { margin: -4px 0 6px; font-size: .8rem; }
