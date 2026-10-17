@@ -458,7 +458,7 @@
   function renderPlaces() {
     const box = A().$('#saved-places');
     const places = settings().savedPlaces || [];
-    box.innerHTML = places.length ? '' : '<p class="empty small">No saved places yet.</p>';
+    box.innerHTML = places.length ? '' : '<p class="empty small">No locations yet.</p>';
     places.forEach((p) => {
       const el = document.createElement('div');
       el.className = 'card line-card';
@@ -475,11 +475,20 @@
     });
   }
   function editPlace(p) {
-    const sh = A().openSheet('<div class="sheet" role="dialog" aria-label="Saved place"><h2>' + (p ? 'Edit place' : 'Add place') + '</h2>' +
+    const sh = A().openSheet('<div class="sheet" role="dialog" aria-label="Favourite location"><h2>' + (p ? 'Edit location' : 'Add location') + '</h2>' +
       '<label>Name (e.g. Office) <input type="text" id="place-name" maxlength="40" value="' + esc(p ? p.name : '') + '" /></label>' +
       '<label>Postcode <input type="text" id="place-pc" maxlength="9" autocapitalize="characters" value="' + esc(p ? p.postcode : '') + '" /></label>' +
       '<p class="hint" id="place-err"></p>' +
-      '<div class="actions"><button type="button" class="btn primary" id="place-save">Save</button><button type="button" class="btn ghost" data-close>Cancel</button></div></div>');
+      '<div class="actions"><button type="button" class="btn primary" id="place-save">Save</button>' +
+      (p ? '<button type="button" class="btn danger ghost" id="place-delete">Delete</button>' : '') + '<button type="button" class="btn ghost" data-close>Cancel</button></div></div>');
+    // 1.2.1-web Favourite locations: delete from the edit window too (swipe still works)
+    const delBtn = sh.el.querySelector('#place-delete');
+    if (delBtn) delBtn.onclick = () => {
+      S().saveSettings({ savedPlaces: (settings().savedPlaces || []).filter((x) => x.id !== p.id) });
+      S().notifyChanged('prefs');
+      sh.close();
+      renderPlaces();
+    };
     sh.el.querySelector('#place-save').onclick = () => {
       const name = sh.el.querySelector('#place-name').value.trim();
       const pc = sh.el.querySelector('#place-pc').value;

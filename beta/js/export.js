@@ -381,6 +381,14 @@
     const zip = new JSZip();
     zip.file(AsBackupFormat.MANIFEST_NAME, JSON.stringify(snapshot, null, 2));
     for (const e of receiptEntries) zip.file(e.path, e.blob);
+    // 1.2.1-web Other forms: HR details, drafts and signatures, same layout as Android
+    // (forms-profile.json + signatures/sig_N.png). Bank & NI are NEVER in it — this same zip is
+    // the cloud backup and the downloaded backup (see js/forms-store.js forBackup).
+    if (global.AsFormsStore) {
+      const f = await global.AsFormsStore.forBackup();
+      zip.file(FORMS_PROFILE_NAME, f.json);
+      for (const [p, png] of Object.entries(f.signatures)) zip.file(p, png);
+    }
     return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
   }
 
@@ -413,7 +421,15 @@
       receiptBlobs[p] = await zip.files[p].async('blob');
     }
     await importBackupParts(snapshot, receiptBlobs);
+    // 1.2.1-web: forms profile + signatures, restored only when the backup has them
+    const fp = zip.file(FORMS_PROFILE_NAME);
+    if (fp && global.AsFormsStore) {
+      const sigs = {};
+      for (const p of Object.keys(zip.files).filter((n) => /^signatures\/sig_\d\.png$/.test(n))) sigs[p] = await zip.files[p].async('uint8array');
+      await global.AsFormsStore.restore(await fp.async('string'), sigs);
+    }
   }
+  const FORMS_PROFILE_NAME = 'forms-profile.json';
 
   global.AsExport = {
     downloadBlob,

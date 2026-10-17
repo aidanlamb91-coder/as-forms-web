@@ -16,7 +16,10 @@
   const STORE_META = 'meta';
   const STORE_MILEAGE = 'mileage';
   const SETTINGS_KEY = 'as-forms-settings';
-  const APP_VERSION = '1.1.0-web';
+  const APP_VERSION = '1.2.1-web';
+  // 1.2.1-web Other forms: where Payroll and HR forms are addressed (editable in Destination emails)
+  const DEFAULT_PAYROLL_TO = 'jillian.robertson@andrewssurvey.com';
+  const DEFAULT_HR_TO = 'jillian.robertson@andrewssurvey.com';
   const META_FOLDER_HANDLE = 'dataFolderHandle';
 
   const ET = () => global.AsEmailTemplates;
@@ -47,6 +50,8 @@
       savedPlaces: [],
       // 1.1.0-web archive: build AS-Forms-YYYY.zip automatically when a year is due
       autoArchive: true,
+      payrollTo: DEFAULT_PAYROLL_TO,
+      hrTo: DEFAULT_HR_TO,
       lastLocalBackupSize: 0,
       lastLocalBackupName: '',
     };
@@ -411,6 +416,8 @@
         ccEngine: pick(p.ccEngine, getSettings().ccEngine || ''),
         mileageRatePence: Number(p.mileageRatePence) || getSettings().mileageRatePence || 55,
         savedPlaces: Array.isArray(p.savedPlaces) ? p.savedPlaces : (getSettings().savedPlaces || []),
+        payrollTo: pick(p.payrollTo, getSettings().payrollTo || DEFAULT_PAYROLL_TO),
+        hrTo: pick(p.hrTo, getSettings().hrTo || DEFAULT_HR_TO),
       });
       const blobs = receiptBlobs || {};
       for (const c of data.claims) {
@@ -483,6 +490,8 @@
   global.AsStorage = {
     uid,
     APP_VERSION,
+    DEFAULT_PAYROLL_TO,
+    DEFAULT_HR_TO,
     markBackupSuccess,
     dismissBackupReminder,
     shouldShowBackupReminder,

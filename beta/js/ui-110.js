@@ -70,7 +70,12 @@
     document.addEventListener('focusin', () => setTimeout(keepFocusedVisible, 300));
     if (global.visualViewport) {
       visualViewport.addEventListener('resize', () => {
-        document.documentElement.style.setProperty('--kb-inset', Math.max(0, innerHeight - visualViewport.height) + 'px');
+        const inset = Math.max(0, innerHeight - visualViewport.height);
+        document.documentElement.style.setProperty('--kb-inset', inset + 'px');
+        // 1.2.1-web keyboard-safe layout: while the keyboard is up, hide the bottom bars (they sit
+        // behind it anyway) and pad the page by the keyboard height ONCE, so the whole form stays
+        // scrollable above the keyboard instead of shrinking to one box (Android 1.2.1 fix 1).
+        document.body.classList.toggle('kb-open', inset > 120);
         keepFocusedVisible();
       });
     }

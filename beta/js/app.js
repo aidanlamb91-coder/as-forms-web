@@ -1,5 +1,7 @@
 /**
- * AS Forms web 1.1.0-web — Expenses | Timesheets | Settings + guided tour (js/tutorial.js).
+ * AS Forms web 1.2.1-web — Expenses | Timesheets | Settings + guided tour (js/tutorial.js).
+ * 1.2.1-web: Other forms (js/forms-*.js) and the condensed Profile, HR details, Signature and
+ * "Clear data on this device" (js/profile-121.js) plug in the same way.
  * 1.1.0-web: the new Android features live in their own files and plug in through `AsApp`
  * (exported at the bottom): mileage (js/mileage-ui.js), Sync and Backup + cloud + archives
  * (js/sync-ui.js), splash / keyboard / previews (js/ui-110.js). See CODE_MAP.md.
@@ -2494,7 +2496,7 @@
     const s = AsStorage.getSettings();
     $('#sb-profile-sub').textContent = s.displayName || 'Not set';
     
-    $('#sb-emails-sub').textContent = 'Expenses: ' + (s.expenseTo || s.sendTo) + ' · Timesheets: ' + s.timesheetTo;
+    $('#sb-emails-sub').textContent = 'Expenses, Timesheets, Payroll and HR';
     $('#sb-about-sub').textContent = versionLabel();
     if (globalThis.AsSyncUi) AsSyncUi.refreshSubtitle();
     const ps = AsPwa.state();
@@ -2594,6 +2596,9 @@
     const s = AsStorage.getSettings();
     $('#settings-expense-to').value = s.expenseTo;
     $('#settings-timesheet-to').value = s.timesheetTo;
+    // 1.2.1-web: where Other forms go (Payroll / HR), editable alongside the others
+    $('#settings-payroll-to').value = s.payrollTo || AsStorage.DEFAULT_PAYROLL_TO;
+    $('#settings-hr-to').value = s.hrTo || AsStorage.DEFAULT_HR_TO;
     showView('emails');
   }
 
@@ -2977,7 +2982,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
       AsStorage.saveSettings({
         displayName: $('#settings-name').value.trim() || AsEmailTemplates.DEFAULT_NAME,
       });
-      if (globalThis.AsMileageUi && !AsMileageUi.saveProfileFields()) return; // bad postcode: stay
+      // 1.2.1-web: the mileage fields moved to Profile → Mileage (js/profile-121.js)
       toast('Saved');
       AsStorage.notifyChanged('prefs');
       updateListHeaders();
@@ -3021,7 +3026,13 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
         toast('Check timesheets email format');
         return;
       }
-      AsStorage.saveSettings({ expenseTo, timesheetTo, sendTo: expenseTo });
+      const payrollTo = $('#settings-payroll-to').value.trim() || AsStorage.DEFAULT_PAYROLL_TO;
+      const hrTo = $('#settings-hr-to').value.trim() || AsStorage.DEFAULT_HR_TO;
+      if (!AsEmailTemplates.isPlausibleEmail(payrollTo) || !AsEmailTemplates.isPlausibleEmail(hrTo)) {
+        toast('Check Payroll / HR email format');
+        return;
+      }
+      AsStorage.saveSettings({ expenseTo, timesheetTo, sendTo: expenseTo, payrollTo, hrTo });
       toast('Emails saved');
       scheduleFolderSync();
       updateListHeaders();
