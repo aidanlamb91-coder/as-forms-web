@@ -120,7 +120,11 @@
         include_granted_scopes: 'true',
         state,
       });
-      if (mode === 'renew') {
+      if (mode !== 'renew' && WORKER()) { // build 5: code flow → the Worker keeps a long-lasting sign-in
+        p.set('response_type', 'code');
+        p.set('access_type', 'offline');
+        p.set('prompt', 'consent select_account');
+      } else if (mode === 'renew') {
         p.set('prompt', 'none');
         const s = load();
         if (s.email) p.set('login_hint', s.email);
@@ -191,7 +195,14 @@
       return { kind, mode: pending.mode, error: landed.error === 'access_denied' ? 'Sign-in cancelled.' : 'Sign-in failed (' + landed.error + ').' };
     }
     const now = Date.now();
-    if (kind === 'google') {
+    if (kind === 'google' && landed.code && WORKER()) {
+      const r = await workerPost('/google/code', { code: landed.code, redirect_uri: CFG().redirectUri() });
+      if (r.status !== 200 || !r.j.access_token) return { kind, mode: pending.mode, error: 'Google sign-in failed (' + (r.j.error || r.status) + ').' };
+      save({
+        kind, access: r.j.access_token, expiresAt: now + (Number(r.j.expires_in) || 3600) * 1000, gRt: r.j.rt || null,
+        refresh: null, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now, lastError: null,
+      });
+    } else if (kind === 'google') {
       save({
         kind, access: landed.access_token, expiresAt: now + (Number(landed.expires_in) || 3600) * 1000,
         refresh: null, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now, lastError: null,
@@ -434,9 +445,34 @@
     }
     return gisLoading;
   }
+  // Build 5: the Worker turns the saved (encrypted) Google refresh token into a new access token.
+  function WORKER() { return (CFG().config.googleTokenWorker || '').replace(/\/$/, ''); }
+  async function workerPost(path, body) {
+    const res = await fetch(WORKER() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let j = {};
+    try { j = await res.json(); } catch (_) {}
+    return { status: res.status, j };
+  }
+  /** Returns the new token, or null (no Worker sign-in / Worker unreachable) so GIS can try. */
+  async function renewViaWorker() {
+    const s = load();
+    if (!s.gRt || !WORKER()) return null;
+    let r;
+    try { r = await workerPost('/google/refresh', { rt: s.gRt }); } catch (_) { return null; }
+    if (r.status === 200 && r.j.access_token) {
+      const now = Date.now();
+      save({ access: r.j.access_token, expiresAt: now + (Number(r.j.expires_in) || 3600) * 1000, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now });
+      scheduleGoogleRenew();
+      return r.j.access_token;
+    }
+    if (r.j.error === 'invalid_grant') save({ gRt: null }); // revoked/expired: fall back to GIS, then Reconnect
+    return null;
+  }
   function renewGoogle() {
     if (googleRenewing) return googleRenewing;
     googleRenewing = (async () => {
+      const viaWorker = await renewViaWorker();
+      if (viaWorker) return viaWorker;
       await loadGis();
       const s = load();
       const r = await new Promise((resolve) => {
@@ -631,6 +667,6 @@
   global.AsCloud = {
     KINDS, FOLDER_NAME, CLOUD_ZIP_NAME, status, onChange, startSignIn, completeRedirect, boot,
     syncNow, scheduleSync, replaceWithCloud, refreshCloudInfo, disconnect, archives, friendly,
-    _internal: { load, save, token, api, challengeFor, b64url, renewGoogle, quietGoogleRenew },
+    _internal: { load, save, token, api, challengeFor, b64url, renewGoogle, quietGoogleRenew, renewViaWorker },
   };
 })(typeof window !== 'undefined' ? window : globalThis);
