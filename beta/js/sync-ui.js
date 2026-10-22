@@ -34,7 +34,7 @@
     if (btn) {
       btn.classList.toggle('hidden', !s.connected);
       btn.classList.toggle('busy', !!s.busy);
-      btn.title = s.needsSignIn ? 'Sign in again' : s.dirty ? 'Changes waiting — tap to upload' : 'Up to date';
+      btn.title = s.needsSignIn ? (s.kind === 'google' ? 'Reconnect Google Drive' : 'Sign in again') : s.dirty ? 'Changes waiting — tap to upload' : 'Up to date';
     }
     if (dot) dot.classList.toggle('hidden', !(s.dirty || s.needsSignIn));
   }
@@ -67,7 +67,7 @@
       '<p class="kv"><span>Backup</span><span>' + esc(size(s.cloudSize)) + '</span></p>' +
       (s.needsSignIn ? '<p class="status error">Sign-in expired.</p>' : '') +
       '<div class="btn-row">' +
-      (s.needsSignIn ? '<button type="button" class="btn primary" id="btn-cloud-signin">Sign in again</button>'
+      (s.needsSignIn ? '<button type="button" class="btn primary" id="btn-cloud-signin">' + (s.kind === 'google' ? 'Reconnect Google Drive' : 'Sign in again') + '</button>'
         : '<button type="button" class="btn primary" id="btn-cloud-sync"' + (s.busy ? ' disabled' : '') + '>Sync now</button>') +
       '<button type="button" class="btn ghost" id="btn-cloud-replace">Replace with cloud</button>' +
       '<button type="button" class="btn ghost danger" id="btn-cloud-disconnect">Disconnect</button></div>' +
