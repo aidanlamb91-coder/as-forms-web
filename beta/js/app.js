@@ -327,8 +327,9 @@
     state.lineId = null;
     setNav('expenses');
     updateListHeaders();
-    await refreshClaimList();
+    // 1.2.9-web: swap the view first so a slow/failed render can never leave the previous tab on screen
     showView('expenses');
+    await refreshClaimList();
   }
 
   /** 1.2.9-web: error boundary — a render failure shows a "Try again" card instead of a broken page. */
@@ -1327,8 +1328,8 @@
     state.entryId = null;
     setNav('timesheets');
     updateListHeaders();
-    await refreshTsList();
     showView('timesheets');
+    try { await refreshTsList(); } catch (e) { console.warn('Timesheets render failed', e); }
   }
 
   async function refreshTsList() {
@@ -2825,10 +2826,13 @@
     $$('.bottom-nav button').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tab = btn.getAttribute('data-nav');
-        if (tab === 'expenses') showExpenses();
-        else if (tab === 'timesheets') showTimesheets();
-        else if (tab === 'settings') showSettings();
-        else if (tab === 'insights' && globalThis.AsInsightsUi) AsInsightsUi.showInsights();
+        const go = () => {
+          if (tab === 'expenses') return showExpenses();
+          if (tab === 'timesheets') return showTimesheets();
+          if (tab === 'settings') return showSettings();
+          if (tab === 'insights' && globalThis.AsInsightsUi) return AsInsightsUi.showInsights();
+        };
+        Promise.resolve().then(go).catch((e) => console.warn('Tab switch failed', e));
       });
     });
 

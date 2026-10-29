@@ -98,6 +98,7 @@
       const reg = await global.navigator.serviceWorker.register('sw.js', { scope: './' });
       // 1.2.9-web: a new version that finished downloading earlier is applied straight away on the next
       // open (nothing typed yet), so a returning user never sits on an old page waiting for a Reload tap.
+      if (!reg) return null;
       if (reg.waiting && hadController) { showUpdate(reg.waiting); applyUpdate(); }
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
