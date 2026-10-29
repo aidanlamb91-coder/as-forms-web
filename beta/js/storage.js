@@ -17,7 +17,7 @@
   const STORE_META = 'meta';
   const STORE_MILEAGE = 'mileage';
   const SETTINGS_KEY = globalThis.AsScope ? globalThis.AsScope.key('as-forms-settings') : 'as-forms-settings';
-  const APP_VERSION = '1.2.2-web';
+  const APP_VERSION = '1.2.6-web';
   // 1.2.1-web Other forms: where Payroll and HR forms are addressed (editable in Destination emails)
   const DEFAULT_PAYROLL_TO = 'jillian.robertson@andrewssurvey.com';
   const DEFAULT_HR_TO = 'jillian.robertson@andrewssurvey.com';

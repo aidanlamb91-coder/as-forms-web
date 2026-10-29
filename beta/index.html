@@ -14,8 +14,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=1.2.2-web" />
-  <link rel="stylesheet" href="css/tutorial.css?v=1.2.2-web" />
+  <link rel="stylesheet" href="css/app.css?v=1.2.6-web" />
+  <link rel="stylesheet" href="css/tutorial.css?v=1.2.6-web" />
 </head>
 <body>
   <!-- 1.1.0-web opening animation (js/ui-110.js): the logo shrinks into the top bar, then the app
@@ -233,7 +233,7 @@
         <h1>About</h1>
       </header>
       <div class="panel">
-        <p class="hint" id="about-version">AS Forms <strong>1.2.2-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>1.2.6-web</strong></p>
         <p class="hint">Data stays in this browser.</p>
         <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app and kept for offline use after the first visit.</p>
         <p class="hint">Installed on iPhone? The Home Screen app's data is separate from Safari's — use Backup &amp; restore to move it.</p>
@@ -596,6 +596,7 @@
     <div class="inner">
       <button type="button" class="on" data-nav="expenses"><span class="ico">£</span>Expenses</button>
       <button type="button" data-nav="timesheets"><span class="ico">⏱</span>Timesheets</button>
+      <button type="button" data-nav="insights"><span class="ico">📈</span>Insights</button>
       <button type="button" data-nav="settings"><span class="ico">⚙</span>Settings</button>
     </div>
   </nav>
@@ -604,58 +605,67 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <!-- 1.2.1-web: keeps main-site and beta storage apart; must load first -->
-  <script src="js/app-scope.js?v=1.2.2-web"></script>
-  <script src="js/uk-date.js?v=1.2.2-web"></script>
+  <script src="js/app-scope.js?v=1.2.6-web"></script>
+  <script src="js/uk-date.js?v=1.2.6-web"></script>
   <!-- 1.2.2-web personal details lock (before storage.js: it decides whether the name is kept) -->
-  <script src="js/lock-core.js?v=1.2.2-web"></script>
-  <script src="lib/jszip.min.js?v=1.2.2-web"></script>
-  <script src="js/email-templates.js?v=1.2.2-web"></script>
-  <script src="js/expense-category.js?v=1.2.2-web"></script>
-  <script src="js/year-periods.js?v=1.2.2-web"></script>
-  <script src="js/offshore-days.js?v=1.2.2-web"></script>
-  <script src="js/expense-tally.js?v=1.2.2-web"></script>
-  <script src="js/days-worked-summary.js?v=1.2.2-web"></script>
-  <script src="js/storage.js?v=1.2.2-web"></script>
-  <script src="js/docx-filler.js?v=1.2.2-web"></script>
-  <script src="js/timesheet-layout.js?v=1.2.2-web"></script>
-  <script src="js/timesheet-filler.js?v=1.2.2-web"></script>
-  <script src="js/timesheet-reader.js?v=1.2.2-web"></script>
-  <script src="js/expense-zip-reader.js?v=1.2.2-web"></script>
-  <script src="js/image-merge.js?v=1.2.2-web"></script>
-  <script src="js/export.js?v=1.2.2-web"></script>
-  <script src="js/mileage.js?v=1.2.2-web"></script>
-  <script src="js/mileage-docx.js?v=1.2.2-web"></script>
-  <script src="js/backup-format.js?v=1.2.2-web"></script>
-  <script src="js/image-shrink.js?v=1.2.2-web"></script>
-  <script src="js/cloud-config.js?v=1.2.2-web"></script>
-  <script src="js/token-refresh.js?v=1.2.2-web"></script>
-  <script src="js/cloud.js?v=1.2.2-web"></script>
-  <script src="js/archive.js?v=1.2.2-web"></script>
-  <script src="js/receipt-parse.js?v=1.2.2-web"></script>
-  <script src="js/receipt-ocr.js?v=1.2.2-web"></script>
-  <script src="js/summary-pdf.js?v=1.2.2-web"></script>
-  <script src="js/hold-swipe.js?v=1.2.2-web"></script>
-  <script src="js/tab-swipe.js?v=1.2.2-web"></script>
-  <script src="js/year-picker.js?v=1.2.2-web"></script>
-  <script src="js/zoom-view.js?v=1.2.2-web"></script>
-  <script src="js/attachments.js?v=1.2.2-web"></script>
-  <script src="js/timesheet-preview.js?v=1.2.2-web"></script>
-  <script src="js/pwa.js?v=1.2.2-web"></script>
-  <script src="js/tutorial.js?v=1.2.2-web"></script>
-  <script src="js/app.js?v=1.2.2-web"></script>
-  <script src="js/mileage-ui.js?v=1.2.2-web"></script>
-  <script src="js/sync-ui.js?v=1.2.2-web"></script>
-  <script src="js/ui-110.js?v=1.2.2-web"></script>
+  <script src="js/lock-core.js?v=1.2.6-web"></script>
+  <script src="lib/jszip.min.js?v=1.2.6-web"></script>
+  <script src="js/email-templates.js?v=1.2.6-web"></script>
+  <script src="js/expense-category.js?v=1.2.6-web"></script>
+  <script src="js/year-periods.js?v=1.2.6-web"></script>
+  <script src="js/offshore-days.js?v=1.2.6-web"></script>
+  <script src="js/expense-tally.js?v=1.2.6-web"></script>
+  <script src="js/days-worked-summary.js?v=1.2.6-web"></script>
+  <script src="js/storage.js?v=1.2.6-web"></script>
+  <script src="js/docx-filler.js?v=1.2.6-web"></script>
+  <script src="js/timesheet-layout.js?v=1.2.6-web"></script>
+  <script src="js/timesheet-filler.js?v=1.2.6-web"></script>
+  <script src="js/timesheet-reader.js?v=1.2.6-web"></script>
+  <script src="js/expense-zip-reader.js?v=1.2.6-web"></script>
+  <script src="js/image-merge.js?v=1.2.6-web"></script>
+  <script src="js/export.js?v=1.2.6-web"></script>
+  <script src="js/mileage.js?v=1.2.6-web"></script>
+  <script src="js/mileage-docx.js?v=1.2.6-web"></script>
+  <script src="js/backup-format.js?v=1.2.6-web"></script>
+  <script src="js/image-shrink.js?v=1.2.6-web"></script>
+  <script src="js/cloud-config.js?v=1.2.6-web"></script>
+  <script src="js/token-refresh.js?v=1.2.6-web"></script>
+  <script src="js/cloud.js?v=1.2.6-web"></script>
+  <script src="js/archive.js?v=1.2.6-web"></script>
+  <script src="js/receipt-parse.js?v=1.2.6-web"></script>
+  <script src="js/receipt-ocr.js?v=1.2.6-web"></script>
+  <script src="js/summary-pdf.js?v=1.2.6-web"></script>
+  <script src="js/hold-swipe.js?v=1.2.6-web"></script>
+  <script src="js/tab-swipe.js?v=1.2.6-web"></script>
+  <script src="js/year-picker.js?v=1.2.6-web"></script>
+  <script src="js/zoom-view.js?v=1.2.6-web"></script>
+  <script src="js/attachments.js?v=1.2.6-web"></script>
+  <script src="js/timesheet-preview.js?v=1.2.6-web"></script>
+  <script src="js/pwa.js?v=1.2.6-web"></script>
+  <script src="js/tutorial.js?v=1.2.6-web"></script>
+  <script src="js/app.js?v=1.2.6-web"></script>
+  <script src="js/mileage-ui.js?v=1.2.6-web"></script>
+  <script src="js/sync-ui.js?v=1.2.6-web"></script>
+  <script src="js/ui-110.js?v=1.2.6-web"></script>
   <!-- 1.2.1-web Other forms + Profile (HR details, Signature) + Clear data on this device -->
-  <script src="js/forms-crypto.js?v=1.2.2-web"></script>
-  <script src="js/forms-rules.js?v=1.2.2-web"></script>
-  <script src="js/forms-docx.js?v=1.2.2-web"></script>
-  <script src="js/forms-pdf.js?v=1.2.2-web"></script>
-  <script src="js/forms-search.js?v=1.2.2-web"></script>
-  <script src="js/forms-store.js?v=1.2.2-web"></script>
-  <script src="js/forms-library.js?v=1.2.2-web"></script>
-  <script src="js/forms-ui.js?v=1.2.2-web"></script>
-  <script src="js/profile-121.js?v=1.2.2-web"></script>
-  <script src="js/lock-ui.js?v=1.2.2-web"></script>
+  <script src="js/forms-crypto.js?v=1.2.6-web"></script>
+  <script src="js/forms-rules.js?v=1.2.6-web"></script>
+  <script src="js/forms-docx.js?v=1.2.6-web"></script>
+  <script src="js/forms-pdf.js?v=1.2.6-web"></script>
+  <script src="js/forms-search.js?v=1.2.6-web"></script>
+  <script src="js/forms-store.js?v=1.2.6-web"></script>
+  <script src="js/forms-library.js?v=1.2.6-web"></script>
+  <script src="js/forms-ui.js?v=1.2.6-web"></script>
+  <script src="js/profile-121.js?v=1.2.6-web"></script>
+  <script src="js/lock-ui.js?v=1.2.6-web"></script>
+  <!-- 1.2.6-web pay, payslips, Insights, pension (ported from Android 1.2.6) -->
+  <script src="js/pay-calc.js?v=1.2.6-web"></script>
+  <script src="js/payslip.js?v=1.2.6-web"></script>
+  <script src="js/pay-pdf.js?v=1.2.6-web"></script>
+  <script src="js/insights.js?v=1.2.6-web"></script>
+  <script src="js/pension.js?v=1.2.6-web"></script>
+  <script src="js/pay-store.js?v=1.2.6-web"></script>
+  <script src="js/pay-ui.js?v=1.2.6-web"></script>
+  <script src="js/insights-ui.js?v=1.2.6-web"></script>
 </body>
 </html>

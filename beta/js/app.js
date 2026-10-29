@@ -42,7 +42,7 @@
     lineCategory: 'MISC',
   };
 
-  const TAB_VIEWS = new Set(['expenses', 'timesheets', 'settings']);
+  const TAB_VIEWS = new Set(['expenses', 'timesheets', 'insights', 'settings']);
 
   function toast(msg) {
     const el = $('#toast');
@@ -313,12 +313,12 @@
   function updateListHeaders() {
     const s = AsStorage.getSettings();
     const tab = state.tab;
-    const title = tab === 'timesheets' ? 'Timesheets' : tab === 'settings' ? 'Settings' : 'Expenses';
+    const title = tab === 'timesheets' ? 'Timesheets' : tab === 'settings' ? 'Settings' : tab === 'insights' ? 'Insights' : 'Expenses';
     const sub = tab === 'timesheets' ? s.displayName + ' → ' + s.timesheetTo
-      : tab === 'settings' ? '' : s.displayName + ' → ' + (s.expenseTo || s.sendTo);
+      : tab === 'settings' || tab === 'insights' ? '' : s.displayName + ' → ' + (s.expenseTo || s.sendTo);
     const t = $('#top-bar-title'); if (t) t.textContent = title;
     const st = $('#top-bar-sub'); if (st) { st.textContent = sub; st.classList.toggle('hidden', !sub); }
-    const imp = $('#top-bar-import'); if (imp) imp.classList.toggle('hidden', tab === 'settings');
+    const imp = $('#top-bar-import'); if (imp) imp.classList.toggle('hidden', tab === 'settings' || tab === 'insights');
   }
 
   // ——— Expenses list ———
@@ -1432,6 +1432,7 @@
   }
 
   function renderEntries(ts) {
+    if (globalThis.AsPayUi) AsPayUi.renderStrip(ts).catch((e) => console.error(e)); // 1.2.6-web pay estimate
     const entries = (ts.entries || []).slice().sort((a, b) => a.startDay - b.startDay);
     $('#ts-entry-count').textContent = String(entries.length);
     const list = $('#ts-entry-list');
@@ -2736,12 +2737,13 @@
   }
 
   /** 1.0.3: swipe between the top-level tabs (js/tab-swipe.js); slide in from the swipe side. */
-  const TAB_ORDER = ['expenses', 'timesheets', 'settings'];
+  const TAB_ORDER = ['expenses', 'timesheets', 'insights', 'settings'];
   async function swipeToTab(dir) {
     const next = AsTabSwipe.target(nav.current, dir, TAB_ORDER);
     if (!next) return;
     if (next === 'expenses') await showExpenses();
     else if (next === 'timesheets') await showTimesheets();
+    else if (next === 'insights' && globalThis.AsInsightsUi) await AsInsightsUi.showInsights();
     else await showSettings();
     const view = document.querySelector('#view-' + next);
     if (!view) return;
@@ -2770,6 +2772,7 @@
         if (tab === 'expenses') showExpenses();
         else if (tab === 'timesheets') showTimesheets();
         else if (tab === 'settings') showSettings();
+        else if (tab === 'insights' && globalThis.AsInsightsUi) AsInsightsUi.showInsights();
       });
     });
 

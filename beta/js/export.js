@@ -381,6 +381,14 @@
     const zip = new JSZip();
     zip.file(AsBackupFormat.MANIFEST_NAME, JSON.stringify(snapshot, null, 2));
     for (const e of receiptEntries) zip.file(e.path, e.blob);
+    // 1.2.6-web: pay settings + payslips in prefs (as Android 1.2.6), PDFs under payslips/ and
+    // statements/. Like Android, these are not encrypted in the backup (known issue).
+    if (global.AsPayStore) {
+      const pay = await global.AsPayStore.forBackup();
+      snapshot.prefs = Object.assign({}, snapshot.prefs || {}, { pay: pay.pay, payslips: pay.payslips });
+      zip.file(AsBackupFormat.MANIFEST_NAME, JSON.stringify(snapshot, null, 2));
+      for (const f of pay.files) zip.file(f.path, f.blob);
+    }
     // 1.2.2-web: personal details (HR details, signatures, filled forms) go in ONLY when the lock
     // is on and a recovery key exists, still encrypted (personal.json, see forms-store
     // personalForBackup). Otherwise the backup has no personal details. Bank & NI never.
@@ -420,6 +428,12 @@
       receiptBlobs[p] = await zip.files[p].async('blob');
     }
     await importBackupParts(snapshot, receiptBlobs);
+    // 1.2.6-web: pay data + payslip/statement PDFs (only the parts present are replaced)
+    if (global.AsPayStore) {
+      const pdfs = {};
+      for (const p of Object.keys(zip.files).filter((n) => /^(payslips|statements)\/[^/]+\.pdf$/.test(n) && !zip.files[n].dir)) pdfs[p] = await zip.files[p].async('blob');
+      await global.AsPayStore.restore(snapshot.prefs, pdfs);
+    }
     // 1.2.2-web: locked personal details. They need the recovery key, so they are handed back to
     // the caller (js/lock-ui.js asks for the key); everything else is already restored.
     const pf = zip.file(PERSONAL_NAME);

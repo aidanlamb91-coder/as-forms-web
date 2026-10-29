@@ -6,9 +6,9 @@
  * Root (stable) and /beta/ have separate scopes on the same origin. Cache names carry the
  * scope path so neither ever deletes the other's caches, and the root worker ignores /beta/.
  */
-const VERSION = '1.2.2-web';
+const VERSION = '1.2.6-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
-const BUILD = 5;
+const BUILD = 1;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';
@@ -88,6 +88,15 @@ const SHELL = [
   'js/forms-ui.js',
   'js/profile-121.js',
   'data/forms-summaries.bin',
+  // 1.2.6-web pay, payslips, Insights, pension
+  'js/pay-calc.js',
+  'js/payslip.js',
+  'js/pay-pdf.js',
+  'js/insights.js',
+  'js/pension.js',
+  'js/pay-store.js',
+  'js/pay-ui.js',
+  'js/insights-ui.js',
 ];
 
 // Large, rarely-changing files: cached best-effort (a failure here never blocks the install).
@@ -101,6 +110,9 @@ const VENDOR = [
   'vendor/tesseract/tesseract-core-lstm.wasm.js',
   'vendor/tesseract/tesseract-core-simd-lstm.wasm.js',
   'vendor/tesseract/eng.traineddata.gz',
+  // 1.2.6-web payslip / statement reader (pdf.js 4.10.38)
+  'lib/pdfjs/pdf.min.mjs',
+  'lib/pdfjs/pdf.worker.min.mjs',
 ];
 
 function abs(rel) { return new URL(rel, SCOPE_URL).href; }
