@@ -3005,6 +3005,11 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     $('#btn-goto-backup').addEventListener('click', showBackup);
     $('#btn-settings-import-ts').addEventListener('click', () => $('#ts-import-files').click());
     $('#btn-settings-import-claims').addEventListener('click', () => $('#claim-import-files').click());
+    // 1.2.7-web Import list: payslips / statements use Insights' own inputs (same checks and sheets)
+    $('#btn-import-payslips').addEventListener('click', () => { const f = $('#ins-payslip-file'); if (f) f.click(); });
+    $('#btn-import-statement').addEventListener('click', () => { const f = $('#ins-statement-file'); if (f) f.click(); });
+    $('#btn-import-forms').addEventListener('click', () => $('#btn-goto-other-forms').click());
+    $('#btn-import-backup').addEventListener('click', showBackup);
     $('#btn-install-app').addEventListener('click', onInstallTapped);
     $('#btn-install-banner').addEventListener('click', onInstallTapped);
     $('#btn-install-banner-dismiss').addEventListener('click', () => { AsPwa.dismissBanner(); refreshInstallUi(); });

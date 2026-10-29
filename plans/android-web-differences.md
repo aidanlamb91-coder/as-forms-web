@@ -218,3 +218,8 @@ Rough effort feel (one developer, free stack only): steps 1–3 are a few days e
 
 This note lives in the public Pages repo (`as-forms-web`) under `plans/`, on the `main` branch. It is **docs only** — it does not change `index.html`, `js/`, `css/` or `beta/`, so the live app and beta keep the same behaviour. GitHub Pages may still rebuild the site after the push; that is expected and harmless.
 
+
+## Update 2026-10-29: Android 1.2.7 / web 1.2.7-web
+Settings → Import is the same on both platforms. It has six rows: Payslips, Pension statement, Timesheets, Expense claims, Filled form and App backup. Each row starts the existing flow.
+- Android: Back from Other forms or Sync and Backup returns to the Settings list.
+- Web: the App backup row opens Sync and Backup, which has both Restore backup… and Replace with cloud.
