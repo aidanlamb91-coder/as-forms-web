@@ -13,7 +13,7 @@
   const U = () => global.AsPayUi;
   const esc = (s) => A().escapeHtml(s == null ? '' : String(s));
   const st = { year: null, reordering: false };
-  const CARDS = ['gross', 'takehome', 'tax', 'pension', 'employer', 'offshore', 'bonus'];
+  const CARDS = ['gross', 'takehome', 'tax', 'mix', 'pension', 'employer', 'offshore', 'bonus'];
   const AMBER = '#FFB300', GREEN = '#2E7D32';
 
   function injectViews() {
@@ -58,6 +58,8 @@
 
   function order(s) {
     const o = (s.insightsOrder || []).filter((x) => CARDS.includes(x));
+    // 1.2.8-web: a saved order from before the donut gets it beside Tax, where it was asked for
+    if (o.length && !o.includes('mix')) { const t = o.indexOf('tax'); o.splice(t < 0 ? o.length : t + 1, 0, 'mix'); }
     return o.concat(CARDS.filter((x) => !o.includes(x)));
   }
 
@@ -101,7 +103,7 @@
       el.addEventListener('click', (e) => {
         if (st.reordering) return;
         if (e.target.closest('[data-forecast]')) { openForecast(); return; }
-        breakdownSheet(card, m);
+        breakdownSheet(card === 'mix' ? 'gross' : card, m);
       });
       const handle = el.querySelector('.ins-card-title');
       let t = null;
@@ -111,8 +113,47 @@
       handle.addEventListener('contextmenu', (e) => e.preventDefault());
     });
     if (st.reordering) wireReorder(m);
+    const mx = body.querySelector('[data-card="mix"]'); if (mx) wireDonut(mx, x);
     const pc = body.querySelector('[data-card="pension"] .ins-chart'); if (pc) wireScrub(pc);
     wireActions(m);
+  }
+
+  // ——— 1.2.8-web Earnings breakdown donut (Android's Donut: 12 o'clock, clockwise, fixed colours) ———
+  function donutCard(x) {
+    const g = U().gbp0; const d = I().donutSlices(x.breakdown);
+    const R = 40, C = 2 * Math.PI * R;
+    const arcs = d.slices.map((sl, i) => {
+      const len = Math.max(0, (sl.end - sl.start) * C - (d.slices.length > 1 ? 1 : 0));
+      return `<circle class="ins-donut-seg" data-seg="${i}" cx="50" cy="50" r="${R}" fill="none" stroke="${sl.colour}" stroke-width="16"
+        stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-sl.start * C).toFixed(2)}" transform="rotate(-90 50 50)"
+        tabindex="0" role="button" aria-label="${esc(sl.label)} ${esc(g(sl.amount))}, ${sl.pct}%"><title>${esc(sl.label)} ${esc(g(sl.amount))} · ${sl.pct}%</title></circle>`;
+    }).join('');
+    const ring = d.slices.length ? arcs : `<circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--border)" stroke-width="16"/>`;
+    const legend = d.slices.length ? d.slices.map((sl, i) => `<button type="button" class="ins-legend-row" data-seg="${i}"><span class="ins-dot" style="background:${sl.colour}"></span><span class="ins-legend-label">${esc(sl.label)}</span><span class="ins-legend-amt">${esc(g(sl.amount))}</span></button>`).join('')
+      : '<p class="hint">No earnings yet</p>';
+    return `<div class="ins-card ins-mix" data-card="mix" role="group" aria-label="Earnings breakdown" data-testid="ins-card-mix" data-total="${d.total.toFixed(2)}">
+      <div class="ins-card-head"><span class="ins-card-title">Earnings breakdown</span></div>
+      <div class="ins-donut-wrap"><svg class="ins-donut" viewBox="0 0 100 100" role="img" aria-label="Gross ${esc(g(d.total))} by earnings type">${ring}</svg>
+        <div class="ins-donut-centre" aria-live="polite" data-testid="ins-donut-centre"><b>${esc(g(d.total))}</b><span>Gross</span></div></div>
+      <div class="ins-legend">${legend}</div></div>`;
+  }
+
+  function wireDonut(card, x) {
+    const d = I().donutSlices(x.breakdown); const g = U().gbp0;
+    const centre = card.querySelector('.ins-donut-centre'); let on = -1;
+    const show = (i) => {
+      on = i;
+      card.querySelectorAll('[data-seg]').forEach((el) => el.classList.toggle('dim', i >= 0 && Number(el.getAttribute('data-seg')) !== i));
+      card.querySelectorAll('.ins-legend-row').forEach((el) => el.classList.toggle('on', Number(el.getAttribute('data-seg')) === i));
+      const sl = d.slices[i];
+      centre.innerHTML = sl ? `<b>${esc(g(sl.amount))}</b><span>${esc(sl.label)}</span><span>${sl.pct}%</span>` : `<b>${esc(g(d.total))}</b><span>Gross</span>`;
+    };
+    card.querySelectorAll('[data-seg]').forEach((el) => {
+      const i = Number(el.getAttribute('data-seg'));
+      el.addEventListener('click', (e) => { e.stopPropagation(); show(on === i ? -1 : i); });
+      if (el.tagName.toLowerCase() === 'circle') el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); show(on === i ? -1 : i); } });
+      if (el.tagName.toLowerCase() === 'circle') { el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') show(i); }); el.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') show(-1); }); }
+    });
   }
 
   function needsChecking(m) {
@@ -126,10 +167,11 @@
 
   function cardHtml(c, m) {
     const x = m.sum; const g = U().gbp0;
-    const titles = { gross: 'Gross', takehome: 'Take home', tax: 'Tax', pension: 'Total pension', employer: 'Employer pension', offshore: 'Offshore days', bonus: 'Bonus' };
+    const titles = { gross: 'Gross', takehome: 'Take home', tax: 'Tax', mix: 'Earnings breakdown', pension: 'Total pension', employer: 'Employer pension', offshore: 'Offshore days', bonus: 'Bonus' };
     let value = '', side = '', extra = '', wide = false;
     switch (c) {
-      case 'gross': value = g(x.grossYtd); side = x.breakdown.map((b) => esc(b.label) + ' ' + g(b.amount)).join('<br>'); break;
+      case 'gross': value = g(x.grossYtd); break; // 1.2.8-web: the split moved to the Earnings breakdown donut
+      case 'mix': return donutCard(x);
       case 'takehome': value = g(x.takeHome); side = x.grossYtd > 0 ? Math.round(x.takeHome / x.grossYtd * 100) + '% of gross' : ''; break;
       case 'tax': value = g(x.tax); side = 'UK ' + g(x.ukTax) + '<br>Non UK ' + g(x.foreignTax) + (x.estimatedTax ? '<br>Est. ' + g(x.estimatedTax) : ''); break;
       case 'employer': value = g(x.employerPension); side = 'incl. your ' + g(x.pension); break;

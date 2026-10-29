@@ -1,6 +1,6 @@
 # Android vs web — differences catalog
 
-> **Update 29 Oct 2026, 1.2.6-web on `/beta/` only** (branch `web-1.2.6-pay-port`; not on the main site): §3–§7 Pay items are now **Both (beta)**. That covers Settings → Pay, the timesheet pay strip, the Insights tab and cards (reorder, breakdowns, pension chart, Forecast ›), payslip and Aviva statement PDF import (pdf.js on the device), the Forecast with Tax savings, and pay data plus PDFs in backups. Still **Android only**: the Insights donut, monthly bars, progression chart and pinch-zoom, the forecast reading the HR date of birth, and auto timesheets from payslips. See the web source `docs/changes-web-1.2.6-web.md`.
+> **Update 29 Oct 2026, 1.2.6-web on `/beta/` only** (branch `web-1.2.6-pay-port`; not on the main site): §3–§7 Pay items are now **Both (beta)**. That covers Settings → Pay, the timesheet pay strip, the Insights tab and cards (reorder, breakdowns, pension chart, Forecast ›), payslip and Aviva statement PDF import (pdf.js on the device), the Forecast with Tax savings, and pay data plus PDFs in backups. Still **Android only**: monthly bars, progression chart and pinch-zoom, the forecast reading the HR date of birth, and auto timesheets from payslips. See the web source `docs/changes-web-1.2.6-web.md`.
 
 Written **27 Oct 2026** for future development. Compares:
 
@@ -79,7 +79,7 @@ Web still has three: **Expenses | Timesheets | Settings**.
 
 | Feature | Status | Notes / porting |
 |---|---|---|
-| Insights tab (hero totals, donut, monthly bars, progression chart) | **Android only** | Charts are Compose canvas. On web: Canvas / SVG / lightweight chart code, no paid charting SaaS |
+| Insights tab (hero totals, donut, monthly bars, progression chart) | **Donut: Both (beta 1.2.8-web)**; bars and progression chart **Android only** | Charts are Compose canvas. On web: Canvas / SVG / lightweight chart code, no paid charting SaaS |
 | Stat cards (Basic, Offshore, Bonus, Tax UK/Non-UK, Total pension, Employer pension, …) | **Android only** | |
 | Long-press reorder of Insights cards (saved + backed up) | **Android only** | Pointer events + stored order |
 | Tap a card → month-by-month breakdown sheet | **Android only** | |
@@ -223,3 +223,14 @@ This note lives in the public Pages repo (`as-forms-web`) under `plans/`, on the
 Settings → Import is the same on both platforms. It has six rows: Payslips, Pension statement, Timesheets, Expense claims, Filled form and App backup. Each row starts the existing flow.
 - Android: Back from Other forms or Sync and Backup returns to the Settings list.
 - Web: the App backup row opens Sync and Backup, which has both Restore backup… and Replace with cloud.
+
+
+## Update 2026-10-29: web 1.2.8-web (beta), Insights donut ported
+The Earnings breakdown doughnut is now on the web beta, with the same categories and colours as Android: Basic #E31C23, Offshore #1E88E5, Bonus #43A047, Holiday #FFB300.
+
+Web differences:
+- It is its own two-row card beside Tax, and the Gross card no longer lists the split.
+- The centre shows the total, and tapping or hovering shows a part's £ and %.
+- There is no geoid sprite intro; it is a simple sweep, off under reduced motion.
+
+Android still shows the donut inside its chart card and keeps the list on Gross.

@@ -1141,4 +1141,24 @@ body.kb-open .toast { bottom: calc(var(--kb-inset, 0px) + 12px); }
 /* Save scenario clears the bottom nav and the browser chrome (Android: 24dp spacer + 32dp above the system bars). */
 .fc-bottom-pad { height: calc(24px + 32px + var(--safe-b) + env(keyboard-inset-height, 0px)); }
 @media (min-width: 720px) { .ins-cards { grid-template-columns: repeat(3, 1fr); } }
+/* 1.2.8-web Earnings breakdown donut: two card rows tall, beside Tax on phone (dense fills the gap) */
+.ins-cards { grid-auto-flow: row dense; }
+.ins-cards .ins-card:not(.wide) { height: auto; } /* rows beside the 2-row donut card stretch evenly */
+.ins-card.ins-mix { grid-row: span 2; height: auto; justify-content: flex-start; gap: 6px; cursor: default; }
+.ins-donut-wrap { position: relative; width: 92px; height: 92px; margin: 0 auto; flex: none; }
+.ins-donut { width: 100%; height: 100%; display: block; }
+.ins-donut-seg { cursor: pointer; transition: opacity .15s; animation: ins-donut-in .7s ease-out both; }
+.ins-donut-seg.dim { opacity: .3; } .ins-legend-row.dim { opacity: .55; }
+.ins-donut-seg:focus { outline: none; } .ins-donut-seg:focus-visible { stroke-width: 19; }
+@keyframes ins-donut-in { from { stroke-dasharray: 0 252; } }
+.ins-donut-centre { position: absolute; inset: 17px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; line-height: 1.1; }
+.ins-donut-centre b { font-size: .74rem; font-weight: 800; white-space: nowrap; }
+.ins-donut-centre span { font-size: .58rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--muted); white-space: nowrap; }
+.ins-legend { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ins-legend-row { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 6px; background: none; border: 0; padding: 2px 4px; border-radius: 6px; font: inherit; font-size: .74rem; color: inherit; cursor: pointer; text-align: left; min-height: 22px; }
+.ins-legend-row.on { background: var(--border); font-weight: 700; }
+.ins-legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-legend-amt { font-variant-numeric: tabular-nums; }
+.ins-dot { width: 10px; height: 10px; border-radius: 50%; }
+@media (prefers-reduced-motion: reduce) { .ins-donut-seg { animation: none; transition: none; } }
 .ins-chart svg { max-height: 240px; } .fc-chart { max-height: 300px; }

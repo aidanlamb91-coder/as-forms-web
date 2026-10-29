@@ -164,6 +164,25 @@
   const PENSION_NOTE = 'Adds contributions only. It excludes investment growth or losses, so update the starting value in Settings › Pay to match your pot.';
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+  /** Android's fixed colour per earnings category (InsightsScreen sliceColourByLabel); others cycle. */
+  const SLICE_COLOURS = { Basic: '#E31C23', Offshore: '#1E88E5', Bonus: '#43A047', Holiday: '#FFB300' };
+  const SLICE_FALLBACK = ['#E31C23', '#1E88E5', '#43A047', '#FFB300', '#8E24AA', '#757575'];
+  /**
+   * 1.2.8-web donut: positive slices of the gross breakdown, clockwise from 12 o'clock (as Android),
+   * with share (0..1), whole-number percent and start/end fractions of the ring.
+   */
+  function donutSlices(parts) {
+    const pos = (parts || []).filter((b) => b && b.amount > 0.005);
+    const total = pos.reduce((a, b) => a + b.amount, 0);
+    let at = 0;
+    const slices = pos.map((b, i) => {
+      const share = total > 0 ? b.amount / total : 0;
+      const sl = { label: b.label, amount: b.amount, share, pct: Math.round(share * 1000) / 10, colour: SLICE_COLOURS[b.label] || SLICE_FALLBACK[i % SLICE_FALLBACK.length], start: at, end: at + share };
+      at += share; return sl;
+    });
+    return { total, slices };
+  }
+
   function breakdown(card, all, estimates, year, today, pensionStart) {
     const r2 = C().round2;
     const slips = dedupe(all);
@@ -235,5 +254,5 @@
 
   global.AsInsights = { PAY_DAY, taxYearOf, seasonOf, paidBy, estimatePoint, makeEstimate, employerPensionOrEstimate, dedupe, payslipFor,
     resolve, taxYears, points, seasonChange, yearChange, paidIn, pensionPoints, totalPension, summarise, yearLabel,
-    PENSION_NOTE, breakdown, pensionSeries, growthLabel, plusMonths: plus };
+    PENSION_NOTE, breakdown, donutSlices, SLICE_COLOURS, pensionSeries, growthLabel, plusMonths: plus };
 })(typeof window !== 'undefined' ? window : globalThis);
