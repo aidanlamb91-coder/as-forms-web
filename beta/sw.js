@@ -8,7 +8,7 @@
  */
 const VERSION = '1.2.9-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
-const BUILD = 2;
+const BUILD = 3;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';
@@ -132,8 +132,9 @@ self.addEventListener('install', (event) => {
         if (res.ok) await vendor.put(abs(u), res);
       } catch (_) { /* best effort; fetched again on first use */ }
     }));
-    // First install takes control straight away; updates wait for the user to tap Reload.
-    if (!self.registration.active) await self.skipWaiting();
+    // 1.2.9-web: every new version activates straight away once ALL its files are cached (never a mix:
+    // the page reloads once on controllerchange, see pwa.js), so returning users don't sit on an old build.
+    await self.skipWaiting();
   })());
 });
 

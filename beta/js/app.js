@@ -331,7 +331,26 @@
     showView('expenses');
   }
 
+  /** 1.2.9-web: error boundary — a render failure shows a "Try again" card instead of a broken page. */
   async function refreshClaimList() {
+    const list = $('#claim-list');
+    try {
+      await refreshClaimListInner();
+    } catch (e) {
+      console.warn('Expenses render failed', e);
+      try {
+        const hero = $('#expenses-hero'); if (hero) { hero.classList.add('hidden'); hero.innerHTML = ''; }
+        const empty = $('#claim-empty'); if (empty) empty.classList.add('hidden');
+        if (list) {
+          list.innerHTML = '<div class="error-card" role="alert" data-testid="expenses-error"><p><strong>Couldn\'t show your claims.</strong> Your data is safe.</p>' +
+            '<button type="button" class="btn secondary" id="btn-expenses-retry">Try again</button></div>';
+          $('#btn-expenses-retry').addEventListener('click', () => refreshClaimList());
+        }
+      } catch (_) { /* last resort: leave the page as it is */ }
+    }
+  }
+
+  async function refreshClaimListInner() {
     const all = await AsStorage.listClaims();
     const filtered = all.filter((c) =>
       state.expenseChip === 'completed' ? c.completed : !c.completed
@@ -351,7 +370,7 @@
       empty.classList.remove('hidden');
       empty.innerHTML = state.expenseChip === 'completed'
         ? 'No completed claims'
-        : 'Tap <strong>+ New</strong> to start a claim.';
+        : 'No claims yet — tap <strong>+</strong> to start one.';
       return;
     }
     empty.classList.add('hidden');
@@ -557,8 +576,7 @@
     const expenseTotal = claimTotal(c);
     let html =
       '<p class="title">' + escapeHtml(c.jobNo || 'No job') + '</p>' +
-      '<p class="meta">' + escapeHtml(AsFmt.range(c.dateFrom, c.dateTo)) +
-      ' · ' + AsFmt.plural((c.lines || []).length, 'line') + '</p>' +
+      '<p class="meta">' + escapeHtml([AsFmt.range(c.dateFrom, c.dateTo), AsFmt.plural((c.lines || []).length, 'line')].filter(Boolean).join(' · ')) + '</p>' +
       '<p class="money">' + money(expenseTotal) + '</p>';
     if (ms.length && globalThis.AsMileageUi) {
       html += ms.map((m) => AsMileageUi.subCardHtml(m)).join('');
