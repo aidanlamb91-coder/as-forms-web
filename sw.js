@@ -6,9 +6,9 @@
  * Root (stable) and /beta/ have separate scopes on the same origin. Cache names carry the
  * scope path so neither ever deletes the other's caches, and the root worker ignores /beta/.
  */
-const VERSION = '1.2.8-web';
+const VERSION = '1.2.9-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
-const BUILD = 1;
+const BUILD = 6;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const SCOPE_PATH = SCOPE_URL.pathname; // e.g. /as-forms-web/beta/
 const PREFIX = 'as-forms:' + SCOPE_PATH + ':';
@@ -76,6 +76,8 @@ const SHELL = [
   // 1.2.1-web Other forms
   'js/app-scope.js',
   'js/uk-date.js',
+  'js/fmt.js',
+  'js/layout-129.js',
   'js/lock-core.js',
   'js/lock-ui.js',
   'js/forms-crypto.js',
@@ -130,8 +132,9 @@ self.addEventListener('install', (event) => {
         if (res.ok) await vendor.put(abs(u), res);
       } catch (_) { /* best effort; fetched again on first use */ }
     }));
-    // First install takes control straight away; updates wait for the user to tap Reload.
-    if (!self.registration.active) await self.skipWaiting();
+    // 1.2.9-web: every new version activates straight away once ALL its files are cached (never a mix:
+    // the page reloads once on controllerchange, see pwa.js), so returning users don't sit on an old build.
+    await self.skipWaiting();
   })());
 });
 

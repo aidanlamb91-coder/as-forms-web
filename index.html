@@ -14,8 +14,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=1.2.8-web" />
-  <link rel="stylesheet" href="css/tutorial.css?v=1.2.8-web" />
+  <link rel="stylesheet" href="css/app.css?v=1.2.9-web" />
+  <link rel="stylesheet" href="css/tutorial.css?v=1.2.9-web" />
 </head>
 <body>
   <!-- 1.1.0-web opening animation (js/ui-110.js): the logo shrinks into the top bar, then the app
@@ -31,7 +31,8 @@
         <p id="top-bar-sub" class="sub"></p>
       </div>
       <button type="button" id="top-bar-cloud" class="icon-btn cloud-badge hidden" aria-label="Upload to cloud now" title="Upload now">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 10.1A7 7 0 0 0 6.1 8.6 5.5 5.5 0 0 0 6.5 19.5h12.4a4.7 4.7 0 0 0 .5-9.4zM13 13v4h-2v-4H8l4-4 4 4h-3z"/></svg>
+        <svg class="cloud-ico cloud-ico-up" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 10.1A7 7 0 0 0 6.1 8.6 5.5 5.5 0 0 0 6.5 19.5h12.4a4.7 4.7 0 0 0 .5-9.4zM13 13v4h-2v-4H8l4-4 4 4h-3z"/></svg>
+        <svg class="cloud-ico cloud-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M19.4 10.1A7 7 0 0 0 6.1 8.6 5.5 5.5 0 0 0 6.5 19.5h12.4a4.7 4.7 0 0 0 .5-9.4zM8.1 13.5l1.4-1.4 1.9 1.9 3.9-3.9 1.4 1.4-5.3 5.3z"/></svg>
         <span class="cloud-dot hidden" id="top-bar-cloud-dot"></span>
       </button>
     </header>
@@ -82,6 +83,7 @@
       </div>
       <input type="file" id="claim-import-files" accept=".zip,application/zip,application/x-zip-compressed" multiple hidden />
       <button type="button" id="archive-chip" class="archive-chip hidden"></button>
+      <div id="expenses-hero" class="hero-card hidden" data-testid="expenses-hero"></div>
       <div id="claim-list" class="card-list" aria-live="polite"></div>
       <p id="claim-empty" class="empty hidden">Tap <strong>+ New</strong> to start a claim.</p>
     </section>
@@ -118,9 +120,25 @@
         <button type="button" class="settings-banner" id="btn-goto-install"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M7 1h10a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zm0 3v15h10V4H7zm4 2h2v5.2l1.8-1.8 1.4 1.4L12 14l-4.2-4.2 1.4-1.4L11 11.2V6z"/></g></svg></span><span class="sb-text"><span class="sb-title">Install app</span><span class="sb-sub" id="sb-install-sub">Add AS Forms to your Home Screen</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
         <button type="button" class="settings-banner" id="btn-settings-tutorial"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-2 5.5v9l7-4.5-7-4.5z"/></g></svg></span><span class="sb-text"><span class="sb-title">Tutorial</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
         <button type="button" class="settings-banner" id="btn-goto-about"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 8v7h2v-7h-2zm0-3v2h2V7h-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">About</span><span class="sb-sub" id="sb-about-sub">1.2.1-web</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
-        <!-- 1.2.1-web shared-device safety -->
-        <button type="button" class="settings-banner danger-row" id="btn-clear-device"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M6 7h12l-1 14H7L6 7zm3-4h6l1 2h4v2H4V5h4l1-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">Clear data on this device</span><span class="sb-sub">Shared device? Clear it when you're done.</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
+
       </div>
+      <!-- 1.2.9-web destructive group (DESIGN §5), no title by request: last in Settings, red outline buttons, each one confirms first -->
+      <section class="danger-zone" id="danger-zone" aria-label="Restore, disconnect and clear data">
+        <div class="dz-row">
+          <span class="dz-text"><b>Restore backup</b>Replaces everything in this browser with a backup file.</span>
+          <button type="button" class="btn danger-outline" id="btn-dz-restore">Restore…</button>
+        </div>
+        <div class="dz-row hidden" id="dz-row-disconnect">
+          <span class="dz-text"><b>Disconnect cloud</b><span id="dz-cloud-label">Stops syncing. Files in the cloud are kept.</span></span>
+          <button type="button" class="btn danger-outline" id="btn-dz-disconnect">Disconnect</button>
+        </div>
+        <div class="dz-row">
+          <span class="dz-text"><b>Clear data on this device</b>Shared device? Clear it when you're done.</span>
+          <button type="button" class="btn danger-outline" id="btn-clear-device">Clear data…</button>
+        </div>
+        <input type="file" id="backup-import-file" accept=".zip,application/zip" hidden />
+        <p id="restore-status" class="status" role="status"></p>
+      </section>
     </section>
 
     <!-- 1.2.1-web condensed Profile (Android 1.2.1): Name, then Mileage / Favourite locations / HR details / Signature rows -->
@@ -223,7 +241,8 @@
           <button type="button" class="btn primary" id="btn-install-app">Install app</button>
           <p class="hint" id="install-hint"></p>
         </div>
-        <p class="hint"><strong>iPhone / iPad:</strong> the Home Screen app keeps its own storage, separate from Safari. Anything entered in Safari will not appear in the Home Screen app — use <strong>Backup &amp; restore</strong> to move it (Export backup in Safari, Restore backup in the app).</p>
+        <p class="hint help-line">iPhone / iPad keeps Home Screen data separate <button type="button" class="help-btn" data-help-target="install-ios-help" aria-label="iPhone storage help" aria-expanded="false">?</button></p>
+        <p class="hint attach-help hidden" id="install-ios-help"><strong>iPhone / iPad:</strong> the Home Screen app keeps its own storage, separate from Safari. Anything entered in Safari will not appear in the Home Screen app — use <strong>Backup &amp; restore</strong> to move it (Download backup in Safari, then Settings → Restore backup in the app).</p>
       </div>
     </section>
 
@@ -233,7 +252,7 @@
         <h1>About</h1>
       </header>
       <div class="panel">
-        <p class="hint" id="about-version">AS Forms <strong>1.2.8-web</strong></p>
+        <p class="hint" id="about-version">AS Forms <strong>1.2.9-web</strong></p>
         <p class="hint">Data stays in this browser.</p>
         <p class="hint">Receipt reading (OCR) runs <strong>on your device</strong> — receipts are not uploaded to a cloud OCR service. Reader files are bundled with the app and kept for offline use after the first visit.</p>
         <p class="hint">Installed on iPhone? The Home Screen app's data is separate from Safari's — use Backup &amp; restore to move it.</p>
@@ -320,9 +339,8 @@
         <p class="hint" id="backup-last">Last backup: never</p>
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-backup-export">Download backup</button>
-          <button type="button" class="btn secondary" id="btn-backup-import">Restore backup…</button>
         </div>
-        <input type="file" id="backup-import-file" accept=".zip,application/zip" hidden />
+        <p class="hint">To restore a backup, use <button type="button" class="linklike" id="btn-backup-import">Settings → Restore backup</button>.</p>
         <p id="backup-status" class="status" role="status"></p>
         
       </div>
@@ -336,6 +354,7 @@
         <button type="button" class="btn danger ghost" id="btn-delete-claim" title="Delete claim">🗑</button>
       </header>
       <p class="hint-line" id="claim-route-header"></p>
+      <div id="claim-hero" class="hero-card hidden" data-testid="claim-hero"></div>
       <form id="form-claim" class="panel">
         <label>
           Job number
@@ -369,15 +388,17 @@
         <button type="button" class="btn secondary" id="btn-claim-add-mileage">+ Mileage</button>
       </div>
       <div id="claim-mileage" class="card-list"></div>
-      <div class="panel export-panel">
-        <h2>Export &amp; send</h2>
+      <div class="export-panel export-quiet">
         <div class="btn-row">
-          <button type="button" class="btn primary" id="btn-review-export">Export</button>
-          <button type="button" class="btn accent" id="btn-send-invoice">Send</button>
           <button type="button" class="btn secondary hidden" id="btn-export-zip">Download zip</button>
           <button type="button" class="btn secondary hidden" id="btn-export-docx">Download Word only</button>
         </div>
         <p id="export-status" class="status" role="status"></p>
+      </div>
+      <!-- 1.2.9-web: sticky action bar — Export & preview (primary), Send (quiet; opens mail/share, never sends by itself) -->
+      <div class="action-bar" id="claim-action-bar" data-testid="claim-action-bar">
+        <button type="button" class="btn primary" id="btn-review-export">Export &amp; preview</button>
+        <button type="button" class="btn secondary" id="btn-send-invoice" aria-label="Send (opens your mail app)"><span aria-hidden="true">✉</span> Send</button>
       </div>
     </section>
 
@@ -504,8 +525,8 @@
         </div>
       </form>
       <div class="ts-file-row">
-        <button type="button" class="btn secondary" id="btn-ts-preview">Preview</button>
-        <button type="button" class="btn secondary" id="btn-ts-open-file">Open file</button>
+        <button type="button" class="btn ghost" id="btn-ts-open-file">Open file</button>
+        <button type="button" class="help-btn" data-help-target="timesheet-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
       </div>
       <div class="toolbar">
         <h2>Entries <span id="ts-entry-count" class="badge">0</span></h2>
@@ -513,17 +534,14 @@
       </div>
       <div id="ts-entry-list" class="card-list"></div>
       <p id="ts-entry-empty" class="empty hidden">No entries. Add date-range blocks (Office / Offshore / Holiday / …).</p>
-      <div class="panel">
-        <div class="section-heading">
-          <h2>Export &amp; send</h2>
-          <button type="button" class="help-btn" data-help-target="timesheet-export-help" aria-label="Export and send help" aria-expanded="false">?</button>
-        </div>
-        <p class="hint attach-help hidden" id="timesheet-export-help"><strong>Send to Timesheets</strong> builds the .odt, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded .odt yourself.</p>
-        <div class="btn-row">
-          <button type="button" class="btn primary" id="btn-export-odt">Download timesheet.odt</button>
-          <button type="button" class="btn accent" id="btn-send-timesheets">Send</button>
-        </div>
+      <div class="export-quiet">
+        <p class="hint attach-help hidden" id="timesheet-export-help"><strong>Send</strong> builds the .odt, starts a download, then offers Open mail app — mailto cannot attach files; attach the downloaded .odt yourself.</p>
         <p id="ts-export-status" class="status" role="status"></p>
+      </div>
+      <!-- 1.2.9-web: sticky action bar. Export & preview opens the read-only preview; Download .odt is there. -->
+      <div class="action-bar" id="ts-action-bar" data-testid="ts-action-bar">
+        <button type="button" class="btn primary" id="btn-ts-preview">Export &amp; preview</button>
+        <button type="button" class="btn secondary" id="btn-send-timesheets" aria-label="Send (opens your mail app)"><span aria-hidden="true">✉</span> Send</button>
       </div>
     </section>
 
@@ -544,6 +562,10 @@
         <button type="button" class="btn ghost" id="btn-tsp-zoom-out" aria-label="Zoom out">−</button>
         <button type="button" class="btn ghost" id="btn-tsp-zoom-fit">Fit</button>
         <button type="button" class="btn ghost" id="btn-tsp-zoom-in" aria-label="Zoom in">+</button>
+      </div>
+      <div class="action-bar" id="tsp-action-bar" data-testid="tsp-action-bar">
+        <button type="button" class="btn primary" id="btn-export-odt">Download .odt</button>
+        <button type="button" class="btn secondary" id="btn-tsp-send" aria-label="Send (opens your mail app)"><span aria-hidden="true">✉</span> Send</button>
       </div>
     </section>
 
@@ -605,67 +627,69 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <!-- 1.2.1-web: keeps main-site and beta storage apart; must load first -->
-  <script src="js/app-scope.js?v=1.2.8-web"></script>
-  <script src="js/uk-date.js?v=1.2.8-web"></script>
+  <script src="js/app-scope.js?v=1.2.9-web"></script>
+  <script src="js/uk-date.js?v=1.2.9-web"></script>
+  <script src="js/fmt.js?v=1.2.9-web"></script>
   <!-- 1.2.2-web personal details lock (before storage.js: it decides whether the name is kept) -->
-  <script src="js/lock-core.js?v=1.2.8-web"></script>
-  <script src="lib/jszip.min.js?v=1.2.8-web"></script>
-  <script src="js/email-templates.js?v=1.2.8-web"></script>
-  <script src="js/expense-category.js?v=1.2.8-web"></script>
-  <script src="js/year-periods.js?v=1.2.8-web"></script>
-  <script src="js/offshore-days.js?v=1.2.8-web"></script>
-  <script src="js/expense-tally.js?v=1.2.8-web"></script>
-  <script src="js/days-worked-summary.js?v=1.2.8-web"></script>
-  <script src="js/storage.js?v=1.2.8-web"></script>
-  <script src="js/docx-filler.js?v=1.2.8-web"></script>
-  <script src="js/timesheet-layout.js?v=1.2.8-web"></script>
-  <script src="js/timesheet-filler.js?v=1.2.8-web"></script>
-  <script src="js/timesheet-reader.js?v=1.2.8-web"></script>
-  <script src="js/expense-zip-reader.js?v=1.2.8-web"></script>
-  <script src="js/image-merge.js?v=1.2.8-web"></script>
-  <script src="js/export.js?v=1.2.8-web"></script>
-  <script src="js/mileage.js?v=1.2.8-web"></script>
-  <script src="js/mileage-docx.js?v=1.2.8-web"></script>
-  <script src="js/backup-format.js?v=1.2.8-web"></script>
-  <script src="js/image-shrink.js?v=1.2.8-web"></script>
-  <script src="js/cloud-config.js?v=1.2.8-web"></script>
-  <script src="js/token-refresh.js?v=1.2.8-web"></script>
-  <script src="js/cloud.js?v=1.2.8-web"></script>
-  <script src="js/archive.js?v=1.2.8-web"></script>
-  <script src="js/receipt-parse.js?v=1.2.8-web"></script>
-  <script src="js/receipt-ocr.js?v=1.2.8-web"></script>
-  <script src="js/summary-pdf.js?v=1.2.8-web"></script>
-  <script src="js/hold-swipe.js?v=1.2.8-web"></script>
-  <script src="js/tab-swipe.js?v=1.2.8-web"></script>
-  <script src="js/year-picker.js?v=1.2.8-web"></script>
-  <script src="js/zoom-view.js?v=1.2.8-web"></script>
-  <script src="js/attachments.js?v=1.2.8-web"></script>
-  <script src="js/timesheet-preview.js?v=1.2.8-web"></script>
-  <script src="js/pwa.js?v=1.2.8-web"></script>
-  <script src="js/tutorial.js?v=1.2.8-web"></script>
-  <script src="js/app.js?v=1.2.8-web"></script>
-  <script src="js/mileage-ui.js?v=1.2.8-web"></script>
-  <script src="js/sync-ui.js?v=1.2.8-web"></script>
-  <script src="js/ui-110.js?v=1.2.8-web"></script>
+  <script src="js/lock-core.js?v=1.2.9-web"></script>
+  <script src="lib/jszip.min.js?v=1.2.9-web"></script>
+  <script src="js/email-templates.js?v=1.2.9-web"></script>
+  <script src="js/expense-category.js?v=1.2.9-web"></script>
+  <script src="js/year-periods.js?v=1.2.9-web"></script>
+  <script src="js/offshore-days.js?v=1.2.9-web"></script>
+  <script src="js/expense-tally.js?v=1.2.9-web"></script>
+  <script src="js/days-worked-summary.js?v=1.2.9-web"></script>
+  <script src="js/storage.js?v=1.2.9-web"></script>
+  <script src="js/docx-filler.js?v=1.2.9-web"></script>
+  <script src="js/timesheet-layout.js?v=1.2.9-web"></script>
+  <script src="js/timesheet-filler.js?v=1.2.9-web"></script>
+  <script src="js/timesheet-reader.js?v=1.2.9-web"></script>
+  <script src="js/expense-zip-reader.js?v=1.2.9-web"></script>
+  <script src="js/image-merge.js?v=1.2.9-web"></script>
+  <script src="js/export.js?v=1.2.9-web"></script>
+  <script src="js/mileage.js?v=1.2.9-web"></script>
+  <script src="js/mileage-docx.js?v=1.2.9-web"></script>
+  <script src="js/backup-format.js?v=1.2.9-web"></script>
+  <script src="js/image-shrink.js?v=1.2.9-web"></script>
+  <script src="js/cloud-config.js?v=1.2.9-web"></script>
+  <script src="js/token-refresh.js?v=1.2.9-web"></script>
+  <script src="js/cloud.js?v=1.2.9-web"></script>
+  <script src="js/archive.js?v=1.2.9-web"></script>
+  <script src="js/receipt-parse.js?v=1.2.9-web"></script>
+  <script src="js/receipt-ocr.js?v=1.2.9-web"></script>
+  <script src="js/summary-pdf.js?v=1.2.9-web"></script>
+  <script src="js/hold-swipe.js?v=1.2.9-web"></script>
+  <script src="js/tab-swipe.js?v=1.2.9-web"></script>
+  <script src="js/year-picker.js?v=1.2.9-web"></script>
+  <script src="js/zoom-view.js?v=1.2.9-web"></script>
+  <script src="js/attachments.js?v=1.2.9-web"></script>
+  <script src="js/timesheet-preview.js?v=1.2.9-web"></script>
+  <script src="js/pwa.js?v=1.2.9-web"></script>
+  <script src="js/tutorial.js?v=1.2.9-web"></script>
+  <script src="js/app.js?v=1.2.9-web"></script>
+  <script src="js/mileage-ui.js?v=1.2.9-web"></script>
+  <script src="js/sync-ui.js?v=1.2.9-web"></script>
+  <script src="js/ui-110.js?v=1.2.9-web"></script>
+  <script src="js/layout-129.js?v=1.2.9-web"></script>
   <!-- 1.2.1-web Other forms + Profile (HR details, Signature) + Clear data on this device -->
-  <script src="js/forms-crypto.js?v=1.2.8-web"></script>
-  <script src="js/forms-rules.js?v=1.2.8-web"></script>
-  <script src="js/forms-docx.js?v=1.2.8-web"></script>
-  <script src="js/forms-pdf.js?v=1.2.8-web"></script>
-  <script src="js/forms-search.js?v=1.2.8-web"></script>
-  <script src="js/forms-store.js?v=1.2.8-web"></script>
-  <script src="js/forms-library.js?v=1.2.8-web"></script>
-  <script src="js/forms-ui.js?v=1.2.8-web"></script>
-  <script src="js/profile-121.js?v=1.2.8-web"></script>
-  <script src="js/lock-ui.js?v=1.2.8-web"></script>
+  <script src="js/forms-crypto.js?v=1.2.9-web"></script>
+  <script src="js/forms-rules.js?v=1.2.9-web"></script>
+  <script src="js/forms-docx.js?v=1.2.9-web"></script>
+  <script src="js/forms-pdf.js?v=1.2.9-web"></script>
+  <script src="js/forms-search.js?v=1.2.9-web"></script>
+  <script src="js/forms-store.js?v=1.2.9-web"></script>
+  <script src="js/forms-library.js?v=1.2.9-web"></script>
+  <script src="js/forms-ui.js?v=1.2.9-web"></script>
+  <script src="js/profile-121.js?v=1.2.9-web"></script>
+  <script src="js/lock-ui.js?v=1.2.9-web"></script>
   <!-- 1.2.8-web pay, payslips, Insights, pension (ported from Android 1.2.6) -->
-  <script src="js/pay-calc.js?v=1.2.8-web"></script>
-  <script src="js/payslip.js?v=1.2.8-web"></script>
-  <script src="js/pay-pdf.js?v=1.2.8-web"></script>
-  <script src="js/insights.js?v=1.2.8-web"></script>
-  <script src="js/pension.js?v=1.2.8-web"></script>
-  <script src="js/pay-store.js?v=1.2.8-web"></script>
-  <script src="js/pay-ui.js?v=1.2.8-web"></script>
-  <script src="js/insights-ui.js?v=1.2.8-web"></script>
+  <script src="js/pay-calc.js?v=1.2.9-web"></script>
+  <script src="js/payslip.js?v=1.2.9-web"></script>
+  <script src="js/pay-pdf.js?v=1.2.9-web"></script>
+  <script src="js/insights.js?v=1.2.9-web"></script>
+  <script src="js/pension.js?v=1.2.9-web"></script>
+  <script src="js/pay-store.js?v=1.2.9-web"></script>
+  <script src="js/pay-ui.js?v=1.2.9-web"></script>
+  <script src="js/insights-ui.js?v=1.2.9-web"></script>
 </body>
 </html>

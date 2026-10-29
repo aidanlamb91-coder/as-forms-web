@@ -326,11 +326,13 @@
     const wmName = MONTH[Number(d.wm.slice(5, 7)) - 1];
     const payMon = MON[Number(d.payMonth.slice(5, 7)) - 1];
     const days = est ? est.seasonDays : 0;
-    host.className = 'pay-strip clickable';
-    host.innerHTML = `<div class="ps-left"><div class="ps-month">${esc(wmName)} work · paid late ${esc(payMon)}</div>
-        <div class="ps-net"><b>${esc(gbp(net))}</b> <span>${d.slip ? 'net · payslip' : 'net'}</span> ${d.slip ? '' : tag}</div>
-        <div class="ps-gross">Gross ${esc(gbp(gross))}</div></div>
-      ${est ? `<div class="ps-right"><div>Season ${days} / ${C().SEASON_DOUBLE_AFTER} days</div><div class="ps-bar"><i style="width:${Math.min(100, days / C().SEASON_DOUBLE_AFTER * 100)}%"></i></div><div class="ps-tap">Tap for breakdown ⌃</div></div>` : ''}`;
+    host.className = 'pay-strip hero clickable';
+    const pct = est ? Math.min(100, days / C().SEASON_DOUBLE_AFTER * 100) : 0;
+    // 1.2.9-web: the timesheet's one hero figure — month net pay, season-days progress below (DESIGN §5)
+    host.innerHTML = `<div class="hero-label">${esc(wmName)} net ${d.slip ? '· payslip' : '(estimate)'} ${d.slip ? '' : tag}</div>
+        <div class="hero-value ps-net num">${esc(gbp0(net))}</div>
+        <div class="hero-help ps-gross">Gross ${esc(gbp0(gross))} · paid late ${esc(payMon)}</div>
+      ${est ? `<div class="hero-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${C().SEASON_DOUBLE_AFTER}" aria-valuenow="${days}" aria-label="Season days"><div class="ps-bar"><i style="width:${pct}%"></i></div><div class="hero-progress-text">Season ${days} of ${C().SEASON_DOUBLE_AFTER} days <span class="ps-tap">Tap for breakdown ›</span></div></div>` : '<div class="ps-tap hero-help">Tap for the payslip</div>'}`;
     host.setAttribute('role', 'button'); host.tabIndex = 0;
     host.onclick = () => (d.slip ? payslipSheet(d.slip, est) : breakdownSheet(est));
     host.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); host.click(); } };
@@ -386,7 +388,9 @@
     if (!view || document.getElementById('pay-strip')) return;
     const d = document.createElement('div');
     d.id = 'pay-strip'; d.className = 'pay-strip'; d.setAttribute('data-testid', 'pay-strip');
-    view.appendChild(d);
+    // 1.2.9-web: hero at the top of the timesheet (was a sticky strip over Export & send)
+    const after = document.getElementById('ts-route-header');
+    if (after && after.parentNode === view) after.insertAdjacentElement('afterend', d); else view.appendChild(d);
   }
 
   function wire() {
