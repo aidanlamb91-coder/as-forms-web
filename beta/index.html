@@ -121,9 +121,8 @@
         <button type="button" class="settings-banner" id="btn-goto-about"><span class="sb-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 8v7h2v-7h-2zm0-3v2h2V7h-2z"/></g></svg></span><span class="sb-text"><span class="sb-title">About</span><span class="sb-sub" id="sb-about-sub">1.2.1-web</span></span><span class="sb-chev" aria-hidden="true">›</span></button>
 
       </div>
-      <!-- 1.2.9-web Danger zone (DESIGN §5): last in Settings, red outline buttons, each one confirms first -->
-      <section class="danger-zone" id="danger-zone" aria-labelledby="dz-title">
-        <h3 id="dz-title">Danger zone</h3>
+      <!-- 1.2.9-web destructive group (DESIGN §5), no title by request: last in Settings, red outline buttons, each one confirms first -->
+      <section class="danger-zone" id="danger-zone" aria-label="Restore, disconnect and clear data">
         <div class="dz-row">
           <span class="dz-text"><b>Restore backup</b>Replaces everything in this browser with a backup file.</span>
           <button type="button" class="btn danger-outline" id="btn-dz-restore">Restore…</button>
@@ -242,7 +241,7 @@
           <p class="hint" id="install-hint"></p>
         </div>
         <p class="hint help-line">iPhone / iPad keeps Home Screen data separate <button type="button" class="help-btn" data-help-target="install-ios-help" aria-label="iPhone storage help" aria-expanded="false">?</button></p>
-        <p class="hint attach-help hidden" id="install-ios-help"><strong>iPhone / iPad:</strong> the Home Screen app keeps its own storage, separate from Safari. Anything entered in Safari will not appear in the Home Screen app — use <strong>Backup &amp; restore</strong> to move it (Download backup in Safari, then Settings → Danger zone → Restore in the app).</p>
+        <p class="hint attach-help hidden" id="install-ios-help"><strong>iPhone / iPad:</strong> the Home Screen app keeps its own storage, separate from Safari. Anything entered in Safari will not appear in the Home Screen app — use <strong>Backup &amp; restore</strong> to move it (Download backup in Safari, then Settings → Restore backup in the app).</p>
       </div>
     </section>
 
@@ -340,7 +339,7 @@
         <div class="btn-row">
           <button type="button" class="btn primary" id="btn-backup-export">Download backup</button>
         </div>
-        <p class="hint">To restore a backup, use <button type="button" class="linklike" id="btn-backup-import">Settings → Danger zone → Restore</button>.</p>
+        <p class="hint">To restore a backup, use <button type="button" class="linklike" id="btn-backup-import">Settings → Restore backup</button>.</p>
         <p id="backup-status" class="status" role="status"></p>
         
       </div>
