@@ -874,6 +874,13 @@ body:not(.on-tab-root) .home-top-bar { display: none; }
 .top-bar-text .sub { margin: 0; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cloud-badge { position: relative; background: none; border: 0; padding: 6px; font-size: 1.3rem; cursor: pointer; }
 .cloud-badge.busy { animation: as-pulse 1s infinite alternate; }
+/* 1.2.9-web: after a successful upload the same cloud shows a tick (green) for a few seconds */
+.cloud-badge { display: inline-grid; }
+.cloud-badge .cloud-ico { grid-area: 1 / 1; width: 24px; height: 24px; transition: opacity .25s ease, transform .25s ease; }
+.cloud-badge .cloud-ico-ok { opacity: 0; transform: scale(.85); color: var(--ok, #0a7a3e); }
+.cloud-badge.synced .cloud-ico-up { opacity: 0; transform: scale(.85); }
+.cloud-badge.synced .cloud-ico-ok { opacity: 1; transform: none; }
+.cloud-badge.synced .cloud-dot { display: none; }
 .cloud-dot { position: absolute; top: 6px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
 @keyframes as-pulse { from { opacity: 1; } to { opacity: .4; } }
 /* Mileage nested under its expense claim */
@@ -919,7 +926,7 @@ body:not(.on-tab-root) .home-top-bar { display: none; }
 .docx-table td { border: 1px solid var(--border); padding: 3px 5px; vertical-align: top; }
 /* Keyboard: room under the last field when the on-screen keyboard is up */
 .view { scroll-padding-bottom: calc(var(--kb-inset, 0px) + 24px); }
-@media (prefers-reduced-motion: reduce) { .cloud-badge.busy { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cloud-badge.busy { animation: none; } .cloud-badge .cloud-ico { transition: none; } }
 label.toggle-control.wide { display: flex; justify-content: space-between; width: 100%; font-size: .95rem; color: var(--ink); white-space: normal; }
 /* The backup reminder belongs on the tab screens only (it sat above sub-page headers) */
 body:not(.on-tab-root) #backup-reminder { display: none; }

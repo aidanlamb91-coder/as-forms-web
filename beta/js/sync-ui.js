@@ -87,11 +87,25 @@
     if (el) { el.textContent = msg || ''; el.classList.toggle('error', !!err); }
   }
 
+  /** 1.2.9-web: the header cloud swaps its up-arrow for a green tick for a few seconds after a successful upload. */
+  const SYNCED_MS = 3500;
+  let syncedTimer = null;
+  function showSynced(on) {
+    const btn = document.getElementById('top-bar-cloud');
+    clearTimeout(syncedTimer);
+    if (!btn) return;
+    btn.classList.toggle('synced', !!on);
+    btn.setAttribute('aria-label', on ? 'Synced — upload to cloud again' : 'Upload to cloud now');
+    if (on) syncedTimer = setTimeout(() => showSynced(false), SYNCED_MS);
+  }
   async function manualSync() {
+    showSynced(false);
     const s = C().status();
     if (s.needsSignIn) return C().startSignIn(s.kind, 'connect', 'sync');
     const r = await C().syncNow({ manual: true });
-    if (r && r.ok) A().toast('Synced');
+    // the breathing pulse runs while uploading (.busy); stop it as soon as the upload settles
+    const b = document.getElementById('top-bar-cloud'); if (b) b.classList.remove('busy');
+    if (r && r.ok) { A().toast('Synced'); showSynced(true); }
     else if (r && r.error) A().toast(r.error);
   }
   async function replace() {
@@ -193,5 +207,5 @@
   }
   A().onBoot(wire);
 
-  global.AsSyncUi = { refreshSubtitle, afterBoot, render, manualSync };
+  global.AsSyncUi = { refreshSubtitle, afterBoot, render, manualSync, showSynced, SYNCED_MS };
 })(window);
