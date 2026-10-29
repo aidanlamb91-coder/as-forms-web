@@ -99,6 +99,8 @@ Web still has three: **Expenses | Timesheets | Settings**.
 
 ---
 
+> **Before next update (both platforms, queued, not built):** payslip and pension statement PDFs must be viewable in the app but encrypted at rest (Android storage, web IndexedDB) and in backups, with no plain PDFs in zips. Where to view them is still to be decided with Aidan. See `plans/before-next-update.md` in the source repos.
+
 ## 5. Statement import and forecast
 
 | Feature | Status | Notes / porting |
