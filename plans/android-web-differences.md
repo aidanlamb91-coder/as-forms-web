@@ -1,11 +1,13 @@
 # Android vs web — differences catalog
 
+> **Update 29 Oct 2026, 1.2.8-web promoted to the main site** (with Aidan's approval; source `main` now includes `web-1.2.6-pay-port`; previous main 1.2.2-web kept at `/old-1.2.2/`). Every "Both (beta)" item below is now **Both** on the main site too.
+>
 > **Update 29 Oct 2026, 1.2.6-web on `/beta/` only** (branch `web-1.2.6-pay-port`; not on the main site): §3–§7 Pay items are now **Both (beta)**. That covers Settings → Pay, the timesheet pay strip, the Insights tab and cards (reorder, breakdowns, pension chart, Forecast ›), payslip and Aviva statement PDF import (pdf.js on the device), the Forecast with Tax savings, and pay data plus PDFs in backups. Still **Android only**: monthly bars, progression chart and pinch-zoom, the forecast reading the HR date of birth, and auto timesheets from payslips. See the web source `docs/changes-web-1.2.6-web.md`.
 
 Written **27 Oct 2026** for future development. Compares:
 
 - **Android** AS Forms **1.2.5** (versionCode 48)
-- **Web PWA** AS Forms **1.2.2-web** (main site and `/beta/`)
+- **Web PWA** AS Forms **1.2.8-web** (main site and `/beta/`, 29 Oct 2026)
 
 No code was changed for this note. Sources: both codebases, Android `docs/changes-*.md`, `STATUS.md`, `AGENTS.md`, web-port notes, and the web `README.md` / `CODE_MAP.md`.
 

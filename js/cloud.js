@@ -120,7 +120,11 @@
         include_granted_scopes: 'true',
         state,
       });
-      if (mode === 'renew') {
+      if (mode !== 'renew' && WORKER()) { // build 5: code flow → the Worker keeps a long-lasting sign-in
+        p.set('response_type', 'code');
+        p.set('access_type', 'offline');
+        p.set('prompt', 'consent select_account');
+      } else if (mode === 'renew') {
         p.set('prompt', 'none');
         const s = load();
         if (s.email) p.set('login_hint', s.email);
@@ -191,7 +195,14 @@
       return { kind, mode: pending.mode, error: landed.error === 'access_denied' ? 'Sign-in cancelled.' : 'Sign-in failed (' + landed.error + ').' };
     }
     const now = Date.now();
-    if (kind === 'google') {
+    if (kind === 'google' && landed.code && WORKER()) {
+      const r = await workerPost('/google/code', { code: landed.code, redirect_uri: CFG().redirectUri() });
+      if (r.status !== 200 || !r.j.access_token) return { kind, mode: pending.mode, error: 'Google sign-in failed (' + (r.j.error || r.status) + ').' };
+      save({
+        kind, access: r.j.access_token, expiresAt: now + (Number(r.j.expires_in) || 3600) * 1000, gRt: r.j.rt || null,
+        refresh: null, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now, lastError: null,
+      });
+    } else if (kind === 'google') {
       save({
         kind, access: landed.access_token, expiresAt: now + (Number(landed.expires_in) || 3600) * 1000,
         refresh: null, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now, lastError: null,
@@ -241,7 +252,11 @@
     const now = Date.now();
     if (!TR().needsRefresh(s.access, s.expiresAt, now, force)) return s.access;
     if (s.kind === 'google') {
-      if (userInitiated) await startSignIn('google', 'renew', 'sync'); // leaves the page and comes back
+      // 1.2.2-web fix: quiet renewal with Google Identity Services first (no page reload).
+      try { return await renewGoogle(); } catch (e) {
+        if (e instanceof TR().SignInRequired) throw e;
+      }
+      if (userInitiated) await startSignIn('google', 'renew', 'sync'); // fallback: leaves the page and comes back
       save({ renewNeeded: true });
       throw new RenewNeeded();
     }
@@ -407,6 +422,102 @@
     return f.id;
   }
 
+  // ——— Google quiet renewal (Google Identity Services token client) ———
+  // No refresh token and no secret: Google hands a new ~1-hour token while the user is still
+  // signed in to Google in this browser and has already given consent (prompt:'').
+  // Errors that mean "Google needs the user" → Reconnect. Anything else (pop-up blocked, offline,
+  // closed) → keep quiet and try again later / on the next tap.
+  const GIS_SRC = 'https://accounts.google.com/gsi/client';
+  const GIS_NEEDS_USER = ['interaction_required', 'login_required', 'consent_required', 'access_denied', 'invalid_grant'];
+  let gisLoading = null;
+  let googleRenewing = null;
+  let renewTimer = null;
+  function loadGis() {
+    if (global.google && global.google.accounts && global.google.accounts.oauth2) return Promise.resolve();
+    if (!gisLoading) {
+      gisLoading = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = GIS_SRC; el.async = true;
+        el.onload = () => resolve();
+        el.onerror = () => { gisLoading = null; reject(new Error('Could not load Google sign-in')); };
+        document.head.appendChild(el);
+      });
+    }
+    return gisLoading;
+  }
+  // Build 5: the Worker turns the saved (encrypted) Google refresh token into a new access token.
+  function WORKER() { return (CFG().config.googleTokenWorker || '').replace(/\/$/, ''); }
+  async function workerPost(path, body) {
+    const res = await fetch(WORKER() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let j = {};
+    try { j = await res.json(); } catch (_) {}
+    return { status: res.status, j };
+  }
+  /** Returns the new token, or null (no Worker sign-in / Worker unreachable) so GIS can try. */
+  async function renewViaWorker() {
+    const s = load();
+    if (!s.gRt || !WORKER()) return null;
+    let r;
+    try { r = await workerPost('/google/refresh', { rt: s.gRt }); } catch (_) { return null; }
+    if (r.status === 200 && r.j.access_token) {
+      const now = Date.now();
+      save({ access: r.j.access_token, expiresAt: now + (Number(r.j.expires_in) || 3600) * 1000, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now });
+      scheduleGoogleRenew();
+      return r.j.access_token;
+    }
+    if (r.j.error === 'invalid_grant') save({ gRt: null }); // revoked/expired: fall back to GIS, then Reconnect
+    return null;
+  }
+  function renewGoogle() {
+    if (googleRenewing) return googleRenewing;
+    googleRenewing = (async () => {
+      const viaWorker = await renewViaWorker();
+      if (viaWorker) return viaWorker;
+      await loadGis();
+      const s = load();
+      const r = await new Promise((resolve) => {
+        const tc = global.google.accounts.oauth2.initTokenClient({
+          client_id: CFG().config.googleClientId,
+          scope: GOOGLE_SCOPES,
+          prompt: '',
+          login_hint: s.email || undefined,
+          include_granted_scopes: true,
+          callback: (resp) => resolve(resp || {}),
+          error_callback: (err) => resolve({ error: (err && err.type) || 'unknown' }),
+        });
+        tc.requestAccessToken();
+      });
+      if (r.access_token) {
+        const now = Date.now();
+        save({ access: r.access_token, expiresAt: now + (Number(r.expires_in) || 3600) * 1000, needsSignIn: false, renewNeeded: false, lastSilentRenewAt: now });
+        scheduleGoogleRenew();
+        return r.access_token;
+      }
+      if (GIS_NEEDS_USER.includes(String(r.error))) {
+        save({ needsSignIn: true });
+        throw new (TR().SignInRequired)('google');
+      }
+      throw new Error('Google renewal did not finish (' + r.error + ')');
+    })();
+    googleRenewing.then(() => { googleRenewing = null; }, () => { googleRenewing = null; });
+    return googleRenewing;
+  }
+  /** Renew 5 minutes before the Google token runs out. */
+  function scheduleGoogleRenew() {
+    clearTimeout(renewTimer);
+    const s = load();
+    if (s.kind !== 'google' || s.needsSignIn || !s.expiresAt) return;
+    const wait = Math.max(0, s.expiresAt - TR().EARLY_MS - Date.now());
+    renewTimer = setTimeout(() => { quietGoogleRenew(); }, wait);
+  }
+  /** Timer / app back in view: renew if due. Never throws; Reconnect shows only if Google needs the user. */
+  function quietGoogleRenew() {
+    const s = load();
+    if (s.kind !== 'google' || s.needsSignIn || !navigator.onLine) return Promise.resolve();
+    if (!TR().needsRefresh(s.access, s.expiresAt, Date.now())) { scheduleGoogleRenew(); return Promise.resolve(); }
+    return renewGoogle().catch(() => {});
+  }
+
   // ——— Sync ———
   /**
    * Push this browser's data to AS-Forms-backup.zip. manual = the user tapped (Sync now / cloud
@@ -507,11 +618,23 @@
     if (s.kind === 'google' && (s.dirty || !s.lastSyncAt) && navigator.onLine &&
       TR().needsRefresh(s.access, s.expiresAt, Date.now()) &&
       Date.now() - (s.lastSilentRenewAt || 0) > SILENT_RENEW_GAP_MS) {
-      save({ lastSilentRenewAt: Date.now() });
-      await startSignIn('google', 'renew', 'sync');
+      let renewed = false;
+      try { await renewGoogle(); renewed = true; } catch (e) {
+        if (e instanceof TR().SignInRequired) return result;
+      }
+      if (!renewed) {
+        save({ lastSilentRenewAt: Date.now() });
+        await startSignIn('google', 'renew', 'sync');
+      }
     }
     if (s.dirty || !s.lastSyncAt) syncNow({ manual: false });
     global.addEventListener('online', () => { if (load().dirty) syncNow({ manual: false }); });
+    if (s.kind === 'google') {
+      scheduleGoogleRenew();
+      const back = () => { if (document.visibilityState === 'visible') quietGoogleRenew(); };
+      document.addEventListener('visibilitychange', back);
+      global.addEventListener('focus', back);
+    }
     return result;
   }
 
@@ -544,6 +667,6 @@
   global.AsCloud = {
     KINDS, FOLDER_NAME, CLOUD_ZIP_NAME, status, onChange, startSignIn, completeRedirect, boot,
     syncNow, scheduleSync, replaceWithCloud, refreshCloudInfo, disconnect, archives, friendly,
-    _internal: { load, save, token, api, challengeFor, b64url },
+    _internal: { load, save, token, api, challengeFor, b64url, renewGoogle, quietGoogleRenew, renewViaWorker },
   };
 })(typeof window !== 'undefined' ? window : globalThis);
