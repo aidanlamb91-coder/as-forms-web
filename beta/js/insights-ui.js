@@ -32,7 +32,7 @@
       <div id="ins-manage-body"></div>
     </section>
     <section id="view-forecast" class="view hidden" data-testid="view-forecast">
-      <header class="topbar"><button type="button" class="btn ghost back-btn" id="btn-forecast-back">Close</button><h1>Pension forecast</h1></header>
+      <header class="topbar"><button type="button" class="btn ghost back-btn" id="btn-forecast-back">← Back</button><h1>Pension forecast</h1></header>
       <div id="forecast-body"></div>
     </section>`;
     while (d.firstElementChild) app.appendChild(d.firstElementChild);

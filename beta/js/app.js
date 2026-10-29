@@ -344,6 +344,9 @@
     const list = $('#claim-list');
     const empty = $('#claim-empty');
     list.innerHTML = '';
+    renderHero($('#expenses-hero'), state.expenseChip === 'completed' ? [] : filtered,
+      'Active claims · ' + filtered.length,
+      filtered.length === 1 ? escapeHtml((filtered[0].jobNo || 'No job') + ' · ' + AsFmt.range(filtered[0].dateFrom, filtered[0].dateTo)) : '');
     if (!filtered.length && !mileage.length) {
       empty.classList.remove('hidden');
       empty.innerHTML = state.expenseChip === 'completed'
@@ -515,6 +518,36 @@
    * sub-card with a job total, and swipes act on the expense AND its mileage together.
    * Active: right = Complete, left = Delete. Completed: left = Reopen, right = Delete.
    */
+  // ——— 1.2.9-web: hero figures (DESIGN §5: one display-size number per screen + progress bar) ———
+  /** Lines that have a receipt attached, and how many lines in all. */
+  function receiptProgress(claims) {
+    let have = 0, all = 0;
+    for (const c of claims) for (const l of c.lines || []) { all++; if (l.receiptId || l.receiptMeta) have++; }
+    return { have, all };
+  }
+  function heroHtml(o) {
+    const pct = o.max ? Math.max(0, Math.min(100, o.value / o.max * 100)) : 0;
+    return '<div class="hero-label">' + escapeHtml(o.label) + '</div>' +
+      '<div class="hero-value num" data-testid="hero-value">' + escapeHtml(o.big) + '</div>' +
+      (o.help ? '<div class="hero-help">' + o.help + '</div>' : '') +
+      (o.max ? '<div class="hero-progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + o.max + '" aria-valuenow="' + o.value + '" aria-label="' + escapeHtml(o.barLabel || '') + '">' +
+        '<div class="ps-bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="hero-progress-text">' + escapeHtml(o.barText) + (o.badge ? ' <span class="badge warn-badge">' + escapeHtml(o.badge) + '</span>' : '') + '</div></div>' : '');
+  }
+  function renderHero(el, claims, label, help) {
+    if (!el) return;
+    if (!claims.length) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    const total = claims.reduce((t, c) => t + claimTotal(c), 0);
+    const p = receiptProgress(claims);
+    const missing = p.all - p.have;
+    el.classList.remove('hidden');
+    el.innerHTML = heroHtml({
+      label, big: money(total), help,
+      max: p.all, value: p.have, barLabel: 'Receipts attached',
+      barText: p.have + ' of ' + AsFmt.plural(p.all, 'receipt') + ' attached', badge: missing ? missing + ' missing' : '',
+    });
+  }
+
   function claimCard(c, linkedMileage) {
     const ms = linkedMileage || [];
     const btn = document.createElement('div');
@@ -524,8 +557,8 @@
     const expenseTotal = claimTotal(c);
     let html =
       '<p class="title">' + escapeHtml(c.jobNo || 'No job') + '</p>' +
-      '<p class="meta">' + escapeHtml(ukDate(c.dateFrom)) + ' → ' + escapeHtml(ukDate(c.dateTo)) +
-      ' · ' + (c.lines || []).length + ' line(s)</p>' +
+      '<p class="meta">' + escapeHtml(AsFmt.range(c.dateFrom, c.dateTo)) +
+      ' · ' + AsFmt.plural((c.lines || []).length, 'line') + '</p>' +
       '<p class="money">' + money(expenseTotal) + '</p>';
     if (ms.length && globalThis.AsMileageUi) {
       html += ms.map((m) => AsMileageUi.subCardHtml(m)).join('');
@@ -618,6 +651,7 @@
 
   function renderLines(claim) {
     const lines = claim.lines || [];
+    renderHero($('#claim-hero'), lines.length ? [claim] : [], 'Claim total', escapeHtml(AsFmt.range(claim.dateFrom, claim.dateTo)));
     $('#line-count').textContent = String(lines.length);
     const list = $('#line-list');
     const empty = $('#line-empty');
@@ -635,12 +669,16 @@
       const parts = AsExpenseCategory.splitLine(line);
       const catLabel = AsExpenseCategory.labelOf(parts.category);
       const fx = line.foreignCurrency ? ' · ' + escapeHtml(line.foreignCurrency) : '';
+      // 1.2.9-web: a foreign line with no £ yet shows its own currency and an amber "£ to add" (not £0.00)
+      const needsGbp = !!String(line.foreignCurrency || '').trim() && !lineTotal(line);
       btn.innerHTML =
         '<div class="line-card-body">' +
         '<p class="title"><span class="cat-tag cat-' + parts.category.toLowerCase() + '">' + escapeHtml(catLabel) + '</span> ' +
         escapeHtml(parts.detail || (parts.category === 'MISC' ? 'Line ' + (idx + 1) : '')) + '</p>' +
-        '<p class="meta">' + escapeHtml(line.date ? ukDate(line.date) : '') + fx + '</p>' +
-        '<p class="money">' + money(lineTotal(line)) + '</p>' +
+        '<p class="meta">' + escapeHtml(line.date ? AsFmt.day(line.date, true) : '') + (needsGbp ? '' : fx) + '</p>' +
+        (needsGbp
+          ? '<p class="money fx-money" data-testid="fx-line">' + escapeHtml(AsFmt.foreign(line.foreignCurrency)) + ' <span class="badge warn-badge">£ to add</span></p>'
+          : '<p class="money">' + money(lineTotal(line)) + '</p>') +
         '</div><div class="line-thumbs"></div>';
       const thumbs = btn.querySelector('.line-thumbs');
       const lineNo = idx + 1;
@@ -2818,7 +2856,7 @@
 
     // 1.1.0-web: "+ New" asks Expense claim or Mileage claim (js/mileage-ui.js)
     $('#btn-new-claim').addEventListener('click', () => (globalThis.AsMileageUi ? AsMileageUi.newChooser(createClaim) : createClaim()));
-    $('#btn-import-claims').addEventListener('click', () => $('#claim-import-files').click());
+    $('#btn-import-claims').addEventListener('click', () => { setNav('settings'); showImportPage(); }); // 1.2.9-web: heading icon → Settings → Import
     $('#claim-import-files').addEventListener('change', async (ev) => {
       const files = ev.target.files;
       await importExpenseZips(files);
@@ -2976,8 +3014,9 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
     });
     $('#btn-export-odt').addEventListener('click', doExportOdt);
     $('#btn-send-timesheets').addEventListener('click', sendToTimesheets);
+    { const b = $('#btn-tsp-send'); if (b) b.addEventListener('click', sendToTimesheets); } // 1.2.9-web: Send from the preview too
     $('#ts-completed-toggle').addEventListener('change', (ev) => setTsCompleted(ev.target.checked));
-    $('#btn-import-ts').addEventListener('click', () => $('#ts-import-files').click());
+    $('#btn-import-ts').addEventListener('click', () => { setNav('settings'); showImportPage(); });
     $('#ts-import-files').addEventListener('change', async (ev) => {
       const files = Array.from(ev.target.files || []);
       ev.target.value = '';
@@ -3089,13 +3128,18 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
         st.textContent = e.message || String(e);
       }
     });
-    $('#btn-backup-import').addEventListener('click', () => $('#backup-import-file').click());
+    // 1.2.9-web: Restore lives in Settings → Danger zone; Sync and Backup keeps a link to it
+    $('#btn-backup-import').addEventListener('click', () => { showSettings(); setTimeout(() => { const z = $('#danger-zone'); if (z && z.scrollIntoView) z.scrollIntoView({ block: 'center' }); const b = $('#btn-dz-restore'); if (b) b.focus(); }, 50); });
+    $('#btn-dz-restore').addEventListener('click', () => {
+      if (!confirm('Restore a backup? It replaces all claims, timesheets and receipts in this browser. You will pick the file next.')) return;
+      $('#backup-import-file').click();
+    });
     $('#backup-import-file').addEventListener('change', async (ev) => {
       const file = ev.target.files && ev.target.files[0];
       ev.target.value = '';
       if (!file) return;
       if (!confirm('Replaces all claims, timesheets and receipts in this browser.')) return;
-      const st = $('#backup-status');
+      const st = $('#restore-status');
       st.classList.remove('error');
       st.textContent = 'Importing…';
       try {
@@ -3239,7 +3283,7 @@ $('#btn-ocr-apply').addEventListener('click', (ev) => {
   globalThis.AsApp = {
     $, $$, state, toast, toastUndo, escapeHtml, money, claimTotal, normalizeJob, digitsOnly, isValidJob,
     ukDate, ukShort, showView, setNav, navBack, wrapSwipeRow, showEmailPreview, openSheet,
-    showExpenses, refreshClaimList, openClaim, showSettings, updateListHeaders, refreshSettingsSubtitles,
+    showExpenses, refreshClaimList, openClaim, openTimesheet: (id) => openTimesheet(id), currentTimesheetId: () => state.tsId, showSettings, updateListHeaders, refreshSettingsSubtitles,
     updateBackupBanner, lastBackupText, versionLabel, showTimesheets: () => showTimesheets(),
     registerView(name, selector) { extraViews[name] = selector; },
     onBoot(fn) { bootHooks.push(fn); },

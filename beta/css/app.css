@@ -1162,3 +1162,122 @@ body.kb-open .toast { bottom: calc(var(--kb-inset, 0px) + 12px); }
 .ins-dot { width: 10px; height: 10px; border-radius: 50%; }
 @media (prefers-reduced-motion: reduce) { .ins-donut-seg { animation: none; transition: none; } }
 .ins-chart svg { max-height: 240px; } .fc-chart { max-height: 300px; }
+
+/* ——— 1.2.9-web layout pass (DESIGN.md §3–§9). --accent stays the existing AS red (header/nav/brand);
+   DESIGN's green accent is --green so nothing that used --accent changes colour by accident. ——— */
+:root {
+  --green: #1b5e40; --green-soft: #e6f0eb;
+  --warn: #8a5a00; --warn-soft: #fff4dc;
+  --danger-soft: #fdecee; --line-strong: #8f8f94;
+  --fs-display: 2rem; --fs-stat: 1.375rem;
+  --float-shadow: 0 6px 20px rgba(0,0,0,.16);
+  --bar-h: 72px;
+}
+.num, .money, .hero-value, .ps-net, .pb-line, .pb-net, .ins-big, .tile-value { font-variant-numeric: tabular-nums; }
+
+/* Hero figure: small label, one display-size number, helper, optional progress bar */
+.hero-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin: 8px 0 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.hero-card.hidden { display: none; }
+.hero-label { font-size: .875rem; color: var(--muted); }
+.hero-value { font-size: var(--fs-display); line-height: 1.1; font-weight: 750; margin: 2px 0; overflow-wrap: anywhere; }
+.hero-help { font-size: .875rem; color: var(--muted); }
+.hero-progress { margin-top: 10px; }
+.hero-progress .ps-bar { height: 8px; border-radius: 4px; }
+.hero-progress .ps-bar i { background: var(--green); }
+.hero-progress-text { font-size: .875rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.warn-badge, .ok-badge { display: inline-block; margin-left: 0; font-size: .75rem; font-weight: 600; line-height: 1.3; padding: 2px 8px; border-radius: 8px; white-space: nowrap; }
+.warn-badge { background: var(--warn-soft); color: var(--warn); }
+.ok-badge { background: #e7f5ed; color: var(--ok); }
+.fx-money { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
+
+/* Pay strip is now the timesheet hero at the top — static, never floats over the export card (item 3) */
+.pay-strip.hero { position: static; display: block; box-shadow: 0 1px 2px rgba(0,0,0,.04); border-radius: 16px; padding: 16px; margin: 8px 0 12px; z-index: auto; }
+.pay-strip.hero .ps-bar i { background: var(--green); }
+.pay-strip.hero .hero-progress-text { justify-content: space-between; }
+
+/* Sticky bottom action bar above the nav (respects the safe area) */
+.action-bar {
+  position: sticky; bottom: calc(var(--nav-h) + var(--safe-b) + 8px); z-index: 20;
+  display: flex; gap: 8px; margin: 16px 0 0; padding: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--float-shadow);
+}
+.action-bar .btn { min-height: 48px; margin: 0; font-weight: 600; border-radius: 12px; }
+.action-bar .btn.primary { flex: 2; }
+.action-bar .btn.secondary { flex: 1; background: var(--green-soft); border-color: transparent; color: var(--ink); }
+.export-quiet { margin-top: 12px; }
+.export-quiet:empty { display: none; }
+
+/* Button kinds (item 8): secondary = soft fill, ghost, destructive outline, icon button; focus ring green */
+.btn { min-height: 44px; font-weight: 600; }
+.btn.secondary { background: var(--green-soft); border-color: transparent; color: var(--ink); }
+.btn.danger, .btn.danger-outline { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.btn.danger-fill { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn:focus-visible, .icon-btn:focus-visible, .fab:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.icon-btn { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); cursor: pointer; padding: 0; font-size: 1.1rem; }
+
+/* FAB (item 6) */
+.fab {
+  position: fixed; z-index: 30; width: 56px; height: 56px; border-radius: 50%;
+  right: max(16px, calc((100vw - 640px) / 2 + 16px));
+  bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
+  background: var(--primary); color: #fff; border: 0; box-shadow: var(--float-shadow);
+  font-size: 1.75rem; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+}
+.view.hidden .fab { display: none; }
+.has-fab { padding-bottom: 80px; }
+.toolbar .head-actions { display: flex; gap: 8px; align-items: center; }
+
+/* Settings Danger zone (item 4) */
+.danger-zone { border: 1px solid #f2c4ca; background: var(--surface); border-radius: 16px; padding: 16px; margin: 24px 0 12px; }
+.danger-zone h3 { color: var(--danger); margin: 0 0 4px; font-size: 1.0625rem; }
+.danger-zone .dz-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--border); }
+.danger-zone .dz-row:first-of-type { border-top: 0; }
+.danger-zone .dz-text { min-width: 0; font-size: .875rem; color: var(--muted); }
+.danger-zone .dz-text b { display: block; color: var(--ink); font-size: 1rem; }
+.danger-zone .btn { flex-shrink: 0; }
+
+/* Month picker (item 5) */
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+.month-nav .month-title { flex: 1; min-height: 44px; background: none; border: 0; font: inherit; font-size: 1.25rem; font-weight: 700; cursor: pointer; border-radius: 12px; color: var(--ink); }
+.month-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.month-grid button { min-height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font: inherit; cursor: pointer; }
+.month-grid button.on { background: var(--green); color: #fff; border-color: var(--green); }
+.year-step { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 700; }
+
+/* Drop zone instead of raw "Choose File" (item 7) */
+.drop-zone { border: 2px dashed var(--line-strong); border-radius: 12px; padding: 14px; text-align: center; background: #fafafa; }
+.drop-zone.drag { border-color: var(--green); background: var(--green-soft); }
+.drop-zone .dz-title { font-weight: 600; margin: 0 0 8px; }
+.drop-zone .dz-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.drop-zone .dz-file { font-size: .875rem; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
+.drop-zone input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* Forecast: green sliders/switches (item 9) */
+input[type=range] { accent-color: var(--green); }
+input[type=checkbox] { accent-color: var(--green); }
+.toggle-control input:checked + .switch { background: var(--green); border-color: var(--green); }
+
+/* States (item 13) */
+.empty { border: 2px dashed var(--border); border-radius: 16px; padding: 20px 16px; text-align: center; color: var(--muted); background: transparent; }
+.offline-banner { position: sticky; top: 0; z-index: 40; background: var(--warn-soft); color: var(--warn); font-size: .875rem; font-weight: 600; text-align: center; padding: 6px 12px; }
+.offline-banner.hidden { display: none; }
+.error-card { border: 1px solid #f2c4ca; background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 12px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.skeleton { border-radius: 16px; height: 72px; margin: 8px 0; background: linear-gradient(90deg, #ececee 25%, #f6f6f7 50%, #ececee 75%); background-size: 200% 100%; animation: sk 1.2s linear infinite; }
+@keyframes sk { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* Sync "!" badge amber (item 14) */
+.cloud-dot.warn, .cloud-dot { background: #f4b400; }
+
+/* Insights: smaller tiles under the YTD hero (item 12) */
+.ins-tile-value, .ins-card .ins-big.tile { font-size: var(--fs-stat); }
+.danger-zone .dz-row.hidden { display: none; }
+#form-ts-meta .month-raw { display: none; }
+#form-ts-meta .month-nav { margin-top: 0; }
+.month-sheet .icon-btn { font-size: 1.4rem; }
+.fx-money { justify-content: flex-start; }
+.danger-zone .status:empty { display: none; }
+#backup-settings-badge.badge.warn, .badge.warn { background: #f4b400; color: #3a2a00; }
+.ins-big { font-size: var(--fs-display); line-height: 1.1; font-weight: 750; }
+.ins-card-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ins-card-value, .ins-legend-amt, .ins-side, .kv span:last-child { font-variant-numeric: tabular-nums; }

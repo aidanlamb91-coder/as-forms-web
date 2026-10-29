@@ -242,14 +242,17 @@
       const p = potsF[potsF.length - 1];
       const paid = paidInBy(p.date);
       const g = r2(p.value - paid);
-      growth = [g, Math.abs(paid) > 0.005 ? g / paid * 100 : null];
+      growth = [g, Math.abs(paid) >= 1 ? g / paid * 100 : null]; // 1.2.9-web: ~£0 paid in → no % (shown as +n/a)
     }
     return { paidIn: cum, pots: potsF, paidInBy, potOn, growth };
   }
   function growthLabel(g) {
     const sign = g[0] < 0 ? '−' : '+';
     const money = sign + '£' + Math.abs(g[0]).toLocaleString('en-GB', { maximumFractionDigits: 0 });
-    return g[1] == null ? money : money + ' · ' + sign + Math.abs(g[1]).toFixed(1) + '%';
+    // 1.2.9-web: "+n/a" when nothing (≈£0) was paid in; huge percentages capped at 999%
+    if (g[1] == null || !isFinite(g[1])) return money + ' · +n/a';
+    const a = Math.abs(g[1]);
+    return money + ' · ' + sign + (a > 999 ? '999%+' : a.toFixed(1) + '%');
   }
 
   global.AsInsights = { PAY_DAY, taxYearOf, seasonOf, paidBy, estimatePoint, makeEstimate, employerPensionOrEstimate, dedupe, payslipFor,
