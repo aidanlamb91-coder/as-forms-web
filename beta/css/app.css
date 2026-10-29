@@ -1288,3 +1288,7 @@ input[type=checkbox] { accent-color: var(--green); }
 .ins-big { font-size: var(--fs-display); line-height: 1.1; font-weight: 750; }
 .ins-card-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ins-card-value, .ins-legend-amt, .ins-side, .kv span:last-child { font-variant-numeric: tabular-nums; }
+/* 1.2.9-web build 6: one cloud slot. .icon-btn (inline-flex) was overriding the grid above, so the
+   tick sat to the RIGHT of the arrow. Stack both layers in the same fixed box, centred. */
+.icon-btn.cloud-badge { position: relative; display: inline-flex; width: 44px; height: 44px; min-width: 44px; padding: 0; overflow: hidden; flex: 0 0 44px; }
+.icon-btn.cloud-badge .cloud-ico { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; }
