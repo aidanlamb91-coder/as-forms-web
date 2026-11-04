@@ -1,6 +1,8 @@
 # AS Forms — Web (GitHub Pages)
 
-Stable **1.2.10-web** (build 1) at site root (promoted 4 Nov 2026 with Aidan's approval; was **1.2.9-web** build 6, kept at `/old-1.2.9/` and tag `web-1.2.9-root`). 1.2.10-web adds the Sal Sac switch on fixed deductions (salary sacrifice comes off before tax and NI, tagged in the list and breakdown).
+Stable **1.2.11-web** (build 1) at site root (promoted 4 Nov 2026 with Aidan's approval; was **1.2.10-web**, kept at `/old-1.2.10/` and tag `web-1.2.10-root`). 1.2.11-web moves private healthcare under Deductions (after tax) and migrates old healthcare history.
+
+Earlier: 1.2.10-web (promoted 4 Nov 2026; was **1.2.9-web** build 6, kept at `/old-1.2.9/` and tag `web-1.2.9-root`). 1.2.10-web adds the Sal Sac switch on fixed deductions (salary sacrifice comes off before tax and NI, tagged in the list and breakdown).
 
 Earlier: 1.2.9-web at site root (promoted 29 Oct 2026; was **1.2.8-web**, kept at `/old-1.2.8/` and tag `web-1.2.8-root`). 1.2.9-web adds the layout changes, the Settings section title change (no "Danger zone"), the Expenses tab fix and the single header cloud that shows a green tick in place after a sync.
 
@@ -10,7 +12,7 @@ Earlier: 1.2.2-web (promoted 17 Oct 2026; was **1.1.0-web**, kept at `/old-1.1.0
 
 - Main site: https://aidanlamb91-coder.github.io/as-forms-web/
 - Beta: https://aidanlamb91-coder.github.io/as-forms-web/beta/ (own storage names, `beta:` prefix)
-- Rollback copies: `/old-1.2.9/`, `/old-1.2.8/`, `/old-1.2.2/`, `/old-1.1.0/`, `/old-0.3.15/` (tags `web-1.2.9-root`, `web-1.2.8-root`, `web-1.2.2-root`, `web-1.1.0-root`, `web-0.3.15-root`). They are older builds that use the main site's storage names, so they show the same data as the main site; Clear data on the main site empties them too. The main site's service worker never answers for them.
+- Rollback copies: `/old-1.2.10/`, `/old-1.2.9/`, `/old-1.2.8/`, `/old-1.2.2/`, `/old-1.1.0/`, `/old-0.3.15/` (tags `web-1.2.10-root`, `web-1.2.9-root`, `web-1.2.8-root`, `web-1.2.2-root`, `web-1.1.0-root`, `web-0.3.15-root`). They are older builds that use the main site's storage names, so they show the same data as the main site; Clear data on the main site empties them too. The main site's service worker never answers for them.
 
 ## Repositories
 - **This repo (public):** the web app served by GitHub Pages (root = stable, `beta/` = beta) **and the public Android APK downloads** — every `android-vX.Y.Z` release stays here so phone links keep working, e.g. https://github.com/aidanlamb91-coder/as-forms-web/releases/download/android-v1.1.0/AS-Forms-1.1.0.apk

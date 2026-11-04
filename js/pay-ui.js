@@ -72,7 +72,6 @@
   const PENSION_BAND_INFO = 'Pension is worked out on qualifying earnings: only the part of your monthly pay between £520 and £4,189.17 counts. ' +
     'Your % is taken from that part (pay above £4,189.17 adds nothing), rounded down to the penny like payroll. ' +
     'It is a salary sacrifice, so it comes off your pay before tax, NI and student loan.';
-  const HEALTH = /AXA|PPP|BUPA|health|medical|vitality/i;
 
   // ——— Settings → Pay view ———
   const open = new Set(); // expanded bars / pot years (kept while the page is open)
@@ -111,16 +110,6 @@
     for (const p of slips) if (p.code && (!out.length || out[out.length - 1].value !== p.code)) out.push({ from: p.date, value: p.code, source: 'Payslip' });
     return out.concat(s.taxCodes.map((t) => ({ from: t.from, value: t.code, source: 'Manual' }))).sort((a, b) => (a.from < b.from ? 1 : -1));
   }
-  function healthHistory(s, slips) {
-    const out = [];
-    for (const p of slips) {
-      const l = p.deductions.filter((d) => HEALTH.test(d.label));
-      if (!l.length) continue;
-      const v = gbp(Math.abs(l.reduce((a, d) => a + d.amount, 0)));
-      if (!out.length || out[out.length - 1].value !== v) out.push({ from: p.date, value: v, source: 'Payslip' });
-    }
-    return out.concat(s.healthcare.map((h) => ({ from: h.from, value: gbp(h.monthly), source: 'Manual' }))).sort((a, b) => (a.from < b.from ? 1 : -1));
-  }
 
   async function showPay() {
     injectViews();
@@ -137,7 +126,6 @@
     const curPct = C().currentPensionPct(s);
     const pctSub = s.pensionRates.length ? [num(s.pensionPct) + '%'].concat(s.pensionRates.slice().sort((a, b) => (a.from < b.from ? -1 : 1)).map((r) => num(r.pct) + '% from ' + dShow(r.from))).join(' → ') : null;
     const taxH = taxHistory(s, slips);
-    const healthH = healthHistory(s, slips);
     const pots = P().pots(s);
     const latest = pots.reduce((b, x) => (!b || x.date > b.date ? x : b), null);
     const years = Array.from(new Set(pots.map((p) => p.date.slice(0, 4)))).sort().reverse();
@@ -152,7 +140,6 @@
         ${row('data-edit="pension"', 'Pension (sal. sac.)', num(curPct) + '%', pctSub, 'band')}
         ${row('data-edit="loan"', 'Student loan', C().loanLabel(s.loanPlan))}
         ${expander('taxcode', 'Tax code', C().currentTaxCode(s), taxH.map((h, i) => row(`data-tax="${i}"`, dShow(h.from), h.value, h.source)).join('') + addRow('data-add="tax"', '+ Add tax code'))}
-        ${expander('healthcare', 'Private healthcare', healthH.length ? healthH[0].value + ' / mo' : 'None', healthH.map((h, i) => row(`data-health="${i}"`, dShow(h.from), h.value + ' / mo', h.source)).join('') + addRow('data-add="health"', '+ Add healthcare amount'))}
       </div>
       <h2 class="pay-sec">Pension</h2>
       <div class="pay-card">
@@ -185,7 +172,7 @@
         ${row('data-edit="ytd"', 'Start from payslip YTD', s.ytd ? 'P' + s.ytd.period + ' ' + s.ytd.year + '/' + String((s.ytd.year + 1) % 100).padStart(2, '0') + ' ›' : 'Off ›', 'Use figures from your latest payslip')}
       </div>
       <input type="file" id="pay-statement-file" accept="application/pdf,.pdf" class="hidden" />`;
-    wireBody(body, s, slips, taxH, healthH, pots);
+    wireBody(body, s, slips, taxH, pots);
     const sub = document.getElementById('sb-pay-sub');
     if (sub) sub.textContent = C().configured(s) ? short(s.annualSalary) + ' / yr · ' + short(s.dayRate) + ' / day' : 'Rates for the pay estimate';
   }
@@ -196,7 +183,7 @@
     return save({ ...s, potValues: Array.from(m.values()).sort((a, b) => (a.date < b.date ? -1 : 1)), pensionValue: null, pensionValueDate: null });
   };
 
-  function wireBody(body, s, slips, taxH, healthH, pots) {
+  function wireBody(body, s, slips, taxH, pots) {
     body.querySelectorAll('[data-exp]').forEach((b) => { b.onclick = (e) => {
       if (e.target.closest('[data-info]')) return;
       const id = b.getAttribute('data-exp'); if (open.has(id)) open.delete(id); else open.add(id); renderPay();
@@ -228,15 +215,6 @@
         (d, c) => save({ ...s, taxCodes: s.taxCodes.filter((t) => t.from !== h.from && t.from !== d).concat({ from: d, code: c }) }));
     });
     on('[data-add="tax"]', () => taxDlg(firstOfMonth(), C().currentTaxCode(s), null, (d, c) => save({ ...s, taxCodes: s.taxCodes.filter((t) => t.from !== d).concat({ from: d, code: c }) })));
-    const healthDlg = (cur, onDelete, done) => dialog('Private healthcare (from date)', [{ label: '£ per month', value: cur ? num(cur.monthly) : '' }, { label: 'From (d/m/yyyy)', value: dFmt(cur ? cur.from : firstOfMonth()), numeric: false }], (v) => {
-      const x = parseMoney(v[0]); const d = parseDate(v[1]); if (x == null || !d) return false; done({ from: d, monthly: x }); return true;
-    }, { onDelete });
-    on('[data-health]', (b) => {
-      const h = healthH[+b.getAttribute('data-health')]; if (!h || h.source !== 'Manual') return;
-      const cur = s.healthcare.find((x) => x.from === h.from); if (!cur) return;
-      healthDlg(cur, () => save({ ...s, healthcare: s.healthcare.filter((x) => x !== cur) }), (n) => save({ ...s, healthcare: s.healthcare.filter((x) => x !== cur && x.from !== n.from).concat(n) }));
-    });
-    on('[data-add="health"]', () => healthDlg(null, null, (n) => save({ ...s, healthcare: s.healthcare.filter((x) => x.from !== n.from).concat(n) })));
     const potDlg = (pv, onDelete, done) => dialog(pv ? 'Edit pot value' : 'Add pot value', [{ label: '£ pot value', value: pv ? num(pv.value) : '' }, { label: 'As of (d/m/yyyy)', value: dFmt(pv ? pv.date : today()), numeric: false }], (v) => {
       const x = parseMoney(v[0]); const d = parseDate(v[1]); if (x == null || !d || d > today()) return false;
       done({ date: d, value: x, source: pv && pv.value === x && pv.date === d ? pv.source : 'Manual' }); return true;

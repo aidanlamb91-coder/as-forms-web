@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="470" viewBox="0 0 300 470">
+  <!-- AS Forms tutorial: a made-up demo receipt. Not a real business or purchase. -->
+  <defs>
+    <style>
+      text { font-family: "Courier New", Courier, "DejaVu Sans Mono", monospace; fill: #222; font-size: 13px; }
+      .c { text-anchor: middle; }
+      .r { text-anchor: end; }
+      .h { font-size: 22px; font-weight: 700; font-family: Georgia, "Times New Roman", serif; }
+      .b { font-weight: 700; }
+      .s { font-size: 11px; fill: #555; }
+      .demo { font-size: 10.5px; font-weight: 700; fill: #b00020; letter-spacing: .5px; }
+    </style>
+  </defs>
+  <path d="M0 0H300V458l-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12-10-12-10 12L0 458Z" fill="#fffdf8"/>
+  <text x="150" y="40" class="c h">Demo Café</text>
+  <text x="150" y="62" class="c s">12 Sample Lane, Exampleton</text>
+  <text x="150" y="77" class="c s">ZZ99 9ZZ · Tel 01234 000000</text>
+  <text x="150" y="92" class="c s">VAT No. GB 000 0000 00</text>
+  <line x1="20" x2="280" y1="112" y2="112" stroke="#999" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="20" y="134">Date 15/09/2026</text>
+  <text x="280" y="134" class="r">12:34</text>
+  <text x="20" y="152">Table 4 · Till 1</text>
+  <line x1="20" x2="280" y1="166" y2="166" stroke="#999" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="20" y="192">Flat white</text>
+  <text x="280" y="192" class="r">3.20</text>
+  <text x="20" y="212">Bacon roll</text>
+  <text x="280" y="212" class="r">4.80</text>
+  <text x="20" y="232">Fruit pot</text>
+  <text x="280" y="232" class="r">4.50</text>
+  <line x1="20" x2="280" y1="250" y2="250" stroke="#999" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="20" y="278" class="b" style="font-size:16px">TOTAL</text>
+  <text x="280" y="278" class="r b" style="font-size:16px">£12.50</text>
+  <text x="20" y="300">VAT 20% incl.</text>
+  <text x="280" y="300" class="r">£2.08</text>
+  <text x="20" y="318">Net</text>
+  <text x="280" y="318" class="r">£10.42</text>
+  <line x1="20" x2="280" y1="336" y2="336" stroke="#999" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="20" y="360">Card ****0000</text>
+  <text x="280" y="360" class="r">£12.50</text>
+  <text x="150" y="392" class="c">Thank you!</text>
+  <rect x="34" y="410" width="232" height="22" rx="4" fill="none" stroke="#b00020" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="150" y="425" class="c demo">DEMO — NOT A REAL RECEIPT</text>
+</svg>
