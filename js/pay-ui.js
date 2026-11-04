@@ -33,7 +33,9 @@
   /** fields: [{label, value, numeric}]; onSave(values) → true when valid. */
   function dialog(title, fields, onSave, opts) {
     opts = opts || {};
-    const html = `<div class="sheet pay-dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-grip"></div><h2>${esc(title)}</h2>
+    const html = `<div class="sheet pay-dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-grip"></div>${opts.titleSwitch
+        ? `<div class="pay-dlg-head"><h2>${esc(title)}</h2><label class="toggle-control"><span>${esc(opts.titleSwitch.label)}</span><input type="checkbox" data-testid="${opts.titleSwitch.testid}" ${opts.titleSwitch.checked ? 'checked' : ''} /><span class="switch" aria-hidden="true"></span></label></div>`
+        : `<h2>${esc(title)}</h2>`}
       ${opts.note ? `<p class="hint">${esc(opts.note)}</p>` : ''}
       ${fields.map((f, i) => `<label>${esc(f.label)}<input type="text" data-f="${i}" value="${esc(f.value == null ? '' : f.value)}" ${f.numeric !== false ? 'inputmode="decimal"' : ''} autocomplete="off" /></label>`).join('')}
       <p class="pay-err hidden" role="alert">${esc(opts.error || 'Please check the values (dates as d/m/yyyy).')}</p>
@@ -44,12 +46,13 @@
     const first = el.querySelector('input'); if (first) setTimeout(() => first.focus(), 50);
     el.querySelector('[data-act="save"]').onclick = async () => {
       const vals = Array.from(el.querySelectorAll('[data-f]')).map((i) => i.value);
+      const sw = el.querySelector('.pay-dlg-head input');
       let ok = false;
-      try { ok = await onSave(vals); } catch (e) { console.error(e); }
+      try { ok = await onSave(vals, sw ? sw.checked : false); } catch (e) { console.error(e); }
       if (ok) sh.close(); else el.querySelector('.pay-err').classList.remove('hidden');
     };
     el.querySelectorAll('input').forEach((i) => i.addEventListener('input', () => el.querySelector('.pay-err').classList.add('hidden')));
-    el.querySelectorAll('input').forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.querySelector('[data-act="save"]').click(); }));
+    el.querySelectorAll('input[data-f]').forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.querySelector('[data-act="save"]').click(); }));
     const del = el.querySelector('[data-act="delete"]');
     if (del) del.onclick = async () => { await opts.onDelete(); sh.close(); };
     return sh;
@@ -94,7 +97,8 @@
     }
   }
 
-  const row = (attrs, label, value, sub, infoBtn) => `<button type="button" class="pay-row" ${attrs}><span class="pr-main"><span class="pr-label">${label}${infoBtn ? ` <span class="pay-info" role="button" tabindex="0" data-info="${infoBtn}" aria-label="What is this?">?</span>` : ''}</span>${sub ? `<span class="pr-sub">${esc(sub)}</span>` : ''}</span><span class="pr-val">${esc(value)}</span></button>`;
+  const SAL_SAC_TAG = ' <span class="salsac-tag" data-testid="salsac-tag">Sal Sac</span>';
+  const row = (attrs, label, value, sub, infoBtn, tag) => `<button type="button" class="pay-row" ${attrs}><span class="pr-main"><span class="pr-label">${label}${tag ? SAL_SAC_TAG : ''}${infoBtn ? ` <span class="pay-info" role="button" tabindex="0" data-info="${infoBtn}" aria-label="What is this?">?</span>` : ''}</span>${sub ? `<span class="pr-sub">${esc(sub)}</span>` : ''}</span><span class="pr-val">${esc(value)}</span></button>`;
   const addRow = (attrs, text) => `<button type="button" class="pay-add" ${attrs}>${esc(text)}</button>`;
   const expander = (id, label, value, inner) => {
     const o = open.has(id);
@@ -169,7 +173,7 @@
       </div>
       <h2 class="pay-sec">Fixed deductions</h2>
       <div class="pay-card">
-        ${s.fixed.map((d, i) => row(`data-fixed="${i}"`, esc(d.name), gbp(d.monthly) + ' / mo', d.from ? 'from ' + dShow(d.from) : null)).join('')}
+        ${s.fixed.map((d, i) => row(`data-fixed="${i}"`, esc(d.name), gbp(d.monthly) + ' / mo', d.from ? 'from ' + dShow(d.from) : null, null, d.salSac)).join('')}
         ${addRow('data-add="fixed"', '+ Add deduction')}
       </div>
       <h2 class="pay-sec">Pay rises</h2>
@@ -257,11 +261,14 @@
     on('[data-add="statement"]', () => document.getElementById('pay-statement-file').click());
     const f = document.getElementById('pay-statement-file');
     if (f) f.onchange = async () => { const file = f.files && f.files[0]; f.value = ''; if (file && global.AsInsightsUi) await global.AsInsightsUi.importStatement(file); };
-    const fixedDlg = (d, onDelete, done) => dialog('Fixed deduction (after tax)', [{ label: 'Name', value: d ? d.name : '', numeric: false }, { label: '£ per month', value: d ? num(d.monthly) : '' }, { label: 'From (d/m/yyyy, optional)', value: d && d.from ? dFmt(d.from) : '', numeric: false }], (v) => {
+    const fixedDlg = (d, onDelete, done) => dialog('Fixed deduction', [{ label: 'Name', value: d ? d.name : '', numeric: false }, { label: '£ per month', value: d ? num(d.monthly) : '' }, { label: 'From (d/m/yyyy, optional)', value: d && d.from ? dFmt(d.from) : '', numeric: false }], (v, salSac) => {
       const amt = parseMoney(v[1]); const from = v[2].trim() ? parseDate(v[2]) : null;
       if (!v[0].trim() || amt == null || (v[2].trim() && !from)) return false;
-      done(from ? { name: v[0].trim(), monthly: amt, from } : { name: v[0].trim(), monthly: amt }); return true;
-    }, { onDelete });
+      const n = { name: v[0].trim(), monthly: amt };
+      if (from) n.from = from;
+      if (salSac) n.salSac = true; // on = before tax and NI, like the pension
+      done(n); return true;
+    }, { onDelete, titleSwitch: { label: 'Sal Sac', testid: 'salsac-switch', checked: !!(d && d.salSac) } });
     on('[data-fixed]', (b) => { const i = +b.getAttribute('data-fixed'); fixedDlg(s.fixed[i], () => save({ ...s, fixed: s.fixed.filter((_, j) => j !== i) }), (n) => save({ ...s, fixed: s.fixed.map((o, j) => (j === i ? n : o)) })); });
     on('[data-add="fixed"]', () => fixedDlg(null, null, (n) => save({ ...s, fixed: s.fixed.concat(n) })));
     const riseDlg = (r, onDelete, done) => dialog('Pay rise', [{ label: 'Effective date (d/m/yyyy)', value: r ? dFmt(r.date) : '', numeric: false }, { label: 'New salary £ / yr', value: r ? num(r.salary) : '' }, { label: 'New day rate £', value: r ? num(r.dayRate) : '' }], (v) => {
@@ -294,7 +301,7 @@
   }
 
   // ——— Timesheet pay strip + breakdown (Android PayEstimateStrip / PayBreakdownSheet / PayslipSheet) ———
-  const lineHtml = (l, v, bold) => `<div class="pb-line${bold ? ' bold' : ''}"><span>${esc(l)}</span><span>${esc(v)}</span></div>`;
+  const lineHtml = (l, v, bold, tag) => `<div class="pb-line${bold ? ' bold' : ''}"><span>${esc(l)}${tag ? SAL_SAC_TAG : ''}</span><span>${esc(v)}</span></div>`;
   const secH = (t) => `<h3 class="pb-sec">${esc(t)}</h3>`;
   const tag = '<span class="est-tag">Estimate</span>';
 
@@ -348,7 +355,7 @@
       ${normal.length ? normal.map((l) => lineHtml('Offshore days ' + l.days + ' × ' + short(l.rate), gbp(l.amount))).join('') : lineHtml('Offshore days 0', gbp(0))}
       ${dbl.length ? dbl.map((l) => lineHtml('Double-rate days ' + l.days + ' × ' + short(l.payRate), gbp(l.amount))).join('') : lineHtml('Double-rate days 0', gbp(0))}
       <hr/>${lineHtml('Gross', gbp(r.gross), true)}
-      ${secH('Deductions')}${lineHtml('Pension (sal. sac. ' + num(i.pensionPct) + '% of pay £520–£4,189.17)', gbp(r.pension))}
+      ${secH('Deductions')}${lineHtml('Pension (sal. sac. ' + num(i.pensionPct) + '% of pay £520–£4,189.17)', gbp(r.pension))}${(i.salSacFixed || []).map((f) => lineHtml(f[0], gbp(f[1]), false, true)).join('')}
       ${lineHtml(r.tax < 0 ? 'Tax refund' : 'Tax', gbp(Math.abs(r.tax)))}${lineHtml('NI', gbp(r.ni))}
       ${i.loanPlan !== 'NONE' ? lineHtml('Student loan ' + C().loanLabel(i.loanPlan), gbp(r.studentLoan)) : ''}
       ${i.fixed.map((f) => lineHtml(f[0], gbp(f[1]))).join('')}
