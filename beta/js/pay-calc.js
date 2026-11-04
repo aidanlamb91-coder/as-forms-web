@@ -132,12 +132,23 @@
   // ——— settings ———
   function defaults() {
     return { dayRate: 0, annualSalary: 0, pensionPct: 7.5, pensionRates: [], loanPlan: 'NONE', taxCodes: [], fixed: [], rises: [],
-      ytd: null, pensionValue: null, pensionValueDate: null, insightsOrder: [], potValues: [], statements: [], healthcare: [], forecasts: [] };
+      ytd: null, pensionValue: null, pensionValueDate: null, insightsOrder: [], potValues: [], statements: [], forecasts: [] };
   }
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : (v != null && v !== '' && isFinite(Number(v)) ? Number(v) : d));
   const isIso = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const arr = (a) => (Array.isArray(a) ? a.filter((x) => x && typeof x === 'object') : []);
 
+  /** 1.2.11-web: old separate "healthcare" history → after-tax fixed deductions named "Private healthcare" (no duplicates). */
+  const HEALTH_NAME = 'Private healthcare';
+  function migrateHealthcare(o) {
+    const have = new Set(arr(o.fixed).filter((r) => r.name === HEALTH_NAME).map((r) => (isIso(r.from) ? r.from : '')));
+    const out = [];
+    for (const r of arr(o.healthcare)) {
+      if (!isIso(r.from) || have.has(r.from)) continue;
+      have.add(r.from); out.push({ name: HEALTH_NAME, monthly: num(r.monthly, 0), from: r.from });
+    }
+    return out;
+  }
   /** Android PaySettingsJson.fromJson: anything missing or bad → defaults (bad rows dropped). */
   function normalize(o) {
     const d = defaults();
@@ -155,7 +166,7 @@
         if (isIso(r.from)) f.from = r.from;
         if (r.salSac === true) f.salSac = true; // missing = after tax (Android optBoolean default)
         return f;
-      }),
+      }).concat(migrateHealthcare(o)),
       rises: arr(o.rises).filter((r) => isIso(r.date)).map((r) => ({ date: r.date, salary: num(r.salary, 0), dayRate: num(r.dayRate, 0) })),
       ytd,
       pensionValue: o.pensionValue != null && isFinite(o.pensionValue) ? Number(o.pensionValue) : null,
@@ -163,7 +174,6 @@
       insightsOrder: Array.isArray(o.insightsOrder) ? o.insightsOrder.filter((x) => typeof x === 'string') : [],
       potValues: arr(o.potValues).filter((r) => isIso(r.date) && isFinite(r.value)).map((r) => ({ date: r.date, value: Number(r.value), source: r.source || 'Manual' })),
       statements: arr(o.statements).filter((r) => isIso(r.start) && isIso(r.end)),
-      healthcare: arr(o.healthcare).filter((r) => isIso(r.from)).map((r) => ({ from: r.from, monthly: num(r.monthly, 0) })),
       forecasts: arr(o.forecasts),
     };
   }
@@ -175,7 +185,6 @@
     if (s.pensionValue != null && s.pensionValueDate) { o.pensionValue = s.pensionValue; o.pensionValueDate = s.pensionValueDate; }
     if (s.potValues.length) o.potValues = s.potValues;
     if (s.statements.length) o.statements = s.statements;
-    if (s.healthcare.length) o.healthcare = s.healthcare;
     if (s.forecasts.length) o.forecasts = s.forecasts;
     if (s.insightsOrder.length) o.insightsOrder = s.insightsOrder;
     if (s.ytd) o.ytd = s.ytd;
