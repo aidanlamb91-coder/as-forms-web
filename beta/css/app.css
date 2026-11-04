@@ -1292,3 +1292,11 @@ input[type=checkbox] { accent-color: var(--green); }
    tick sat to the RIGHT of the arrow. Stack both layers in the same fixed box, centred. */
 .icon-btn.cloud-badge { position: relative; display: inline-flex; width: 44px; height: 44px; min-width: 44px; padding: 0; overflow: hidden; flex: 0 0 44px; }
 .icon-btn.cloud-badge .cloud-ico { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; }
+/* 1.2.10-web: Sal Sac switch on the dialog title row + tag */
+.pay-dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pay-dlg-head h2 { margin-right: auto; }
+.salsac-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--ok); border-radius: 6px; color: var(--ok); font-size: .7rem; font-weight: 700; line-height: 1.5; vertical-align: middle; }
+.pay-dialog .pay-dlg-head .toggle-control { display: inline-flex; margin: 0; }
+.pay-dialog .pay-dlg-head .toggle-control input { width: auto; }
+.pay-dialog .pay-dlg-head .toggle-control { flex-direction: row; }
+.pay-dialog .pay-dlg-head .toggle-control > span:first-child { display: inline; margin: 0; }

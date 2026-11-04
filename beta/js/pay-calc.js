@@ -150,7 +150,12 @@
       pensionRates: arr(o.pensionRates).filter((r) => isIso(r.from)).map((r) => ({ from: r.from, pct: num(r.pct, 0) })),
       loanPlan: loan,
       taxCodes: arr(o.taxCodes).filter((r) => isIso(r.from) && typeof r.code === 'string').map((r) => ({ from: r.from, code: r.code })),
-      fixed: arr(o.fixed).filter((r) => typeof r.name === 'string').map((r) => (isIso(r.from) ? { name: r.name, monthly: num(r.monthly, 0), from: r.from } : { name: r.name, monthly: num(r.monthly, 0) })),
+      fixed: arr(o.fixed).filter((r) => typeof r.name === 'string').map((r) => {
+        const f = { name: r.name, monthly: num(r.monthly, 0) };
+        if (isIso(r.from)) f.from = r.from;
+        if (r.salSac === true) f.salSac = true; // missing = after tax (Android optBoolean default)
+        return f;
+      }),
       rises: arr(o.rises).filter((r) => isIso(r.date)).map((r) => ({ date: r.date, salary: num(r.salary, 0), dayRate: num(r.dayRate, 0) })),
       ytd,
       pensionValue: o.pensionValue != null && isFinite(o.pensionValue) ? Number(o.pensionValue) : null,
@@ -196,13 +201,14 @@
   function computePeriod(input, prevTaxableYtd, prevTaxYtd, seasonDays) {
     const gross = round2(input.basic + input.dayLines.reduce((a, l) => a + l.amount, 0));
     const pension = PensionBand.contribution(gross, input.pensionPct);
-    const taxable = round2(gross - pension);
+    const salSacTotal = round2((input.salSacFixed || []).reduce((a, f) => a + f[1], 0));
+    const taxable = round2(gross - pension - salSacTotal);
     const d = deductions(input.taxYearStart, input.period, input.taxCode, taxable, prevTaxableYtd, prevTaxYtd, input.loanPlan);
     const fixedTotal = round2(input.fixed.reduce((a, f) => a + f[1], 0));
     let taxableYtd = round2(prevTaxableYtd + taxable);
     let taxYtd = round2(prevTaxYtd + d.tax);
     if (input.override) { taxableYtd = input.override.taxable; taxYtd = input.override.tax; }
-    return { input, gross, pension, taxable, tax: d.tax, ni: d.ni, studentLoan: d.studentLoan, fixedTotal,
+    return { input, gross, pension, taxable, tax: d.tax, ni: d.ni, studentLoan: d.studentLoan, fixedTotal, salSacTotal,
       net: round2(taxable - d.tax - d.ni - d.studentLoan - fixedTotal), taxableYtd, taxYtd, seasonDays };
   }
 
@@ -241,7 +247,9 @@
         const cur = byName.get(f.name);
         if (!cur || (f.from || '') > (cur.from || '')) byName.set(f.name, f);
       }
-      const fixed = Array.from(byName.values()).map((f) => [f.name, f.monthly]).filter((x) => x[1] !== 0);
+      const live = Array.from(byName.values()).filter((f) => f.monthly !== 0);
+      const fixed = live.filter((f) => !f.salSac).map((f) => [f.name, f.monthly]);
+      const salSacFixed = live.filter((f) => f.salSac).map((f) => [f.name, f.monthly]);
       const tys = taxYearStart(payMonth), per = period(payMonth);
       const ov = s.ytd && s.ytd.year === tys && s.ytd.period === per ? s.ytd : null;
       const seasonFrom = seasonStart(endOf(wm));
@@ -252,7 +260,7 @@
           workMonth: wm, payMonth, taxYearStart: tys, period: per,
           basic: round2(salaryFor(s, payMonth) / 12),
           dayLines: Array.from(lines.entries()).map(([k, c]) => { const [r, dbl] = k.split('|'); return dayLine(c, Number(r), dbl === 'true'); }),
-          pensionPct: pensionPctFor(s, payMonth), taxCode: code, loanPlan: s.loanPlan, fixed, override: ov,
+          pensionPct: pensionPctFor(s, payMonth), taxCode: code, loanPlan: s.loanPlan, fixed, salSacFixed, override: ov,
         },
         seasonDays,
       };
