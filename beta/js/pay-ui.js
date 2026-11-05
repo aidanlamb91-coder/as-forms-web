@@ -109,7 +109,13 @@
 
   function taxHistory(s, slips) {
     const out = [];
-    for (const p of slips) if (p.code && (!out.length || out[out.length - 1].value !== p.code)) out.push({ from: p.date, value: p.code, source: 'Payslip' });
+    // 1.2.14-web: one row per run of a code, dated by the LATEST payslip that confirmed it (since = run start).
+    for (const p of slips.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))) {
+      if (!p.code) continue;
+      const code = String(p.code).trim().toUpperCase(), last = out[out.length - 1];
+      if (last && last.value === code) last.from = p.date; else out.push({ from: p.date, since: p.date, value: code, source: 'Payslip' });
+    }
+    for (const h of out) h.source = h.since !== h.from ? `Latest payslip · since ${dShow(h.since)}` : 'Latest payslip';
     return out.concat(s.taxCodes.map((t) => ({ from: t.from, value: t.code, source: 'Manual' }))).sort((a, b) => (a.from < b.from ? 1 : -1));
   }
 
@@ -141,7 +147,7 @@
         ${row('data-edit="salary"', 'Base salary', short(s.annualSalary) + ' / yr')}
         ${row('data-edit="pension"', 'Pension (sal. sac.)', num(curPct) + '%', pctSub, 'band')}
         ${row('data-edit="loan"', 'Student loan', C().loanLabel(s.loanPlan))}
-        ${expander('taxcode', 'Tax code', C().currentTaxCode(s), taxH.map((h, i) => row(`data-tax="${i}"`, dShow(h.from), h.value, h.source)).join('') + addRow('data-add="tax"', '+ Add tax code'))}
+        ${expander('taxcode', 'Tax code', (taxH[0] && taxH[0].value) || C().currentTaxCode(s), taxH.map((h, i) => row(`data-tax="${i}"`, dShow(h.from), h.value, h.source)).join('') + addRow('data-add="tax"', '+ Add tax code'))}
       </div>
       <h2 class="pay-sec">Pension</h2>
       <div class="pay-card">

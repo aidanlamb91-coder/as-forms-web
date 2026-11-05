@@ -6,7 +6,7 @@
  * Root (stable) and /beta/ have separate scopes on the same origin. Cache names carry the
  * scope path so neither ever deletes the other's caches, and the root worker ignores /beta/.
  */
-const VERSION = '1.2.13-web';
+const VERSION = '1.2.14-web';
 // Bump BUILD when files change without a version change, so phones pick up the new files.
 const BUILD = 1;
 const SCOPE_URL = new URL(self.registration ? self.registration.scope : './', self.location.href);
@@ -164,7 +164,7 @@ function inScope(url) {
   if (/^old-[^/]+\//.test(url.pathname.slice(SCOPE_PATH.length))) return false;
   // 1.2.1-web: the encrypted forms library is always fetched fresh (the app keeps its own copies)
   if (url.pathname.startsWith(SCOPE_PATH + 'forms/')) return false;
-  // 1.2.13-web: Octopus tool HTML must not be rewritten to the app shell on navigate
+  // 1.2.14-web: Octopus tool HTML must not be rewritten to the app shell on navigate
   if (url.pathname.includes('/tools/')) return false;
   return true;
 }
