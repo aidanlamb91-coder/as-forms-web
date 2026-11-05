@@ -1301,7 +1301,7 @@ input[type=checkbox] { accent-color: var(--green); }
 .pay-dialog .pay-dlg-head .toggle-control { flex-direction: row; }
 .pay-dialog .pay-dlg-head .toggle-control > span:first-child { display: inline; margin: 0; }
 
-/* Octopus Scheme Forecaster (1.2.12-web) */
+/* Octopus Scheme Forecaster (1.2.13-web) */
 .octopus-row{margin:0 0 8px;text-align:right}
 .octopus-btn {
   font-size: 0.72rem;

@@ -165,6 +165,23 @@
         ${s.fixed.map((d, i) => row(`data-fixed="${i}"`, esc(d.name), gbp(d.monthly) + ' / mo', d.from ? 'from ' + dShow(d.from) : null, null, d.salSac)).join('')}
         ${addRow('data-add="fixed"', '+ Add deduction')}
       </div>
+      <h2 class="pay-sec">Company car (BiK)</h2>
+      <div class="pay-card" data-testid="bik-section">
+        ${(s.companyCars || []).map((c, i) => {
+          const tys = C().taxYearStart(today().slice(0, 7));
+          const annual = C().bikAnnualFor([c], tys, today());
+          const taxMo = estimateBikTaxMo(s, [c]);
+          const sub = [
+            'P11D ' + gbp(c.p11d),
+            'BiK ' + gbp(annual) + '/yr (' + Math.round(C().evBikPct(tys) * 100) + '%)',
+            taxMo != null ? '~' + gbp(taxMo) + '/mo tax' : null,
+            c.from ? 'from ' + dShow(c.from) : null,
+          ].filter(Boolean).join(' · ');
+          return row(`data-car="${i}"`, esc((c.make + ' ' + c.model).trim()), gbp(c.p11d) + ' P11D', sub);
+        }).join('')}
+        ${addRow('data-add="car"', '+ Add company car')}
+        <button type="button" class="btn ghost octopus-btn pay-wide" data-testid="octopus-from-settings" data-act="octopus-settings" style="margin:8px 12px">Octopus Scheme Forecaster</button>
+      </div>
       <h2 class="pay-sec">Pay rises</h2>
       ${s.rises.length ? `<div class="pay-card">${s.rises.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((r) => row(`data-rise="${r.date}"`, dShow(r.date), 'Salary ' + short(r.salary) + ' · ' + short(r.dayRate) + '/day')).join('')}</div>` : ''}
       <button type="button" class="btn secondary pay-wide" data-add="rise">+ Add pay rise</button>
@@ -177,6 +194,23 @@
     wireBody(body, s, slips, taxH, pots);
     const sub = document.getElementById('sb-pay-sub');
     if (sub) sub.textContent = C().configured(s) ? short(s.annualSalary) + ' / yr · ' + short(s.dayRate) + ' / day' : 'Rates for the pay estimate';
+  }
+
+  /** Rough monthly PAYE tax cost of BiK for the given cars (made-up sample period; same tax-code rule as computePeriod). */
+  function estimateBikTaxMo(s, cars) {
+    const list = cars || s.companyCars || [];
+    if (!list.length) return null;
+    const ym = today().slice(0, 7);
+    const tys = C().taxYearStart(ym);
+    const annual = C().bikAnnualFor(list, tys, today());
+    if (!(annual > 0)) return 0;
+    const basic = (s.annualSalary || 0) / 12;
+    const input = {
+      taxYearStart: tys, period: C().period(ym), basic,
+      dayLines: [], pensionPct: C().currentPensionPct(s), taxCode: C().currentTaxCode(s),
+      loanPlan: s.loanPlan || 'NONE', fixed: [], salSacFixed: [], bikAnnual: annual,
+    };
+    return C().computePeriod(input, 0, 0, 0).bikTax;
   }
 
   async function save(n) { await P().saveSettings(n); renderPay(); }
@@ -243,7 +277,7 @@
     if (f) f.onchange = async () => { const file = f.files && f.files[0]; f.value = ''; if (file && global.AsInsightsUi) await global.AsInsightsUi.importStatement(file); };
     function openOctopusForecaster(dlgEl) {
       const pay = s;
-      const amtInp = dlgEl.querySelector('[data-f="1"]');
+      const amtInp = dlgEl && dlgEl.querySelector('[data-f="1"]');
       const netEng = amtInp && parseMoney(amtInp.value);
       const q = new URLSearchParams({ embed: '1' });
       if (pay.annualSalary > 0) q.set('grossY', String(pay.annualSalary));
@@ -267,9 +301,34 @@
           if (amtInp) { amtInp.value = String(Math.round(d.gross * 100) / 100); amtInp.dispatchEvent(new Event('input', { bubbles: true })); }
           cleanup();
         }
+        if (d.type === 'octopus-add-profile') {
+          applyOctopusProfile(d);
+          cleanup();
+          // Close any open fixed-deduction dialog so settings refresh cleanly
+          const dlg = document.querySelector('.pay-dialog');
+          if (dlg) { const c = dlg.querySelector('[data-close]'); if (c) c.click(); else dlg.remove(); }
+        }
       };
       function cleanup() { window.removeEventListener('message', onMsg); wrap.remove(); }
       window.addEventListener('message', onMsg);
+    }
+    function applyOctopusProfile(d) {
+      const make = String(d.make || '').trim();
+      const model = String(d.model || '').trim();
+      const p11d = Number(d.p11d);
+      const gross = Number(d.gross);
+      if (!make || !model || !(p11d > 0) || !(gross > 0) || !isFinite(p11d) || !isFinite(gross)) {
+        A().toast('Could not add car — check make, model, P11D and amount');
+        return;
+      }
+      const name = (make + ' ' + model).trim();
+      const from = today();
+      const car = { make, model, p11d };
+      const ded = { name, monthly: Math.round(gross * 100) / 100, from, salSac: true };
+      const cars = (s.companyCars || []).filter((c) => !(c.make === make && c.model === model));
+      const fixed = (s.fixed || []).filter((f) => f.name !== name).concat(ded);
+      save({ ...s, fixed, companyCars: cars.concat(car) });
+      A().toast('Added ' + name + ' to your profile');
     }
     const fixedDlg = (d, onDelete, done) => dialog('Fixed deduction', [{ label: 'Name', value: d ? d.name : '', numeric: false }, { label: '£ per month', value: d ? num(d.monthly) : '' }, { label: 'From (d/m/yyyy, optional)', value: d && d.from ? dFmt(d.from) : '', numeric: false }], (v, salSac) => {
       const amt = parseMoney(v[1]); const from = v[2].trim() ? parseDate(v[2]) : null;
@@ -290,6 +349,24 @@
       } });
     on('[data-fixed]', (b) => { const i = +b.getAttribute('data-fixed'); fixedDlg(s.fixed[i], () => save({ ...s, fixed: s.fixed.filter((_, j) => j !== i) }), (n) => save({ ...s, fixed: s.fixed.map((o, j) => (j === i ? n : o)) })); });
     on('[data-add="fixed"]', () => fixedDlg(null, null, (n) => save({ ...s, fixed: s.fixed.concat(n) })));
+    const carDlg = (c, onDelete, done) => dialog('Company car (BiK)', [
+      { label: 'Make', value: c ? c.make : '', numeric: false },
+      { label: 'Model', value: c ? c.model : '', numeric: false },
+      { label: 'P11D list price £', value: c ? num(c.p11d) : '' },
+      { label: 'From (d/m/yyyy, optional)', value: c && c.from ? dFmt(c.from) : '', numeric: false },
+    ], (v) => {
+      const make = v[0].trim(), model = v[1].trim(), p11d = parseMoney(v[2]);
+      const from = v[3].trim() ? parseDate(v[3]) : null;
+      if (!make || !model || p11d == null || p11d <= 0 || (v[3].trim() && !from)) return false;
+      const n = { make, model, p11d }; if (from) n.from = from; done(n); return true;
+    }, { onDelete });
+    on('[data-car]', (b) => {
+      const i = +b.getAttribute('data-car'); const cars = s.companyCars || [];
+      carDlg(cars[i], () => save({ ...s, companyCars: cars.filter((_, j) => j !== i) }),
+        (n) => save({ ...s, companyCars: cars.map((o, j) => (j === i ? n : o)) }));
+    });
+    on('[data-add="car"]', () => carDlg(null, null, (n) => save({ ...s, companyCars: (s.companyCars || []).concat(n) })));
+    on('[data-act="octopus-settings"]', () => openOctopusForecaster(null));
     const riseDlg = (r, onDelete, done) => dialog('Pay rise', [{ label: 'Effective date (d/m/yyyy)', value: r ? dFmt(r.date) : '', numeric: false }, { label: 'New salary £ / yr', value: r ? num(r.salary) : '' }, { label: 'New day rate £', value: r ? num(r.dayRate) : '' }], (v) => {
       const date = parseDate(v[0]); const sal = parseMoney(v[1]); const rate = parseMoney(v[2]);
       if (!date || sal == null || rate == null) return false; done({ date, salary: sal, dayRate: rate }); return true;
@@ -375,7 +452,7 @@
       ${dbl.length ? dbl.map((l) => lineHtml('Double-rate days ' + l.days + ' × ' + short(l.payRate), gbp(l.amount))).join('') : lineHtml('Double-rate days 0', gbp(0))}
       <hr/>${lineHtml('Gross', gbp(r.gross), true)}
       ${secH('Deductions')}${lineHtml('Pension (sal. sac. ' + num(i.pensionPct) + '% of pay £520–£4,189.17)', gbp(r.pension))}${(i.salSacFixed || []).map((f) => lineHtml(f[0], gbp(f[1]), false, true)).join('')}
-      ${lineHtml(r.tax < 0 ? 'Tax refund' : 'Tax', gbp(Math.abs(r.tax)))}${lineHtml('NI', gbp(r.ni))}
+      ${lineHtml(r.tax < 0 ? 'Tax refund' : 'Tax', gbp(Math.abs(r.tax)))}${r.bikTax > 0 ? lineHtml('of which company car BiK', gbp(r.bikTax)) : ''}${lineHtml('NI', gbp(r.ni))}
       ${i.loanPlan !== 'NONE' ? lineHtml('Student loan ' + C().loanLabel(i.loanPlan), gbp(r.studentLoan)) : ''}
       ${i.fixed.map((f) => lineHtml(f[0], gbp(f[1]))).join('')}
       <hr/><div class="pb-net"><span>Net</span><span>${esc(gbp(r.net))}</span></div>

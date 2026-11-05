@@ -38,6 +38,28 @@
     return YEARS[le.length ? le[le.length - 1] : ks[0]];
   }
 
+  /** EV (0 g/km) company-car appropriate % by tax-year start. Baked-in published + announced rates. */
+  function evBikPct(taxYearStart) {
+    const y = Number(taxYearStart);
+    if (y <= 2025) return 0.03;
+    if (y === 2026) return 0.04;
+    if (y === 2027) return 0.05;
+    if (y === 2028) return 0.07;
+    if (y === 2029) return 0.09;
+    return 0.10; // 2030/31 onwards (planning)
+  }
+  /** Annual BiK cash equivalent for cars available on [asOf] (ISO date) in tax year [tys]. */
+  function bikAnnualFor(cars, tys, asOf) {
+    const pct = evBikPct(tys);
+    let sum = 0;
+    for (const c of cars || []) {
+      if (!(c && c.p11d > 0)) continue;
+      if (c.from && asOf && c.from > asOf) continue;
+      sum += Number(c.p11d) * pct;
+    }
+    return round2(sum);
+  }
+
   // ——— money rounding (as Kotlin BigDecimal.valueOf(x).setScale(2, …)) ———
   function round2(x) {
     const s = Math.sign(x) || 1;
@@ -111,8 +133,13 @@
     return Math.floor(Number((Math.max(0, niable - annual / 12) * loanRate(plan)).toPrecision(12)));
   }
 
-  function deductions(tys, per, taxCode, niable, prevTaxableYtd, prevTaxYtd, plan) {
-    const code = parseCode(taxCode) || parseCode(DEFAULT_CODE);
+  function deductions(tys, per, taxCode, niable, prevTaxableYtd, prevTaxYtd, plan, bikAnnual) {
+    bikAnnual = bikAnnual || 0;
+    let code = parseCode(taxCode) || parseCode(DEFAULT_CODE);
+    // Company-car BiK: tax-code style — reduce free pay by floor(BiK/10), same as Octopus tool / HMRC tables.
+    if (bikAnnual > 0 && code.kind === 'cum') {
+      code = { kind: 'cum', number: code.number - Math.floor(bikAnnual / 10), nonCumulative: !!code.nonCumulative };
+    }
     let tax = code.kind === 'cum' && code.nonCumulative
       ? taxToDate(tys, code, 1, niable)
       : round2(taxToDate(tys, code, per, prevTaxableYtd + niable) - prevTaxYtd);
@@ -132,6 +159,7 @@
   // ——— settings ———
   function defaults() {
     return { dayRate: 0, annualSalary: 0, pensionPct: 7.5, pensionRates: [], loanPlan: 'NONE', taxCodes: [], fixed: [], rises: [],
+      companyCars: [],
       ytd: null, pensionValue: null, pensionValueDate: null, insightsOrder: [], potValues: [], statements: [], forecasts: [] };
   }
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : (v != null && v !== '' && isFinite(Number(v)) ? Number(v) : d));
@@ -167,6 +195,11 @@
         if (r.salSac === true) f.salSac = true; // missing = after tax (Android optBoolean default)
         return f;
       }).concat(migrateHealthcare(o)),
+      companyCars: arr(o.companyCars).filter((r) => typeof r.make === 'string' && typeof r.model === 'string').map((r) => {
+        const c = { make: r.make, model: r.model, p11d: num(r.p11d, 0) };
+        if (isIso(r.from)) c.from = r.from;
+        return c;
+      }),
       rises: arr(o.rises).filter((r) => isIso(r.date)).map((r) => ({ date: r.date, salary: num(r.salary, 0), dayRate: num(r.dayRate, 0) })),
       ytd,
       pensionValue: o.pensionValue != null && isFinite(o.pensionValue) ? Number(o.pensionValue) : null,
@@ -182,6 +215,7 @@
     const s = normalize(s0);
     const o = { dayRate: s.dayRate, annualSalary: s.annualSalary, pensionPct: s.pensionPct, pensionRates: s.pensionRates, loanPlan: s.loanPlan,
       taxCodes: s.taxCodes, fixed: s.fixed, rises: s.rises };
+    if (s.companyCars && s.companyCars.length) o.companyCars = s.companyCars;
     if (s.pensionValue != null && s.pensionValueDate) { o.pensionValue = s.pensionValue; o.pensionValueDate = s.pensionValueDate; }
     if (s.potValues.length) o.potValues = s.potValues;
     if (s.statements.length) o.statements = s.statements;
@@ -212,12 +246,16 @@
     const pension = PensionBand.contribution(gross, input.pensionPct);
     const salSacTotal = round2((input.salSacFixed || []).reduce((a, f) => a + f[1], 0));
     const taxable = round2(gross - pension - salSacTotal);
-    const d = deductions(input.taxYearStart, input.period, input.taxCode, taxable, prevTaxableYtd, prevTaxYtd, input.loanPlan);
+    const bikY = input.bikAnnual > 0 ? input.bikAnnual : 0;
+    const d0 = deductions(input.taxYearStart, input.period, input.taxCode, taxable, prevTaxableYtd, prevTaxYtd, input.loanPlan, 0);
+    const d = bikY ? deductions(input.taxYearStart, input.period, input.taxCode, taxable, prevTaxableYtd, prevTaxYtd, input.loanPlan, bikY) : d0;
+    const bikTax = round2(d.tax - d0.tax);
     const fixedTotal = round2(input.fixed.reduce((a, f) => a + f[1], 0));
     let taxableYtd = round2(prevTaxableYtd + taxable);
     let taxYtd = round2(prevTaxYtd + d.tax);
     if (input.override) { taxableYtd = input.override.taxable; taxYtd = input.override.tax; }
     return { input, gross, pension, taxable, tax: d.tax, ni: d.ni, studentLoan: d.studentLoan, fixedTotal, salSacTotal,
+      bikAnnual: bikY, bikTax,
       net: round2(taxable - d.tax - d.ni - d.studentLoan - fixedTotal), taxableYtd, taxYtd, seasonDays };
   }
 
@@ -270,6 +308,7 @@
           basic: round2(salaryFor(s, payMonth) / 12),
           dayLines: Array.from(lines.entries()).map(([k, c]) => { const [r, dbl] = k.split('|'); return dayLine(c, Number(r), dbl === 'true'); }),
           pensionPct: pensionPctFor(s, payMonth), taxCode: code, loanPlan: s.loanPlan, fixed, salSacFixed, override: ov,
+          bikAnnual: bikAnnualFor(s.companyCars, tys, payEnd),
         },
         seasonDays,
       };
@@ -327,6 +366,6 @@
     round2, down2, ym, ymPlus, ymParts, endOf, daysIn, ymOf, isoDate, todayIso,
     taxYearStart, period, seasonStart, parseCode, taxToDate, ni, studentLoan, deductions, PensionBand,
     defaults, normalize, toJson, pensionPctFor, currentPensionPct, currentTaxCode, pensionStart, salaryFor, dayRateOn, configured,
-    computePeriod, buildInputs, PayEngine, fromTimesheets, dayLine,
+    computePeriod, buildInputs, PayEngine, fromTimesheets, dayLine, evBikPct, bikAnnualFor,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
