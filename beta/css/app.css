@@ -1300,3 +1300,20 @@ input[type=checkbox] { accent-color: var(--green); }
 .pay-dialog .pay-dlg-head .toggle-control input { width: auto; }
 .pay-dialog .pay-dlg-head .toggle-control { flex-direction: row; }
 .pay-dialog .pay-dlg-head .toggle-control > span:first-child { display: inline; margin: 0; }
+
+/* Octopus Scheme Forecaster (1.2.12-web) */
+.octopus-row{margin:0 0 8px;text-align:right}
+.octopus-btn {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  max-width: 100%;
+}
+.octopus-overlay{position:fixed;inset:0;z-index:10000;background:var(--bg,#f2f2f3)}
+.octopus-overlay iframe{border:0;width:100%;height:100%;background:#fff}
+.pay-dlg-head{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.pay-dlg-head h2{margin:0;flex:1;min-width:0}

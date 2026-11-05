@@ -36,6 +36,7 @@
     const html = `<div class="sheet pay-dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-grip"></div>${opts.titleSwitch
         ? `<div class="pay-dlg-head"><h2>${esc(title)}</h2><label class="toggle-control"><span>${esc(opts.titleSwitch.label)}</span><input type="checkbox" data-testid="${opts.titleSwitch.testid}" ${opts.titleSwitch.checked ? 'checked' : ''} /><span class="switch" aria-hidden="true"></span></label></div>`
         : `<h2>${esc(title)}</h2>`}
+      ${opts.underSwitch || ''}
       ${opts.note ? `<p class="hint">${esc(opts.note)}</p>` : ''}
       ${fields.map((f, i) => `<label>${esc(f.label)}<input type="text" data-f="${i}" value="${esc(f.value == null ? '' : f.value)}" ${f.numeric !== false ? 'inputmode="decimal"' : ''} autocomplete="off" /></label>`).join('')}
       <p class="pay-err hidden" role="alert">${esc(opts.error || 'Please check the values (dates as d/m/yyyy).')}</p>
@@ -44,6 +45,7 @@
     const sh = A().openSheet(html);
     const el = sh.el;
     const first = el.querySelector('input'); if (first) setTimeout(() => first.focus(), 50);
+    if (typeof opts.onMounted === 'function') opts.onMounted(el, sh);
     el.querySelector('[data-act="save"]').onclick = async () => {
       const vals = Array.from(el.querySelectorAll('[data-f]')).map((i) => i.value);
       const sw = el.querySelector('.pay-dlg-head input');
@@ -239,6 +241,36 @@
     on('[data-add="statement"]', () => document.getElementById('pay-statement-file').click());
     const f = document.getElementById('pay-statement-file');
     if (f) f.onchange = async () => { const file = f.files && f.files[0]; f.value = ''; if (file && global.AsInsightsUi) await global.AsInsightsUi.importStatement(file); };
+    function openOctopusForecaster(dlgEl) {
+      const pay = s;
+      const amtInp = dlgEl.querySelector('[data-f="1"]');
+      const netEng = amtInp && parseMoney(amtInp.value);
+      const q = new URLSearchParams({ embed: '1' });
+      if (pay.annualSalary > 0) q.set('grossY', String(pay.annualSalary));
+      const code = C().currentTaxCode(pay);
+      const m = String(code || '').match(/^(\d+)/); if (m) q.set('allow', String(+m[1] * 10));
+      if (pay.pensionPct != null) q.set('pens', String(C().currentPensionPct(pay)));
+      q.set('sl', pay.loanPlan === 'PLAN_4' ? '1' : '0');
+      q.set('pss', '1'); q.set('pref', '1'); q.set('taper', '1');
+      if (netEng != null && netEng > 0) q.set('netEng', String(Math.min(800, Math.round(netEng / 5) * 5)));
+      const base = (document.querySelector('base') && document.querySelector('base').href) || (location.href.replace(/[^/]*$/, ''));
+      const url = new URL('tools/salsac-car/index.html?' + q.toString(), base).href;
+      const wrap = document.createElement('div');
+      wrap.className = 'octopus-overlay';
+      wrap.setAttribute('data-testid', 'octopus-overlay');
+      wrap.innerHTML = `<iframe title="Octopus Scheme Forecaster" src="${url}"></iframe>`;
+      document.body.appendChild(wrap);
+      const onMsg = (ev) => {
+        const d = ev && ev.data; if (!d || typeof d !== 'object') return;
+        if (d.type === 'octopus-back') { cleanup(); }
+        if (d.type === 'octopus-use' && typeof d.gross === 'number' && isFinite(d.gross)) {
+          if (amtInp) { amtInp.value = String(Math.round(d.gross * 100) / 100); amtInp.dispatchEvent(new Event('input', { bubbles: true })); }
+          cleanup();
+        }
+      };
+      function cleanup() { window.removeEventListener('message', onMsg); wrap.remove(); }
+      window.addEventListener('message', onMsg);
+    }
     const fixedDlg = (d, onDelete, done) => dialog('Fixed deduction', [{ label: 'Name', value: d ? d.name : '', numeric: false }, { label: '£ per month', value: d ? num(d.monthly) : '' }, { label: 'From (d/m/yyyy, optional)', value: d && d.from ? dFmt(d.from) : '', numeric: false }], (v, salSac) => {
       const amt = parseMoney(v[1]); const from = v[2].trim() ? parseDate(v[2]) : null;
       if (!v[0].trim() || amt == null || (v[2].trim() && !from)) return false;
@@ -246,7 +278,16 @@
       if (from) n.from = from;
       if (salSac) n.salSac = true; // on = before tax and NI, like the pension
       done(n); return true;
-    }, { onDelete, titleSwitch: { label: 'Sal Sac', testid: 'salsac-switch', checked: !!(d && d.salSac) } });
+    }, { onDelete, titleSwitch: { label: 'Sal Sac', testid: 'salsac-switch', checked: !!(d && d.salSac) },
+      underSwitch: `<div class="octopus-row" data-octopus-row hidden><button type="button" class="btn ghost octopus-btn" data-testid="octopus-forecaster" data-act="octopus">Octopus Scheme Forecaster</button></div>`,
+      onMounted: (el) => {
+        const sw = el.querySelector('.pay-dlg-head input');
+        const row = el.querySelector('[data-octopus-row]');
+        const sync = () => { if (row) row.hidden = !(sw && sw.checked); };
+        if (sw) sw.addEventListener('change', sync); sync();
+        const btn = el.querySelector('[data-act="octopus"]');
+        if (btn) btn.onclick = () => openOctopusForecaster(el);
+      } });
     on('[data-fixed]', (b) => { const i = +b.getAttribute('data-fixed'); fixedDlg(s.fixed[i], () => save({ ...s, fixed: s.fixed.filter((_, j) => j !== i) }), (n) => save({ ...s, fixed: s.fixed.map((o, j) => (j === i ? n : o)) })); });
     on('[data-add="fixed"]', () => fixedDlg(null, null, (n) => save({ ...s, fixed: s.fixed.concat(n) })));
     const riseDlg = (r, onDelete, done) => dialog('Pay rise', [{ label: 'Effective date (d/m/yyyy)', value: r ? dFmt(r.date) : '', numeric: false }, { label: 'New salary £ / yr', value: r ? num(r.salary) : '' }, { label: 'New day rate £', value: r ? num(r.dayRate) : '' }], (v) => {

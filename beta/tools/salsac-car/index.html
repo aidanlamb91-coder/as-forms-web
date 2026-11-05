@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<title>Salary sacrifice car calculator · AS Forms</title>
+<style>
+:root{--bg:#f2f2f3;--surface:#fff;--ink:#121212;--muted:#5c5c5c;--border:#e2e2e4;--brand:#0d0d0d;--accent:#e31c23;--ok:#0a7a3e;--danger:#b00020;--chip:#e8e8ea;--radius:12px;--shadow:0 1px 3px rgba(0,0,0,.08);--warn:#8a5a00;--warn-soft:#fff4dc;--danger-soft:#fdecee;--green-soft:#e6f0eb;--blue:#1f5fbf}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+header{background:var(--brand);color:#fff;padding:14px 16px;border-bottom:3px solid var(--accent)}
+header h1{margin:0;font-size:1.15rem}header p{margin:2px 0 0;color:#cfcfcf;font-size:.85rem}
+main{max-width:1100px;margin:0 auto;padding:12px;display:grid;gap:12px;grid-template-columns:minmax(0,360px) minmax(0,1fr)}
+@media(max-width:820px){main{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+.card h2{margin:0 0 10px;font-size:1rem}
+label{display:block;font-size:.82rem;color:var(--muted);margin:10px 0 3px}
+input,select{width:100%;font:inherit;padding:9px 10px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--ink)}
+input[type=range]{padding:0;accent-color:var(--accent);border:0}
+input[type=checkbox]{width:auto;margin-right:6px;accent-color:var(--brand)}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+.chk{display:flex;align-items:center;color:var(--ink);font-size:.9rem;margin-top:10px}
+.seg{display:flex;background:var(--chip);border-radius:9px;padding:3px;gap:3px}.seg button{flex:1;border:0;background:none;padding:7px;border-radius:7px;font:inherit;cursor:pointer}.seg button.on{background:var(--brand);color:#fff}
+.headline{font-size:1.25rem;font-weight:650;line-height:1.35}.headline b{color:var(--accent)}
+.big{font-size:2rem;font-weight:700}.muted{color:var(--muted);font-size:.85rem}
+table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{padding:6px 4px;border-bottom:1px solid var(--border);text-align:right}td:first-child,th:first-child{text-align:left}
+tr.tot td{font-weight:700;border-top:2px solid var(--ink)}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--chip);margin:8px 0}
+.warn{padding:9px 11px;border-radius:9px;margin:6px 0;font-size:.88rem;background:var(--warn-soft);color:var(--warn)}
+.warn.bad{background:var(--danger-soft);color:var(--danger)}.warn.good{background:var(--green-soft);color:var(--ok)}
+svg{width:100%;height:auto;display:block;touch-action:pan-y}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:.78rem;color:var(--muted)}.legend i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:4px}
+.right{display:grid;gap:12px;min-width:0}
+footer{max-width:1100px;margin:0 auto;padding:0 12px 30px;font-size:.78rem;color:var(--muted)}footer ol{padding-left:18px}
+a{color:var(--blue)}
+</style></head><body>
+<header data-octopus-embed><div id="embedBar" style="display:none;padding:8px 0 4px;gap:8px;align-items:center"><button type="button" id="btnBack" style="font:inherit;background:#fff;color:#0d0d0d;border:0;border-radius:8px;padding:6px 10px;font-weight:600">← Back</button><button type="button" id="btnUse" style="font:inherit;background:#e31c23;color:#fff;border:0;border-radius:8px;padding:6px 10px;font-weight:600;margin-left:auto">Use this amount</button></div><h1>Salary sacrifice car: real cost to net pay</h1><p>Scotland · 2026/27 tax year · works offline · nothing leaves this device</p></header>
+<main>
+<section class="card" id="inputs">
+ <h2>Your pay</h2>
+ <div class="seg" id="perSeg"><button data-p="y" class="on">Annual</button><button data-p="m">Monthly</button></div>
+ <label for="gross">Gross salary (<span id="perLbl">per year</span>), before any sacrifice</label><input id="gross" type="number" min="0" step="100" inputmode="decimal">
+ <div class="row"><div><label for="allow">Tax code allowance (£)</label><input id="allow" type="number" step="10"></div>
+ <div><label for="hours">Contract hours / week</label><input id="hours" type="number" step="0.5"></div></div>
+ <div class="row"><div><label for="pens">Pension %</label><input id="pens" type="number" step="0.5" min="0"></div>
+ <div><label for="pbasis">Pension % of</label><select id="pbasis"><option value="q">Qualifying earnings (as app)</option><option value="f">Full salary</option></select></div></div>
+ <label class="chk"><input type="checkbox" id="pss">Pension is salary sacrifice</label>
+ <label class="chk"><input type="checkbox" id="pref">Pension worked out on pre-car salary (reference salary)</label>
+ <label class="chk"><input type="checkbox" id="sl">Plan 4 student loan</label>
+ <label class="chk"><input type="checkbox" id="taper">Apply £100k personal allowance taper</label>
+ <h2 style="margin-top:16px">The car</h2>
+ <label for="netEng">Estimated net cost (English tax): <b id="netOut"></b></label>
+ <div class="row" style="align-items:center"><input id="carR" type="range" min="0" max="800" step="5" style="flex:3"><input id="netEng" type="number" min="0" max="800" step="5" style="flex:1"></div>
+ <p class="muted">Schemes often quote this English-tax estimate. We reverse it to find the gross amount, then apply Scottish tax.</p>
+ <div class="row"><div><label>Total cost £/month (gross)</label><input id="grossOut" readonly style="background:#f7f7f8;font-weight:650"></div>
+ <div><label>Your real net cost (Scottish tax)</label><input id="scotOut" readonly style="background:#f7f7f8;font-weight:650"></div></div>
+ <div class="row"><div><label for="p11d">P11D list price (£)</label><input id="p11d" type="number" step="100" min="0"></div>
+ <div><label for="term">Lease term (months)</label><input id="term" type="number" min="1" step="1"></div></div>
+ <p class="muted">Electric car: benefit-in-kind 4% of list price for 2026/27.<sup>1</sup></p>
+ <h2 style="margin-top:16px">Children</h2>
+ <div class="row"><div><label for="kids">Children claimed for (Child Benefit)</label><input id="kids" type="number" min="0" step="1"></div>
+ <div><label for="ages">Children's ages (comma list)</label><input id="ages" type="text" inputmode="numeric"></div></div>
+ <label for="cc">Paid childcare spend per year, after funded hours (£)</label><input id="cc" type="number" min="0" step="100">
+ <label class="chk"><input type="checkbox" id="cbClaim">We claim Child Benefit (HICBC applies to the higher earner)</label>
+ <label class="chk"><input type="checkbox" id="tfcOn">Use Tax-Free Childcare (partner also under £100k)</label>
+ <p class="muted">Saved on this device only (localStorage). <a href="#" id="reset">Reset to example</a></p>
+</section>
+<div class="right">
+ <section class="card"><div class="headline" id="headline"></div><div class="bar" id="splitBar"></div><div class="legend" id="splitLeg"></div></section>
+ <section class="card"><h2>Monthly breakdown</h2><table id="tbl"></table><p class="muted" id="termTxt"></p></section>
+ <section class="card"><h2>Warnings and notes</h2><div id="warns"></div></section>
+ <section class="card"><h2>Net pay against gross salary</h2>
+  <svg id="ch1" viewBox="0 0 720 340" role="img" aria-label="Net pay chart"></svg>
+  <div class="legend"><span><i style="background:#121212"></i>Net (no car)</span><span><i style="background:#e31c23"></i>Net with car, after BIK</span><span><i style="background:#1f5fbf;height:2px"></i>Child-benefit and childcare adjusted (with car)</span><span>⋮ grey: Scottish bands · ⋮ blue: £60k / £80k / £100k adjusted net income</span></div>
+  <h2 style="margin-top:14px">Marginal deduction rate (what you lose of each extra £1)</h2>
+  <svg id="ch2" viewBox="0 0 720 220" role="img" aria-label="Marginal rate chart"></svg>
+  <p class="muted">Sweet spots: where the red line is highest, each £1 sacrificed costs you least. Dots show you now (black) and after the car (red).</p></section>
+</div>
+</main>
+<footer>
+<h3>Assumptions and disclaimer</h3>
+<p>This is a planning estimate, not tax advice. The slider is an English (rUK) estimate of the net cost of the sacrifice. We solve for the matching gross monthly amount, then apply the same monthly PAYE maths as the AS Forms app (2026/27 Scottish bands, Class 1 NI, Plan 4 at 9% over £33,795) for your real cost, treats the year as 12 equal months with a cumulative tax code, and ignores bonuses, overtime, other income, foreign tax and Scottish-rate relief on non-salary-sacrifice pension. The car is assumed electric, so the benefit-in-kind is the list price × 4% and is taxed through your tax code at your top rate; it does not attract employee NI or student loan. Adjusted net income = taxable pay after all salary sacrifice + car benefit. Child Benefit charge and Tax-Free Childcare are worked out on your income only. Lease insurance, maintenance and early-termination terms vary by scheme. Check with your employer and HMRC before signing.</p>
+<ol>
+<li>Company car benefit appropriate percentage, 2026/27: 0 g/km = 4%. HMRC, <a href="https://www.gov.uk/guidance/company-car-benefit-the-appropriate-percentage-480-appendix-2">Work out the appropriate percentage (480 Appendix 2)</a>, updated 6 April 2026; EIM24705. Cars with CO2 ≤ 75 g/km are outside the optional-remuneration (OpRA) rules, so the BIK, not the sacrificed salary, is taxed.</li>
+<li>Scottish income tax 2026/27 bands, NI thresholds (PT £1,048/m, UEL £4,189/m) and Plan 4 threshold £33,795 as used in AS Forms; NLW £12.71/hr from 1 April 2026 and LEL £129/week: <a href="https://www.gov.uk/guidance/rates-and-thresholds-for-employers-2026-to-2027">HMRC rates and thresholds for employers 2026 to 2027</a>.</li>
+<li>England, Wales and Northern Ireland (rUK) income tax 2026/27: personal allowance £12,570 (tapered from £100,000), basic 20% on the first £37,700 of taxable income, higher 40% to £125,140 of income, additional 45% above that (<a href="https://www.gov.uk/income-tax-rates">GOV.UK income tax rates</a>). The slider uses this English estimate of the net cost of the sacrifice (tax + NI + student loan, before BIK); your real cost uses Scottish rates on the same gross amount.</li>
+<li>Child Benefit 2026/27: £27.05/week eldest, £17.90/week each other child (<a href="https://www.gov.uk/child-benefit/what-youll-get">GOV.UK</a>). High Income Child Benefit Charge: 1% of the benefit per £200 of adjusted net income over £60,000, the full amount at £80,000 (<a href="https://www.gov.uk/child-benefit-tax-charge">GOV.UK</a>).</li>
+<li>Tax-Free Childcare: the government adds £2 for every £8 paid, up to £2,000 per child per year (£4,000 if disabled), children 0–11; not available if you or your partner expects adjusted net income over £100,000 (<a href="https://www.gov.uk/tax-free-childcare">GOV.UK</a>). Scotland's 1,140 hours of funded early learning and childcare for all 3–4 year olds (and eligible 2 year olds) is not income-tested (<a href="https://www.mygov.scot/childcare-costs-help/funded-early-learning-and-childcare">mygov.scot</a>); enter only spend beyond those hours.</li>
+<li>Statutory maternity, paternity, adoption and shared parental pay use average weekly earnings after salary sacrifice; first 6 weeks of SMP/SAP are 90% of AWE, then the lower of £194.32 or 90%.</li>
+</ol>
+</footer>
+<div id="err" style="display:none;margin:12px;padding:12px;border-radius:9px;background:#fdecee;color:#b00020;font:14px system-ui"></div>
+<script>
+"use strict";
+function showErr(m){var e=document.getElementById('err');if(e){e.style.display='block';e.textContent='Something went wrong: '+m}}
+window.onerror=function(m,src,l){showErr(m+(l?' (line '+l+')':''));};
+var store=(function(){var mem={};function ls(){try{return window.localStorage}catch(e){return null}}
+ return {get:function(k){try{var l=ls();return l?l.getItem(k):(mem[k]||null)}catch(e){return mem[k]||null}},
+  set:function(k,v){mem[k]=v;try{var l=ls();if(l)l.setItem(k,v)}catch(e){}}};})();
+// ——— maths: AS Forms Scottish + rUK English 2026/27 ———
+const INF=Infinity;
+const SCOT={bands:[[3967,.19],[12989,.20],[14136,.21],[31338,.42],[62710,.45],[INF,.48]]};
+const ENG={bands:[[37700,.20],[74870,.40],[INF,.45]]}; // widths above PA: basic to 50,270; higher to 125,140
+const NI={niP:1048,niU:4189,niR:.08,niR2:.02,plan4:33795};
+const round2=x=>Math.round(x*100)/100, down2=x=>Math.floor(x*100+1e-9)/100;
+function taxMonth(bands,codeNum,taxable){
+ const sign=codeNum<0?-1:1;
+ const freePay=sign*Math.ceil(Number(((Math.abs(codeNum)*10+9)/12*100).toPrecision(15)))/100;
+ const tp=Math.floor(Math.max(0,taxable-freePay));let tax=0,lo=0;
+ for(var bi=0;bi<bands.length;bi++){const w=bands[bi][0],r=bands[bi][1];const hi=w===INF?INF:lo+Math.ceil(Number((w/12).toPrecision(15)));tax+=Math.max(0,Math.min(tp,hi)-lo)*r;lo=hi;if(tp<=lo)break}
+ var t=round2(tax); if(codeNum<0)t=Math.min(t,round2(taxable*.5)); return t;}
+const niM=n=>round2(Math.max(0,Math.min(n,NI.niU)-NI.niP)*NI.niR+Math.max(0,n-NI.niU)*NI.niR2);
+const slM=n=>Math.floor(Number((Math.max(0,n-NI.plan4/12)*.09).toPrecision(12)));
+const PB={L:520,U:4189.17,band:function(g){return Math.min(Math.max(g,this.L),this.U)-this.L}};
+const BIK_PCT=.04, CB1=27.05*52, CB2=17.90*52, NLW=12.71, LEL=129;
+const T=SCOT; // charts/bandOf keep using Scottish widths via T.bands
+function calc(s,carM,regime){
+ const bands=(regime==='eng'?ENG:SCOT).bands;
+ const gM=s.grossY/12, salM=gM-carM;
+ const pBase=s.pref?gM:salM;
+ const pension=s.pbasis==='q'?down2(PB.band(pBase)*s.pens/100):down2(pBase*s.pens/100);
+ const niable=round2(salM-(s.pss?pension:0));
+ const taxableCash=round2(salM-pension);
+ const bikY=carM>0?s.p11d*BIK_PCT:0;
+ const aniY=taxableCash*12+bikY;
+ var allow=s.allow; if(s.taper)allow=Math.max(0,allow-Math.max(0,(aniY-100000)/2));
+ const code=Math.floor(allow/10);
+ const taxNoBik=taxMonth(bands,code,taxableCash);
+ const tax=bikY?taxMonth(bands,code-Math.floor(bikY/10),taxableCash):taxNoBik;
+ const ni=niM(niable), sl=s.sl?slM(niable):0;
+ const net=round2(taxableCash-tax-ni-sl);
+ const cbY=s.cbClaim&&s.kids>0?CB1+CB2*(s.kids-1):0;
+ const hicbc=cbY?Math.floor(cbY*Math.min(100,Math.max(0,Math.floor((aniY-60000)/200)))/100):0;
+ const ages=s.ages, tfcKids=ages.filter(function(a){return a>=0&&a<=11}).length;
+ const tfcMax=s.tfcOn&&tfcKids?Math.min(s.cc*.2,2000*tfcKids):0;
+ const tfc=aniY>100000?0:tfcMax;
+ return {gM:gM,salM:salM,pension:pension,niable:niable,taxableCash:taxableCash,tax:tax,taxNoBik:taxNoBik,bikTax:round2(tax-taxNoBik),ni:ni,sl:sl,net:net,bikY:bikY,aniY:aniY,allow:allow,cbY:cbY,hicbc:hicbc,tfc:tfc,tfcMax:tfcMax,tfcKids:tfcKids,
+  family:round2(net+(cbY-hicbc+tfc)/12)};
+}
+/** Drop in take-home from sacrificing G, English tax, excluding BIK (scheme-style estimate). */
+function englishNetCost(s,G){
+ const z=Object.assign({},s,{p11d:0});
+ return round2(calc(z,0,'eng').net-calc(z,G,'eng').net);
+}
+/** Solve for gross G such that englishNetCost(G) ≈ N. Cap at 95% of monthly gross. */
+function solveGross(s,N){
+ if(!(N>0)) return 0;
+ const cap=Math.max(0,s.grossY/12*0.95);
+ var lo=0,hi=cap,i,mid,c;
+ for(i=0;i<60;i++){mid=(lo+hi)/2;c=englishNetCost(s,mid); if(c<N)lo=mid; else hi=mid;}
+ return round2(hi);
+}
+// ——— state ———
+const KEY='asforms-salsac-car-v2';
+const DEF={grossY:60000,allow:12570,hours:37.5,pens:5,pbasis:'q',pss:true,pref:true,sl:true,taper:true,netEng:220,p11d:45000,term:36,kids:2,ages:'2, 5',cc:6000,cbClaim:true,tfcOn:true,per:'y'};
+let S;try{var loaded=JSON.parse(store.get(KEY)||'{}');S=Object.assign({},DEF,loaded);if(S.netEng==null&&loaded.car!=null)S.netEng=220}catch(e){S=Object.assign({},DEF)};
+(function applyQuery(){try{
+ var q=new URLSearchParams(location.search||'');
+ if(q.get('embed')==='1'){var b=document.getElementById('embedBar');if(b)b.style.display='flex';document.body.classList.add('embed');}
+ function num(k){var v=parseFloat(q.get(k));return isFinite(v)?v:null}
+ var n;if((n=num('netEng'))!=null)S.netEng=Math.min(800,Math.max(0,Math.round(n/5)*5));
+ if((n=num('grossY'))!=null)S.grossY=n; if((n=num('allow'))!=null)S.allow=n;
+ if((n=num('pens'))!=null)S.pens=n; if(q.has('sl'))S.sl=q.get('sl')!=='0';
+ if(q.has('pss'))S.pss=q.get('pss')!=='0'; if(q.has('pref'))S.pref=q.get('pref')!=='0';
+ if(q.has('taper'))S.taper=q.get('taper')!=='0'; if((n=num('p11d'))!=null)S.p11d=n;
+ if((n=num('hours'))!=null)S.hours=n;
+}catch(e){}})();
+function currentGross(){try{return solveGross(sObj(),S.netEng)}catch(e){return 0}}
+document.addEventListener('DOMContentLoaded',function(){});
+var bb=document.getElementById('btnBack'); if(bb) bb.onclick=function(){ try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'octopus-back'},'*'); else history.back(); }catch(e){history.back()} };
+var bu=document.getElementById('btnUse'); if(bu) bu.onclick=function(){ var g=currentGross(); try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'octopus-use',gross:g},'*'); }catch(e){} };
+const $=id=>document.getElementById(id);
+const gbp=(x,d=0)=>(x<0?'−':'')+'£'+Math.abs(x).toLocaleString('en-GB',{minimumFractionDigits:d,maximumFractionDigits:d});
+const g2=x=>gbp(x,2);
+function readState(){
+ const n=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0};
+ S.grossY=S.per==='m'?n('gross')*12:n('gross');
+ Object.assign(S,{allow:n('allow'),hours:n('hours')||37.5,pens:n('pens'),pbasis:$('pbasis').value,pss:$('pss').checked,pref:$('pref').checked,sl:$('sl').checked,taper:$('taper').checked,
+  netEng:Math.min(800,Math.max(0,Math.round(n('netEng')/5)*5)),p11d:n('p11d'),term:Math.max(1,Math.round(n('term'))),kids:Math.max(0,Math.round(n('kids'))),ages:$('ages').value,cc:n('cc'),cbClaim:$('cbClaim').checked,tfcOn:$('tfcOn').checked});
+}
+function fill(){
+ $('gross').value=S.per==='m'?round2(S.grossY/12):S.grossY;$('perLbl').textContent=S.per==='m'?'per month':'per year';
+ document.querySelectorAll('#perSeg button').forEach(b=>b.classList.toggle('on',b.dataset.p===S.per));
+ for(const k of['allow','hours','pens','netEng','p11d','term','kids','ages','cc'])$(k).value=S[k];
+ $('carR').value=S.netEng;$('pbasis').value=S.pbasis;for(const k of['pss','pref','sl','taper','cbClaim','tfcOn'])$(k).checked=S[k];
+}
+function sObj(){return Object.assign({},S,{ages:String(S.ages).split(/[,\s]+/).filter(Boolean).map(Number).filter(isFinite)})}
+// ——— render ———
+function render(){try{render0()}catch(e){showErr(e&&e.message||String(e))}}
+function render0(){
+ const s=sObj();
+ const N=S.netEng;
+ const car=solveGross(s,N);
+ const A=calc(s,0,'scot'), B=calc(s,car,'scot');
+ const Ae=calc(Object.assign({},s,{p11d:0}),0,'eng'), Be=calc(Object.assign({},s,{p11d:0}),car,'eng');
+ const engCost=round2(Ae.net-Be.net);
+ const scotCost=round2(A.net-B.net); // Scottish pay drop excl comparing nets (includes BIK in B)
+ const scotPayDrop=round2(calc(Object.assign({},s,{p11d:0}),0,'scot').net-calc(Object.assign({},s,{p11d:0}),car,'scot').net);
+ store.set(KEY,JSON.stringify(S));
+ $('netOut').textContent=gbp(N)+'/month';
+ $('grossOut').value=car?g2(car):'£0.00';
+ $('scotOut').value=car?g2(scotPayDrop):'£0.00';
+ const dTax=A.taxNoBik-B.taxNoBik, dNi=A.ni-B.ni, dSl=A.sl-B.sl, dPen=B.pension-A.pension;
+ const netDrop=round2(A.net-B.net), noBik=scotPayDrop;
+ const cbGain=(A.hicbc-B.hicbc)/12, tfcGain=(B.tfc-A.tfc)/12;
+ const eff=round2(netDrop-cbGain-tfcGain);
+ const pct=car?eff/car*100:0;
+ $('headline').innerHTML=car?`At about <b>${gbp(N)}/month</b> net under English rates, the scheme takes <b>${g2(car)}/month</b> from gross.<br>
+ At Scottish rates that costs you <b>${g2(scotPayDrop)}/month</b> net (${(scotPayDrop/car*100).toFixed(1)}% of gross)${Math.abs(engCost-N)>0.5?' <span class="muted">(English check '+g2(engCost)+')</span>':''}.<br>
+ After ${g2(B.bikTax)} BIK tax${cbGain||tfcGain?', and '+g2(cbGain+tfcGain)+' Child Benefit / childcare gained back':''}: <span class="big">${g2(eff)}</span>/month effective · <b>${pct.toFixed(1)}%</b> of the gross.`
+  :'Move the slider to set an estimated English net cost.';
+ const parts=[['Income tax saved',dTax,'#121212'],['NI saved',dNi,'#5c5c5c'],['Student loan saved',dSl,'#8f8f94'],['Child Benefit kept',cbGain,'#1f5fbf'],['Tax-Free Childcare kept',tfcGain,'#0a7a3e'],['BIK tax',-B.bikTax,'#e31c23'],['You pay',eff,'#f2b8bb']];
+ const pos=parts.filter(function(p){return p[1]>0&&p[0]!=='BIK tax'});const tot=pos.reduce(function(a,p){return a+p[1]},0)||1;
+ $('splitBar').innerHTML=pos.map(function(p){return '<span title="'+p[0]+'" style="width:'+(p[1]/tot*100)+'%;background:'+p[2]+'"></span>'}).join('');
+ $('splitLeg').innerHTML=pos.map(function(p){return '<span><i style="background:'+p[2]+';height:10px"></i>'+p[0]+' '+g2(p[1])+'</span>'}).join('');
+ const row=function(l,a,b,c){return '<tr><td>'+l+'</td><td>'+a+'</td><td>'+b+'</td><td>'+c+'</td></tr>'};
+ $('tbl').innerHTML='<tr><th></th><th>No car</th><th>With car</th><th>Change</th></tr>'+
+  row('Gross',g2(A.gM),g2(A.gM),'')+row('Car sacrifice (gross)','',g2(-car),g2(-car))+row('Pension',g2(-A.pension),g2(-B.pension),g2(-dPen))+
+  row('Income tax (excl. BIK, Scottish)',g2(-A.taxNoBik),g2(-B.taxNoBik),g2(dTax))+row('BIK tax (4% × '+gbp(S.p11d)+' = '+gbp(B.bikY)+'/yr)','',g2(-B.bikTax),g2(-B.bikTax))+
+  row('NI',g2(-A.ni),g2(-B.ni),g2(dNi))+row('Student loan',g2(-A.sl),g2(-B.sl),g2(dSl))+
+  '<tr class="tot"><td>Net pay (Scottish)</td><td>'+g2(A.net)+'</td><td>'+g2(B.net)+'</td><td>'+g2(-netDrop)+'</td></tr>'+
+  row('English estimated net cost of sacrifice','','',g2(-engCost))+
+  row('Scottish net cost of sacrifice (before BIK)','','',g2(-scotPayDrop))+
+  row('Child Benefit charge (HICBC)/12',g2(-A.hicbc/12),g2(-B.hicbc/12),g2(cbGain))+row('Tax-Free Childcare top-up/12',g2(A.tfc/12),g2(B.tfc/12),g2(tfcGain))+
+  '<tr class="tot"><td>Effective cost to household</td><td></td><td></td><td>'+g2(-eff)+'</td></tr>'+
+  row('Adjusted net income (yr)',gbp(A.aniY),gbp(B.aniY),gbp(B.aniY-A.aniY));
+ $('termTxt').textContent='Over '+S.term+' months: '+gbp(car*S.term)+' sacrificed gross, '+gbp(netDrop*S.term)+' less Scottish net pay (incl. '+gbp(B.bikTax*S.term)+' BIK tax), '+gbp(eff*S.term)+' effective cost after Child Benefit and childcare effects'+(dPen?', plus '+gbp(dPen*S.term)+' less into your pension':'')+'. Assumes today\'s rates for the whole term.';
+ warnings(s,A,B,car,dPen,engCost,scotPayDrop,N);
+ charts(s,A,B,car);
+}
+function bandOf(taxableM,allow){const t=taxableM*12-allow;let lo=0,i=0;const n=['personal allowance','starter 19%','basic 20%','intermediate 21%','higher 42%','advanced 45%','top 48%'];if(t<=0)return n[0];for(const[w]of T.bands){lo+=w;i++;if(t<=lo)return n[i]}return n[6]}
+function warnings(s,A,B,car,dPen,engCost,scotPayDrop,N){
+ const w=[];const add=function(c,t){w.push('<div class="warn '+c+'">'+t+'</div>')};
+ if(car&&engCost!=null&&scotPayDrop!=null){if(scotPayDrop+0.01<engCost)add('good','Scottish rates cost you '+g2(engCost-scotPayDrop)+'/month less than the English estimate ('+g2(scotPayDrop)+' vs '+g2(engCost)+').');else if(scotPayDrop>engCost+0.01)add('','Scottish net cost ('+g2(scotPayDrop)+') is higher than the English estimate ('+g2(engCost)+'). That can happen when your Scottish band rate is higher than the English rate on the sacrificed slice (e.g. intermediate 21% or higher/advanced vs English basic/higher).');}
+ const hrsM=S.hours*52/12, cashAfter=B.salM-(S.pss?B.pension:0);
+ if(cashAfter/hrsM<NLW)add('bad',`Pay after sacrifice is ${g2(cashAfter/hrsM)}/hour on ${S.hours} h/week, below the £12.71 National Living Wage. Employers must not let salary sacrifice take you below it, so the scheme may refuse or cap this.`);
+ const ba=bandOf(A.taxableCash,A.allow),bb=bandOf(B.taxableCash,B.allow);
+ if(car&&ba!==bb)add('',`You move from the ${ba} band to the ${bb} band (top rate on salary).`);
+ if(A.aniY>100000&&B.aniY<=100000)add('good',`Adjusted net income drops from ${gbp(A.aniY)} to ${gbp(B.aniY)}: you get the full personal allowance back (no 60% taper zone).`);
+ else if(B.aniY>100000)add('',`Adjusted net income ${gbp(B.aniY)} is over £100,000: the personal allowance is tapered. A further ${gbp(B.aniY-100000)}/yr (${gbp((B.aniY-100000)/12)}/m) of sacrifice would recover it fully.`);
+ if(s.cbClaim&&s.kids>0){if(A.hicbc!==B.hicbc)add('good',`Child Benefit charge falls from ${gbp(A.hicbc)} to ${gbp(B.hicbc)} a year (you keep ${gbp(A.hicbc-B.hicbc)} more of your ${gbp(B.cbY)} Child Benefit).`);
+  else if(B.aniY>80000)add('',`Adjusted net income is over £80,000, so all ${gbp(B.cbY)} Child Benefit is clawed back by the HICBC.`);}
+ if(s.tfcOn&&B.tfcKids){if(A.tfc===0&&B.tfc>0)add('good',`Childcare cliff: getting under £100,000 adjusted net income restores Tax-Free Childcare worth ${gbp(B.tfc)} a year.`);
+  else if(B.tfc===0)add('bad',`Tax-Free Childcare cliff: over £100,000 adjusted net income you lose all ${gbp(B.tfcMax)} a year. You need ${gbp(B.aniY-100000)}/yr more sacrifice (or pension) to get under.`);
+  else if(B.aniY>95000)add('',`Only ${gbp(100000-B.aniY)} under the £100,000 Tax-Free Childcare cliff; a pay rise or bonus could cost you ${gbp(B.tfc)}.`);}
+ if(s.ages.some(a=>a>=3&&a<=4))add('good','Scotland\'s 1,140 funded hours for 3–4 year olds are not income-tested, so they are unaffected.');
+ if(dPen>0)add('',`Your pension is worked out on the lower salary: ${g2(dPen)}/month less goes in (employer contributions may drop too). Ask whether they use a reference salary.`);
+ if(car)add('',`Mortgage and loan applications usually see your post-sacrifice salary: ${gbp(B.salM*12)} instead of ${gbp(A.gM*12)}. Life cover and death-in-service may also be based on it.`);
+ if(car){const awe=B.salM*12/52;add(awe<LEL?'bad':'',`Statutory pay (maternity, paternity, adoption, shared parental) is based on post-sacrifice average weekly earnings: ${g2(awe)} instead of ${g2(A.gM*12/52)}. The first 6 weeks of SMP/SAP become ${g2(awe*.9)}/week instead of ${g2(A.gM*12/52*.9)}${awe<LEL?'. This is below the £129 lower earnings limit, so you would lose entitlement':''}. Check how your scheme handles leave (many keep the car payment going).`);}
+ $('warns').innerHTML=w.join('')||'<p class="muted">Nothing to flag.</p>';
+}
+// ——— charts (hand-drawn SVG) ———
+function grossForTaxableY(s,targetY){var lo=0,hi=400000,i,m,c;for(i=0;i<50;i++){m=(lo+hi)/2;c=calc(Object.assign({},s,{grossY:m}),0,'scot');if(c.taxableCash*12>=targetY)hi=m;else lo=m}return hi}
+function grossForAni(s,targetY,car){var lo=0,hi=400000,i,m,c;for(i=0;i<50;i++){m=(lo+hi)/2;c=calc(Object.assign({},s,{grossY:m}),car,'scot');if(c.aniY>=targetY)hi=m;else lo=m}return hi}
+function charts(s,A,B,car){
+ const xMax=Math.max(140000,Math.ceil(s.grossY*1.5/10000)*10000), xMin=Math.max(0,Math.min(20000,s.grossY*.5));
+ const N=180, xs=Array.apply(null,Array(N+1)).map(function(_,i){return xMin+(xMax-xMin)*i/N});
+ const P0=xs.map(function(g){return calc(Object.assign({},s,{grossY:g}),0,'scot')});
+ const P1=xs.map(function(g){return calc(Object.assign({},s,{grossY:g}),car,'scot')});
+ const W=720,H=340,L=58,R=12,Tp=14,Bt=34;
+ const yMax=Math.ceil(P0[N].net*12/10000)*10000;
+ const X=function(g){return L+(g-xMin)/(xMax-xMin)*(W-L-R)};
+ const Y=function(v){return H-Bt-(v/yMax)*(H-Tp-Bt)};
+ const path=function(arr,f){return arr.map(function(p,i){return (i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y(f(p)).toFixed(1)}).join('')};
+ var o='',v,g,i;
+ for(v=0;v<=yMax;v+=yMax/5)o+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="#eee"/><text x="'+(L-6)+'" y="'+(Y(v)+4)+'" font-size="11" text-anchor="end" fill="#5c5c5c">£'+Math.round(v/1000)+'k</text>';
+ for(g=Math.ceil(xMin/20000)*20000;g<=xMax;g+=20000)o+='<text x="'+X(g)+'" y="'+(H-Bt+16)+'" font-size="11" text-anchor="middle" fill="#5c5c5c">£'+(g/1000)+'k</text>';
+ o+='<text x="'+((L+W)/2)+'" y="'+(H-4)+'" font-size="11" text-anchor="middle" fill="#5c5c5c">Gross salary per year (before car) · net per year</text>';
+ var cum=s.allow;const names=['Starter','Basic','Intermediate','Higher','Advanced','Top'];const thr=[[s.allow,'Starter']];
+ T.bands.slice(0,5).forEach(function(b,i){cum+=b[0];thr.push([cum,names[i+1]])});
+ thr.forEach(function(t,i){var gg=grossForTaxableY(s,t[0]);if(gg>xMin&&gg<xMax)o+='<line x1="'+X(gg)+'" x2="'+X(gg)+'" y1="'+Tp+'" y2="'+(H-Bt)+'" stroke="#8f8f94" stroke-dasharray="2 4"/><text x="'+(X(gg)+3)+'" y="'+(Tp+10+(i%2)*11)+'" font-size="10" fill="#5c5c5c">'+t[1]+'</text>'});
+ [[60000,'£60k ANI'],[80000,'£80k ANI'],[100000,'£100k ANI']].forEach(function(t,i){var gg=grossForAni(s,t[0],car);if(gg>xMin&&gg<xMax)o+='<line x1="'+X(gg)+'" x2="'+X(gg)+'" y1="'+(Tp+30)+'" y2="'+(H-Bt)+'" stroke="#1f5fbf" stroke-dasharray="3 3"/><text x="'+(X(gg)+3)+'" y="'+(H-Bt-6-(i%2)*11)+'" font-size="10" fill="#1f5fbf">'+t[1]+'</text>'});
+ o+='<path d="'+path(P0,function(p){return p.net*12})+'" fill="none" stroke="#121212" stroke-width="2"/><path d="'+path(P1,function(p){return p.net*12})+'" fill="none" stroke="#e31c23" stroke-width="2"/><path d="'+path(P1,function(p){return p.family*12})+'" fill="none" stroke="#1f5fbf" stroke-width="1.5"/>';
+ if(s.grossY>=xMin&&s.grossY<=xMax){var x=X(s.grossY);o+='<rect x="'+(x-4)+'" y="'+Y(A.net*12)+'" width="8" height="'+Math.max(1,Y(B.net*12)-Y(A.net*12))+'" fill="#e31c23" opacity=".25"/><circle cx="'+x+'" cy="'+Y(A.net*12)+'" r="5" fill="#121212"/><circle cx="'+x+'" cy="'+Y(B.net*12)+'" r="5" fill="#e31c23"/><text x="'+(x+8)+'" y="'+(Y(A.net*12)-6)+'" font-size="11" fill="#121212">You: '+gbp(A.net*12)+' → '+gbp(B.net*12)+'</text>'}
+ $('ch1').innerHTML=o;
+ const H2=220;const Y2=function(r){return H2-Bt-(r/100)*(H2-Tp-Bt)};
+ const mr=function(g,carm){var a=calc(Object.assign({},s,{grossY:g}),carm,'scot'),b=calc(Object.assign({},s,{grossY:g+1200}),carm,'scot');return 100-(b.family-a.family)/100*100};
+ const M0=xs.map(function(g){return mr(g,0)});
+ var o2='',r;for(r=0;r<=100;r+=20)o2+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y2(r)+'" y2="'+Y2(r)+'" stroke="#eee"/><text x="'+(L-6)+'" y="'+(Y2(r)+4)+'" font-size="11" text-anchor="end" fill="#5c5c5c">'+r+'%</text>';
+ for(g=Math.ceil(xMin/20000)*20000;g<=xMax;g+=20000)o2+='<text x="'+X(g)+'" y="'+(H2-Bt+16)+'" font-size="11" text-anchor="middle" fill="#5c5c5c">£'+(g/1000)+'k</text>';
+ const p2=function(arr){return arr.map(function(rr,i){return (i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y2(Math.max(0,Math.min(100,rr))).toFixed(1)}).join('')};
+ o2+='<path d="'+p2(M0)+'" fill="none" stroke="#e31c23" stroke-width="2"/>';
+ const me=mr(s.grossY,0),mc=mr(Math.max(xMin,s.grossY-car*12),0);
+ if(s.grossY>=xMin&&s.grossY<=xMax)o2+='<circle cx="'+X(s.grossY)+'" cy="'+Y2(me)+'" r="5" fill="#121212"/><circle cx="'+X(Math.max(xMin,s.grossY-car*12))+'" cy="'+Y2(mc)+'" r="5" fill="#e31c23"/><text x="'+(X(s.grossY)+8)+'" y="'+(Y2(me)-6)+'" font-size="11">'+me.toFixed(0)+'% now</text>';
+ o2+='<text x="'+((L+W)/2)+'" y="'+(H2-4)+'" font-size="11" text-anchor="middle" fill="#5c5c5c">Gross salary per year · includes tax, NI, loan, HICBC and childcare cliff (spikes)</text>';
+ $('ch2').innerHTML=o2;
+}
+// ——— wiring ———
+fill();render();
+$('inputs').addEventListener('input',function(e){if(e.target.id==='carR')$('netEng').value=e.target.value;if(e.target.id==='netEng')$('carR').value=e.target.value;readState();if(e.target.id!=='netEng')$('netEng').value=S.netEng;render()});
+$('perSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;readState();S.per=b.dataset.p;fill();render()});
+$('reset').addEventListener('click',e=>{e.preventDefault();S=Object.assign({},DEF);fill();render()});
+window.SalsacCalc={calc:calc,sObj:sObj,englishNetCost:englishNetCost,solveGross:solveGross,get S(){return S}};
+</script></body></html>

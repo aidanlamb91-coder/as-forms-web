@@ -1,0 +1,9 @@
+name = "as-forms-auth"
+main = "src/index.js"
+compatibility_date = "2026-10-17"
+workers_dev = true
+
+[vars]
+GOOGLE_CLIENT_ID = "698136732826-r6hg6ojjlsg20uvbs1b62hrmtrm61uvf.apps.googleusercontent.com"
+ALLOWED_ORIGIN = "https://aidanlamb91-coder.github.io"
+# Secrets (set with `wrangler secret put`, never in this file): GOOGLE_CLIENT_SECRET, RT_KEY
