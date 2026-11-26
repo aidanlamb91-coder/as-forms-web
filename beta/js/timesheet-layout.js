@@ -4,15 +4,16 @@
  * in-app Timesheet Preview, so they can never disagree about rows, tick columns or totals.
  *
  * Template facts (timesheet.odt, Table1):
- * - Upper half = days 1–16: Office, Offshore, Annual Leave, Roster Leave, Training, Sick
- * - Lower half = days 17–end: Office, Offshore, Roster Leave, Annual Leave, Training, Sick
- * - TOTALS row (after the last day) uses the lower-half order.
+ * - Both halves use the same column order: Office, Offshore, Annual Leave, Roster Leave, Training, Sick
+ *   (page 1 = days 1–16; page 2 = days 17–end of month). Holiday ticks and the holiday
+ *   total belong under Annual Leave on both pages.
+ * - TOTALS row (after the last day) uses that same order.
  * - Rows for days past the month length are removed.
  */
 (function (global) {
   const TYPES = ['OFFICE', 'OFFSHORE', 'ANNUAL_LEAVE', 'ROSTER_LEAVE', 'TRAINING', 'SICK'];
   const UPPER_COLUMNS = ['OFFICE', 'OFFSHORE', 'ANNUAL_LEAVE', 'ROSTER_LEAVE', 'TRAINING', 'SICK'];
-  const LOWER_COLUMNS = ['OFFICE', 'OFFSHORE', 'ROSTER_LEAVE', 'ANNUAL_LEAVE', 'TRAINING', 'SICK'];
+  const LOWER_COLUMNS = UPPER_COLUMNS;
   const FIRST_TYPE_CELL = 4;
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];

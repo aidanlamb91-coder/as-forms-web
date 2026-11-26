@@ -43,27 +43,11 @@
   }
 
   function upperCol(type) {
-    switch (type) {
-      case DayType.OFFICE: return 4;
-      case DayType.OFFSHORE: return 5;
-      case DayType.ANNUAL_LEAVE: return 6;
-      case DayType.ROSTER_LEAVE: return 7;
-      case DayType.TRAINING: return 8;
-      case DayType.SICK: return 9;
-      default: return 4;
-    }
+    return Layout().cellIndex('UPPER', type);
   }
 
   function lowerCol(type) {
-    switch (type) {
-      case DayType.OFFICE: return 4;
-      case DayType.OFFSHORE: return 5;
-      case DayType.ROSTER_LEAVE: return 6;
-      case DayType.ANNUAL_LEAVE: return 7;
-      case DayType.TRAINING: return 8;
-      case DayType.SICK: return 9;
-      default: return 4;
-    }
+    return Layout().cellIndex('LOWER', type);
   }
 
   function childElements(parent, ns, localName) {
@@ -173,7 +157,7 @@
     });
   }
 
-  /** TOTALS row uses the lower-half column order (Office, Offshore, Roster, Annual, Training, Sick). */
+  /** TOTALS row uses the same column order as both pages (Office, Offshore, Annual, Roster, Training, Sick). */
   function fillTotalsRow(row, totals) {
     const cells = logicalCells(row);
     if (cells.length < 10) throw new Error('TOTALS row needs >= 10 logical cells');
